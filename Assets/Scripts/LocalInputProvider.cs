@@ -51,9 +51,10 @@ public class LocalInputProvider : MonoBehaviour, IInputProvider {
         packet.lookYaw = _currentYaw;
         packet.lookPitch = _currentPitch;
 
-        // 3. 버튼 (Dash, Attack)
+        // 3. 버튼 (Dash, Attack, Jump)
         packet.SetFlag(InputFlag.Dash, _inputActions.Player.Dash.IsPressed());
         packet.SetFlag(InputFlag.Attack, _inputActions.Player.Attack.IsPressed());
+        packet.SetFlag(InputFlag.Jump, _inputActions.Player.Jump.IsPressed());
 
         return packet;
     }
