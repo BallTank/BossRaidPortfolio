@@ -110,34 +110,139 @@
 
 
 ---
+---
+
+### **2026-02-09 (월): Player Dead State & Boss Pattern 1**
+
+* **작업 내용**
+    * **Player Dead Logic (Prioritized)**:
+        * Boss FSM 구현 전, 플레이어와 보스 공통으로 사용될 `DeadState` 및 사망 처리 로직 선행 구현 결정.
+        * `Health.OnDie` 이벤트와 애니메이션 연동, 입력 차단(Input Block) 로직 설계.
+    * **Boss AI 구조 설계**: `BossController`를 통해 거리 기반의 상태(Idle, Combat, Searching) 관리.
+    * **Refactoring**: `BossController`의 비주얼 로직(애니메이션, UI)을 `BossVisual` 클래스로 분리하여 SRP(단일 책임 원칙) 준수.
+    * **Documentation**: `Input_FSM_Flow.md`에 사망 상태(Dead State) 흐름 추가 및 `Boss_Algorithm_Design.md` 작성.
+
+* **기술적 포인트**
+    *   **Event-Driven Death**: 매 프레임 체력을 체크하는 것이 아니라, `OnDie` 이벤트를 구독(Subscribe)하여 상태 전환 비용을 최소화.
+    *   **State Reusability**: `DeadState`를 플레이어와 보스가 공유하거나 유사한 로직으로 처리하여 코드 중복 방지.
+    *   **Raycast Optimization**: `CheckLineOfSight`에서 `~LayerMask`와 눈높이(Offset)를 사용하여 연산 효율과 정확도 확보.
+    *   **Visual Debugging**: `OnDrawGizmos`를 활용해 감지 범위와 시야각을 에디터에서 직관적으로 확인 가능하도록 구현.
+    *   **Decoupling (Visual)**: `BossController`가 `Animator`를 직접 제어하지 않고 `BossVisual` 컴포넌트에 위임하여, 로직 변경 시 비주얼 스크립트 수정 최소화.
+
+---
+
+### **2026-02-09 (월): FSM Generic Refactoring & Null-Safe 패턴**
+
+*   **작업 내용**
+    *   **StateMachine 제네릭화**: Player/Boss 전용 `StateMachine`을 `StateMachine<TState>` 하나로 통합.
+    *   **BaseState 제네릭화**: `BaseState<TController>`로 변경하여 Player/Boss 모두 재사용 가능하도록 리팩토링.
+    *   **IState 인터페이스 도입**: `Enter()`, `Exit()` 공용 계약 정의.
+    *   **PlayerVisual 통합**: `PlayerAnimationEvents.cs` 기능을 `PlayerVisual.cs`로 병합 후 삭제.
+    *   **비트 연산 분석**: `((1 << layer) & obstacleMask) != 0` 코드의 LayerMask 동작 원리 학습 및 문서화.
+    *   **Null-Safe 패턴 적용**: `BossVisual`이 미할당 시 NullReferenceException 방지를 위해 `?.` 연산자 적용.
+    *   **SearchingState 속도 분리**: 탐지 범위 벗어나도 느린 속도(`searchingMoveSpeed`)로 추적 유지.
+    *   **기술 블로그 작성**: `0209_Bitwise_and_NullSafe_Pattern.md` 작성.
+
+*   **🧠 기술적 고민 (Q&A 학습 기록)**
+
+    | 질문 | 결론 |
+    |------|------|
+    | **비제네릭 vs 제네릭 BaseState 차이?** | 비제네릭은 `PlayerController` 하드코딩 → Boss 사용 불가. 제네릭 `BaseState<TController>`는 타입 파라미터로 유동적 → 재사용성 확보. |
+    | **PlayerBaseState와 BossBaseState 통합 가능?** | Update 시그니처가 다름 (`PlayerInputPacket` vs 없음). `NoInput` 타입으로 강제 통합 시 KISS 위반 및 의도 모호화. **분리 유지가 Clean Code**. |
+    | **`TController`에서 T의 의미?** | **Type**의 약자. C# 제네릭 네이밍 관례로 `T` + 역할명(예: `TState`, `TInput`)으로 명명. |
+    | **`1 << layer`의 의미?** | 레이어 인덱스(0~31)를 32비트 비트마스크로 변환. 예: layer=8 → 256 (0001 0000 0000). |
+    | **AND 연산으로 뭘 확인?** | 충돌체 레이어가 `obstacleMask`에 포함되어 있는지 검사. 결과가 0이 아니면 장애물. |
+    | **Null 체크 위치?** | State에서 직접 `Visual` 호출 시 `?.` 사용. 또는 Controller 래퍼 메서드(`StopMoving()`)로 위임. |
+
+*   **기술적 포인트 (Senior's Review)**
+    *   **Generic Reusability**: 한 번 정의한 `StateMachine<TState>`를 Player/Boss가 공유함으로써 DRY 원칙 준수.
+    *   **IState Interface**: `Enter()`/`Exit()` 계약을 분리하여 StateMachine이 구체 타입에 의존하지 않도록 설계.
+    *   **Update는 다르게**: Player는 입력이 "필요"하고 Boss는 "필요 없는" 것. 이 의도적 차이를 코드로 명확히 표현하는 것이 과도한 추상화보다 우선.
+    *   **Visual 통합**: Animation Event 수신과 비주얼 효과를 한 클래스에서 관리하여 응집도(Cohesion) 향상.
+    *   **Defensive Programming**: 외부 의존성(Visual)이 없어도 핵심 로직은 동작해야 함.
+    *   **Graceful Degradation**: 비주얼 컴포넌트 없이도 게임 로직은 정상 실행.
+    *   **LayerMask 이해**: Unity 물리 시스템의 핵심. 비트 연산으로 효율적인 레이어 필터링.
+
+
+
+
+---
+
+### **2026-02-10 (화): Documentation Synchronization**
+
+*   **작업 내용**
+    *   **System Blueprint Update**: `StateMachine<T>` 및 `BossVisual` 분리 등 최신 아키텍처를 반영하여 클래스 다이어그램 현행화.
+    *   **Status Check**: 보스 AI 진행 상황(Pattern 1 완료)을 `System_Blueprint` 상태표에 갱신.
+    *   **Progress Log**: 개발 내역과 문서 간의 동기화 완료.
+    *   **Architecture Restructuring**: 프로젝트 폴더 구조를 `Common`, `Player`, `Boss`로 명확히 분리하여 모듈성 강화.
+    *   **Namespace Refactoring**: `BossRaid` 네임스페이스를 `Core`로 변경하여 직관성 확보 (`Core.Player`, `Core.Boss`, `Core.Common`).
+    *   **Dependency Cleanup**: `PlayerController.cs`를 `Assets/Scripts/Player/`로 이동하고, 루트 디렉토리의 중복 폴더(`Patterns`, `Interfaces`, `Combat`) 정리.
+    *   **Lint Fixes**: 네임스페이스 변경에 따른 모든 참조(`using`) 수정 및 컴파일 에러 해결.
+
+*   **기술적 포인트**
+    *   **Living Documentation**: 코드가 변하면 문서도 즉시 변해야 한다는 원칙(`AI_Maintenance_Guide.md`) 실천.
+    *   **Visual Communication**: 다이어그램을 통해 'Generic FSM' 구조와 'Visual Separation' 설계 의도를 명확히 전달.
+    *   **Namespace Strategy**: `Core` 네임스페이스를 도입하여 "System"과 "Content"를 명확히 구분하고, 이름 충돌 방지 및 인텔리센스 가독성 향상.
+    *   **Project Organization**: 스크립트의 물리적 위치(폴더)와 논리적 위치(네임스페이스)를 일치시켜 유지보수성을 높임.
 
 ## 📈 2월 마일스톤: 싱글플레이 로직 완성 (Capsule vs Cube)
 
 > **목표**: 클라이언트 구축
 
-### 1주차: 플레이어 컨트롤러 & 상태 머신 (The Capsule) ✅
+### 1주차: 플레이어 컨트롤러 & 전투 시스템 (The Capsule & Sword) ✅
 - [x] **Input System**: 키보드/마우스 및 패드 입력을 인터페이스화해서 분리.
 - [x] **FSM (State Machine)**: `PlayerState` 클래스 기반의 상태 머신 (Idle, Move, Attack, Dash).
 - [x] **이동 로직**: `CharacterController`를 이용한 물리 기반 이동.
 - [x] **핵심**: 입력과 로직 분리 완료. (네트워크 입력 교체 대비)
+- [x] **에셋 교체**: `CombatGirls_KatanaCharacterPack` 연동 및 `Visual` 계층 분리 (`Animator_Setup_Guide.md` 준수).
+- [x] **Animator 설정**: `Locomotion`, `Attack1~3`, `Jump`, `Quickshift_F` 상태 연결.
+- [x] **Hitbox 시스템**: 칼이 휘둘러질 때 특정 프레임에서만 판정이 생기도록 설계.
+- [x] **피격 시스템**: 플레이어/보스가 데미지를 받았을 때의 반응 (HP 감소, 피격 애니메이션, 무적 시간).
+- [x] **Damage 클래스**: `IDamageable` 인터페이스 (보스/잡몹 공통 상속).
+- [x] **판정 최적화**: `Physics.OverlapSphereNonAlloc` 사용.
+- [x] **핵심**: 코드가 판정 시점을 정확히 계산하는 것을 보여줘야 함.
 
-### 2주차: 전투 시스템 & 판정 (The Capsule Sword) 🔄
-- [/] **에셋 교체**: `CombatGirls_KatanaCharacterPack` 연동 및 `Visual` 계층 분리 (`Animator_Setup_Guide.md` 준수).
-- [/] **Animator 설정**: `Locomotion`, `Attack1~3`, `Jump`, `Quickshift_F` 상태 연결.
-- [ ] **Hitbox 시스템**: 칼이 휘둘러질 때 특정 프레임에서만 판정이 생기도록 설계.
-- [ ] **피격 시스템**: 플레이어/보스가 데미지를 받았을 때의 반응 (HP 감소, 피격 애니메이션, 무적 
-- [ ] **Damage 클래스**: `IDamageable` 인터페이스 (보스/잡몹 공통 상속).
-시간).
-- [ ] **판정 최적화**: `Physics.OverlapSphereNonAlloc` 사용.
-- [ ] **핵심**: 코드가 판정 시점을 정확히 계산하는 것을 보여줘야 함.
 
-### 3주차: 보스 AI 패턴 (The Cube)
-- [ ] **패턴 1 (추적)**: 플레이어와의 거리 계산, 적정 거리 유지 및 공격 유도.
+---
+
+### 2주차: 보스 AI 패턴 (The Cube) 🔄
+
+#### 보스 FSM 아키텍처 ✅
+- [x] **StateMachine 제네릭화**: `StateMachine<TState>`로 Player/Boss 공용 상태 머신 통합.
+- [x] **BossBaseState**: `BaseState<BossController>` 상속, `Update()` 입력 없이 내부 로직만 처리.
+- [x] **IState 인터페이스**: `Enter()`/`Exit()` 공통 계약 정의로 StateMachine의 구체 타입 의존 제거.
+- [x] **BossVisual 분리**: 애니메이션/UI 제어를 `BossVisual` 클래스로 이관하여 SRP 준수.
+
+#### 피격 로직 (Player & Boss 공통) 🔄
+- [x] **IDamageable 인터페이스**: 공격자가 타겟 타입을 몰라도 데미지 전달 가능.
+- [x] **Health 컴포넌트**: HP 관리, `OnDamage`/`OnDie` 이벤트 발행.
+- [x] **DamageCaster**: `OverlapSphereNonAlloc`으로 GC-Free 타격 판정.
+- [x] **Event-Driven Death**: `OnDie` 이벤트 구독으로 `DeadState` 전환.
+- [ ] **피격 렌더링**: 피격 시 Renderer 흰색 플래시 + 스턴 애니메이션.
+
+#### 보스 행동 패턴 🔄
+- [x] **패턴 1 (추적)**: 플레이어와의 거리 계산, 적정 거리 유지 및 공격 유도.
 - [ ] **패턴 2 (돌격)**: 예고 표시 후 큐브 돌진.
 - [ ] **패턴 3 (투사체)**: 큐브에서 작은 큐브(미사일) 발사.
-- [ ] **핵심**: FSM 또는 Behavior Tree를 코드로 깔끔하게 구현.
+- [ ] **다중 레이캐스트 탐지**: 눈 위치(몸통 1/2~머리 중간)에서 여러 방향 감지.
+- [ ] **추적 알고리즘 검토**: NavMesh / A* 경로탐색 적용 여부 결정.
 
-### 4주차: 시스템 최적화 & 게임 루프 (The Logic)
+---
+
+### 3주차: 시스템 최적화 & 게임 루프 (The Logic)
 - [ ] **오브젝트 풀링**: 미사일/이펙트를 Zero-Allocation으로 관리.
 - [ ] **UI 시스템**: HP 바, 보스 페이즈 알림 등 코드 제어.
 - [ ] **게임 매니저**: 시작 → 전투 → 페이즈 전환 → 승리/패배 흐름 제어.
+
+---
+
+#### 🚧 폴리싱 
+- [ ] **(플레이어)대쉬 방향 수정**: 공격 방향이 아닌 키보드 입력 방향으로 대쉬.
+
+---
+
+### 📝 공통 문서화 작업
+- [ ] **책임(Responsibility) 문서화**: 로직별 책임 소재를 코드와 글로 명확히 설명 (면접 대비).
+
+---
+

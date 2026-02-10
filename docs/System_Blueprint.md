@@ -12,141 +12,187 @@
 
 ---
 
-## 2. Technical Class Diagram (Target Architecture)
-현재 `PlayerController`에 작성된 이동 로직을 `StateMachine`으로 이관하는 것이 목표 구조입니다.
+## 2. Technical Class Diagram (Implemented Architecture)
+본 프로젝트는 `StateMachine` 패턴을 기반으로 Player와 Boss의 로직을 제어합니다. 아래 다이어그램은 현재 구현된 아키텍처를 나타냅니다.
+
+### 2.1. Core FSM Architecture (Generic Core)
+`StateMachine<TState>`는 특정 상태 타입(`TState`)을 관리하며, 상태 전환 시 `IState` 인터페이스를 통해 `Enter/Exit`을 호출합니다.
+
+**관련 코드:**
+*   `Assets/Scripts/Patterns/StateMachine.cs`: `TState : class` 제약 조건 및 `is IState` 패턴 매칭 사용.
+*   `Assets/Scripts/Patterns/BaseState.cs`: `IState` 구현 및 `TController` 보유.
+*   `Assets/Scripts/Patterns/IState.cs`: 공통 인터페이스.
 
 ```mermaid
 classDiagram
     direction TB
 
-    %% Interface Definitions
-    class IInputProvider {
+    class IState {
         <<Interface>>
-        +GetInput() PlayerInputPacket
+        +Enter()
+        +Exit()
     }
 
-    class IDashContext {
-        <<Interface>>
-        +MoveSpeed float
-        +DashDuration float
-        +DashSpeedMultiplier float
-        +StateMachine StateMachine
-        +MoveState MoveState
-        +StartDashCooldown()
+    class StateMachine~TState~ {
+        <<Generic>>
+        -TState _currentState
+        +ChangeState(TState newState)
+        +CurrentState TState
     }
 
-    class IAttackable {
-        <<Interface>>
-        +AttackCombos AttackComboData[]
+    class BaseState~TController~ {
+        <<Abstract>>
+        #TController Controller
+        +Enter()*
+        +Exit()*
     }
 
-    %% Core Systems
-    class LocalInputProvider {
-        +GetInput() PlayerInputPacket
-    }
+    %% Relationships
+    StateMachine~TState~ ..> IState : Uses (Pattern Matching)
+    BaseState~TController~ ..|> IState : Implements
+    
+    note for StateMachine "Constraint: where TState : class"
+```
 
+### 2.2. Player System Architecture (The Capsule)
+입력 처리부터 상태 전환, 전투 로직까지의 플레이어 전용 구조입니다.
+
+**관련 코드:**
+*   **Controller**: `Assets/Scripts/PlayerController.cs` (`IDashContext`, `IAttackable` 구현)
+*   **Input**: `Assets/Scripts/LocalInputProvider.cs`, `Assets/Scripts/PlayerInputData.cs`
+*   **Visual**: `Assets/Scripts/Player/PlayerVisual.cs`
+*   **Combat Data**: `Assets/Scripts/Player/AttackComboData.cs`
+*   **Combat Components**: `Assets/Scripts/Combat/` (`Health.cs`, `DamageCaster.cs`)
+*   **States**:
+    - `Assets/Scripts/Player/States/`: `MoveState.cs`, `DashState.cs`, `JumpState.cs`, `AttackState.cs`
+    - `Assets/Scripts/Patterns/`: `HitState.cs`, `DeadState.cs` (플레이어 전용이지만 Patterns 네임스페이스 사용)
+*   **Interfaces**: `Assets/Scripts/Interfaces/` (`IInputProvider`, `IDashContext`, `IAttackable`)
+
+```mermaid
+classDiagram
+    direction TB
+
+    %% Interfaces & Data
+    class IInputProvider { +GetInput() PlayerInputPacket }
+    class IDashContext { +StartDashCooldown() }
+    class IAttackable { +AttackCombos AttackComboData[] }
+    class IDamageable { +TakeDamage(int) }
+    
+    class PlayerInputPacket { <<Struct>> }
+    class AttackComboData { <<Struct>> }
+    class InputFlag { <<Enumeration>> }
+
+    %% Core Components
     class PlayerController {
         <<MonoBehaviour>>
         +MoveSpeed float
-        +RotationSpeed float
-        +JumpForce float
-        +AirControl float
         +Animator Animator
-        +AttackCombos AttackComboData[]
-        -StateMachine _stateMachine
+        -StateMachine~PlayerBaseState~ _stateMachine
         +MoveState MoveState
         +DashState DashState
         +JumpState JumpState
         +AttackState AttackState
-        +ApplyGravity(float verticalVelocity)
+        +HitState HitState
+        +DeadState DeadState
+        +PlayerVisual Visual
         +Update()
     }
 
-    class StateMachine {
-        -BaseState _currentState
-        +ChangeState(BaseState newState)
-        +Update(PlayerInputPacket input)
+    class PlayerBaseState {
+        <<Abstract>>
+        +Update(PlayerInputPacket)*
     }
 
-    class BaseState {
-        <<Abstract>>
-        #PlayerController Controller
-        +Enter()*
-        +Update(PlayerInputPacket input)*
-        +Exit()*
-    }
+    class LocalInputProvider { +GetInput() }
+    class PlayerVisual { +Animator Animator }
+    class DamageCaster { +EnableHitbox(int) }
+    class Health { +CurrentHP int }
 
     %% Concrete States
-    class MoveState {
-        +Enter()
-        +Update(input)
-        +Exit()
-    }
-
-    class DashState {
-        +Enter()
-        +Update(input)
-        +Exit()
-    }
-
-    class JumpState {
-        -float _verticalVelocity
-        +Enter()
-        +Update(input)
-        +Exit()
-    }
-
-    class AttackState {
-        -int _comboIndex
-        +Enter()
-        +Update(input)
-        +Exit()
-    }
-
-    class DamageCaster {
-        <<MonoBehaviour>>
-        -LayerMask _targetLayer
-        -float _radius
-        -Collider[] _hitResults
-        +EnableHitbox(int damage)
-        +DisableHitbox()
-    }
-
-    class Health {
-        <<MonoBehaviour>>
-        +MaxHP int
-        +CurrentHP int
-        +OnDamageTaken Action~int~
-        +TakeDamage(int damage)
-    }
-
-    class IDamageable {
-        <<Interface>>
-        +TakeDamage(int damage)
-    }
+    class MoveState { +Update() }
+    class DashState { +Update() }
+    class JumpState { +Update() }
+    class AttackState { +Update() }
+    class HitState { +Update() }
+    class DeadState { +Update() }
 
     %% Relationships
     IInputProvider <|.. LocalInputProvider : Implements
     IDashContext <|.. PlayerController : Implements
     IAttackable <|.. PlayerController : Implements
-    
-    PlayerController --> IInputProvider : Uses
-    PlayerController --> StateMachine : Owns
-    StateMachine o-- BaseState : Manages
-
-    BaseState <|-- MoveState
-    BaseState <|-- DashState
-    BaseState <|-- JumpState
-    BaseState <|-- AttackState
-
     IDamageable <|.. Health : Implements
-    PlayerController --> DamageCaster : Controls
-    DamageCaster ..> IDamageable : Hits
 
-    MoveState ..> PlayerController : Context
-    DashState ..> IDashContext : Context (Decoupled)
-    JumpState ..> PlayerController : Context
-    AttackState ..> IAttackable : Context (Interface)
+    PlayerController --> IInputProvider : Uses
+    PlayerController --> PlayerVisual : Controls
+    PlayerController --> DamageCaster : Controls
+    PlayerController --> Health : Uses
+    
+    PlayerBaseState --|> BaseState
+    PlayerBaseState <|-- MoveState
+    PlayerBaseState <|-- DashState
+    PlayerBaseState <|-- JumpState
+    PlayerBaseState <|-- AttackState
+    PlayerBaseState <|-- HitState
+    PlayerBaseState <|-- DeadState
+
+    DamageCaster ..> IDamageable : Hits
+    PlayerInputPacket --* LocalInputProvider : Creates
+```
+
+### 2.3. Boss AI Architecture (The Cube)
+거리 기반 상태 전환과 비주얼 분리(BossVisual)가 적용된 보스 전용 구조입니다.
+
+**관련 코드:**
+*   **Controller**: `Assets/Scripts/Boss/BossController.cs`
+*   **Visual**: `Assets/Scripts/Boss/BossVisual.cs`
+*   **States**: `Assets/Scripts/Boss/BossFSM.cs` (모든 Boss State 클래스 포함)
+*   **Combat**: `Assets/Scripts/Combat/Health.cs`
+
+```mermaid
+classDiagram
+    direction TB
+
+    %% Components
+    class BossController {
+        <<MonoBehaviour>>
+        +MoveSpeed float
+        +DetectionRange float
+        -StateMachine~BossBaseState~ _stateMachine
+        +BossVisual Visual
+        +Update()
+    }
+
+    class BossBaseState {
+        <<Abstract>>
+        +Update()*
+    }
+
+    class BossVisual {
+        <<MonoBehaviour>>
+        +Animator Animator
+        +SetSpeed(float)
+        +TriggerAttack()
+    }
+
+    class Health { +CurrentHP int }
+
+    %% Concrete States
+    class BossIdleState { +Update() }
+    class BossCombatState { +Update() }
+    class BossSearchingState { +Update() }
+    class BossHitState { +Update() }
+    class BossDeadState { +Update() }
+
+    %% Relationships
+    BossController --> BossVisual : Controls
+    BossController --> Health : Uses
+    
+    BossBaseState --|> BaseState
+    BossBaseState <|-- BossIdleState
+    BossBaseState <|-- BossCombatState
+    BossBaseState <|-- BossSearchingState
+    BossBaseState <|-- BossHitState
+    BossBaseState <|-- BossDeadState
 ```
 
 ---
@@ -194,10 +240,10 @@ classDiagram
 | **Dash Logic** | ✅ Done | Cooldown 및 Edge-triggering 기능 포함 구현 완료. |
 | **Jump Logic** | ✅ Done | `JumpState` 구현 완료. 공중 이동/대시 지원. |
 | **Attack Logic** | ✅ Done | `AttackState` 구현 완료. 콤보/캔슬/개별 데미지 지원. |
-| **Asset Integration** | 🔄 In Progress | FSM-Animator 연동 코드 완료. Unity 에디터 설정 진행 중. |
+| **Asset Integration** | ✅ Done | FSM-Animator 연동 코드 완료. Unity 에디터 설정 완료. |
 | **Hit/Damage System** | ✅ Done | `IDamageable`, `DamageCaster`, `Health` 구현 완료. |
 | **Physics System** | ✅ Done | `NonAlloc` 물리 판정(OverlapSphere) 및 최적화 완료. |
-| **Boss AI (The Cube)** | ⬜ Todo | FSM 기반 추적/돌격/투사체 패턴 구현. |
+| **Boss AI (The Cube)** | 🔄 In Progress | FSM 기반 추적(Pattern 1) 구현 완료. 돌격/투사체 예정. |
 | **Object Pooling** | ⬜ Todo | 투사체/VFX Zero-Allocation 관리. |
 | **Game Loop** | ⬜ Todo | 게임 매니저, 승리/패배 흐름 제어. |
 | **Netcode Prep** | ⬜ Todo | 추후 `NetworkInputProvider` 추가 예정. |
