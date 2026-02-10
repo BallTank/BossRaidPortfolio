@@ -32,13 +32,19 @@ namespace Core.Common
         /// </summary>
         public virtual void TriggerHit()
         {
-            if (_animator) _animator.SetTrigger(AnimHit);
+            if (_animator)
+            {
+                _animator.CrossFade(AnimHit, 0.1f);
+            }
             StartCoroutine(FlashRoutine());
         }
 
         public virtual void TriggerDie()
         {
-            if (_animator) _animator.SetTrigger(AnimDie);
+            if (_animator)
+            {
+                _animator.CrossFade(AnimDie, 0.1f);
+            }
         }
 
         protected virtual IEnumerator FlashRoutine()

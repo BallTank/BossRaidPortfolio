@@ -146,7 +146,8 @@ classDiagram
 *   **Controller**: `Assets/Scripts/Boss/BossController.cs`
 *   **Visual**: `Assets/Scripts/Boss/BossVisual.cs`
 *   **States**: `Assets/Scripts/Boss/BossFSM.cs` (모든 Boss State 클래스 포함)
-*   **Combat**: `Assets/Scripts/Combat/Health.cs`
+*   **Attack Patterns**: `Assets/Scripts/Boss/Attacks/` (`IBossAttackPattern.cs`, `BasicAttackPattern.cs`)
+*   **Combat**: `Assets/Scripts/Common/Combat/Health.cs`, `Assets/Scripts/Common/Combat/DamageCaster.cs`
 
 ```mermaid
 classDiagram
@@ -157,8 +158,15 @@ classDiagram
         <<MonoBehaviour>>
         +MoveSpeed float
         +DetectionRange float
+        +AttackRange float
+        +AttackDamage int
+        +AttackDuration float
+        +CanAttack bool
         -StateMachine~BossBaseState~ _stateMachine
         +BossVisual Visual
+        +DamageCaster DamageCaster
+        +BasicAttackPattern BasicAttackPattern
+        +StartAttackCooldown()
         +Update()
     }
 
@@ -174,11 +182,31 @@ classDiagram
         +TriggerAttack()
     }
 
+    class IBossAttackPattern {
+        <<Interface>>
+        +Enter(BossController)*
+        +Update(BossController)* bool
+        +Exit(BossController)*
+    }
+
+    class BasicAttackPattern {
+        -float _timer
+        +Enter(BossController)
+        +Update(BossController) bool
+        +Exit(BossController)
+    }
+
+    class DamageCaster { +EnableHitbox(int) +DisableHitbox() }
     class Health { +CurrentHP int }
 
     %% Concrete States
     class BossIdleState { +Update() }
     class BossCombatState { +Update() }
+    class BossAttackState {
+        -IBossAttackPattern _currentPattern
+        +SetPattern(IBossAttackPattern)
+        +Update()
+    }
     class BossSearchingState { +Update() }
     class BossHitState { +Update() }
     class BossDeadState { +Update() }
@@ -186,13 +214,19 @@ classDiagram
     %% Relationships
     BossController --> BossVisual : Controls
     BossController --> Health : Uses
-    
+    BossController --> DamageCaster : Controls
+
     BossBaseState --|> BaseState
     BossBaseState <|-- BossIdleState
     BossBaseState <|-- BossCombatState
+    BossBaseState <|-- BossAttackState
     BossBaseState <|-- BossSearchingState
     BossBaseState <|-- BossHitState
     BossBaseState <|-- BossDeadState
+
+    IBossAttackPattern <|.. BasicAttackPattern : Implements
+    BossAttackState --> IBossAttackPattern : Delegates
+    DamageCaster ..> IDamageable : Hits
 ```
 
 ---
@@ -243,7 +277,8 @@ classDiagram
 | **Asset Integration** | ✅ Done | FSM-Animator 연동 코드 완료. Unity 에디터 설정 완료. |
 | **Hit/Damage System** | ✅ Done | `IDamageable`, `DamageCaster`, `Health` 구현 완료. |
 | **Physics System** | ✅ Done | `NonAlloc` 물리 판정(OverlapSphere) 및 최적화 완료. |
-| **Boss AI (The Cube)** | 🔄 In Progress | FSM 기반 추적(Pattern 1) 구현 완료. 돌격/투사체 예정. |
+| **Boss AI (The Cube)** | 🔄 In Progress | FSM 기반 추적(Pattern 1) + 근접 공격(BasicAttackPattern) 구현 완료. Strategy Pattern 적용. 돌격/투사체 예정. |
+| **Player Hit/Death** | ✅ Done | HitState(중력+무적), DeadState(코루틴 정리), CrossFade 애니메이션 적용 완료. |
 | **Object Pooling** | ⬜ Todo | 투사체/VFX Zero-Allocation 관리. |
 | **Game Loop** | ⬜ Todo | 게임 매니저, 승리/패배 흐름 제어. |
 | **Netcode Prep** | ⬜ Todo | 추후 `NetworkInputProvider` 추가 예정. |
@@ -251,9 +286,16 @@ classDiagram
 ---
 
 ### 💡 Antigravity Prompting Guide
+1. **테스트 주도 지시 (TDD-ish)**: AI에게 구현을 맡기기 전, 기능의 정상 작동 여부를 확인하기 위한 테스트 조건을 우선 정의하도록 요구한다. 이를 통해 결과물 검증 기준을 명확히 한다.
 
-이 파일을 기반으로 AI에게 작업을 지시할 때 다음과 같이 요청하세요:
+    > **예시)**
+    > "지금부터 [기능 이름]을 구현한다. 구현에 앞서 다음 사항을 먼저 수행하라.
+    >
+    > 1. 기능의 정상 작동을 확인하기 위한 **성공 조건(Success Criteria) 3가지**를 정의한다.
+    > 2. 발생 가능한 **예외 상황(Edge Case)** 및 논리적 오류 2가지를 예측한다.
+    >
+    > 위 조건들을 확인한 뒤 승인을 받으면 코드를 작성한다."
 
-> "System_Blueprint.md의 **FSM Layer** 섹션을 참고해서, 현재 `PlayerController.cs`에 있는 이동 로직을 추출하여 `MoveState` 클래스를 작성하고, `PlayerController`에는 상태 머신을 연결해줘."
+2. **모듈화의 극대화**: 모든 기능을 한 번에 구현하도록 지시하지 않고, 기능을 최소 단위로 세분화하여 요청한다. 이는 유지보수 용이성을 높이고 AI의 논리적 오류를 최소화한다.
 
-```
+3. **문서의 버전 관리**: 시스템 설계 문서가 업데이트될 때마다 변경 사항을 기록한다. 이는 프로젝트 규모 확장 시 발생할 수 있는 논리적 충돌을 추적하는 데 용이하다.

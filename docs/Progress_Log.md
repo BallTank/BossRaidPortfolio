@@ -185,6 +185,23 @@
     *   **Namespace Strategy**: `Core` 네임스페이스를 도입하여 "System"과 "Content"를 명확히 구분하고, 이름 충돌 방지 및 인텔리센스 가독성 향상.
     *   **Project Organization**: 스크립트의 물리적 위치(폴더)와 논리적 위치(네임스페이스)를 일치시켜 유지보수성을 높임.
 
+---
+
+### **2026-02-10 (화) 오후: Boss Attack & Player Hit/Death 구현**
+
+*   **작업 내용**
+    *   **보스 공격 로직**: `BossAttackState` 구현. `CombatState`에서 공격 사거리 내 진입 시 공격 애니메이션 재생 + `DamageCaster` 활성화 + 쿨다운 시스템.
+    *   **플레이어 피격 로직**: `HitState`에 중력 적용(공중 피격 시 부유 방지), 무적 시간, `CrossFade` 애니메이션 적용.
+    *   **플레이어 사망 로직**: `HandleDeath`에 `StopAllCoroutines()` 추가하여 사망 후 무적 코루틴 잔존 문제 해결.
+    *   **공격 패턴 시스템**: Strategy Pattern 적용. `IBossAttackPattern` 인터페이스 정의 및 `BasicAttackPattern`으로 기본 근접 공격 이관. 새 패턴 추가 시 코드 수정 최소화.
+    *   **점프 비활성화**: 애니메이션 부재로 `MoveState`에서 점프 전환 블록 주석 처리.
+    *   **문서 동기화**: `System_Blueprint.md` 클래스 다이어그램 현행화, `Progress_Log.md` 작성, `Technical_Glossary.md` 용어 추가.
+
+*   **기술적 포인트 (Senior's Review)**
+    *   **Strategy Pattern**: 공격 패턴을 인터페이스로 추상화하여 `BossAttackState`가 패턴 내용을 몰라도 실행할 수 있도록 설계. OCP(개방-폐쇄 원칙) 준수.
+    *   **Defensive Exit**: `BossAttackState.Exit()`에서 `DisableHitbox()` 호출로 사망 등 강제 전환 시 유령 데미지 방지.
+    *   **Coroutine Cleanup**: 사망 시 `StopAllCoroutines()`로 진행 중인 무적 코루틴을 정리하여, 좽은 객체에서 예상치 못한 상태 변경을 방지.
+
 ## 📈 2월 마일스톤: 싱글플레이 로직 완성 (Capsule vs Cube)
 
 > **목표**: 클라이언트 구축
@@ -218,10 +235,10 @@
 - [x] **Health 컴포넌트**: HP 관리, `OnDamage`/`OnDie` 이벤트 발행.
 - [x] **DamageCaster**: `OverlapSphereNonAlloc`으로 GC-Free 타격 판정.
 - [x] **Event-Driven Death**: `OnDie` 이벤트 구독으로 `DeadState` 전환.
-- [ ] **피격 렌더링**: 피격 시 Renderer 흰색 플래시 + 스턴 애니메이션.
 
 #### 보스 행동 패턴 🔄
 - [x] **패턴 1 (추적)**: 플레이어와의 거리 계산, 적정 거리 유지 및 공격 유도.
+- [x] **근접 공격 (BasicAttackPattern)**: `IBossAttackPattern` Strategy Pattern 적용. 쿨다운 시스템.
 - [ ] **패턴 2 (돌격)**: 예고 표시 후 큐브 돌진.
 - [ ] **패턴 3 (투사체)**: 큐브에서 작은 큐브(미사일) 발사.
 - [ ] **다중 레이캐스트 탐지**: 눈 위치(몸통 1/2~머리 중간)에서 여러 방향 감지.
@@ -238,6 +255,7 @@
 
 #### 🚧 폴리싱 
 - [ ] **(플레이어)대쉬 방향 수정**: 공격 방향이 아닌 키보드 입력 방향으로 대쉬.
+- [ ] **피격 플래시 이펙트**: `BaseVisual.FlashRoutine`을 Emission 기반으로 변경 (`material.SetColor("_EmissionColor")`) 또는 머티리얼 교체 방식 적용.
 
 ---
 

@@ -1,4 +1,5 @@
-﻿using Core.Combat;
+﻿using System.Collections;
+using Core.Combat;
 using Core.Common.Interfaces;
 using Core.Common.Patterns;
 using Core.Player;
@@ -31,6 +32,9 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable
     [Header("Attack Settings")]
     [SerializeField] private Core.Player.AttackComboData[] attackCombos;
     [SerializeField] private Core.Combat.DamageCaster _damageCaster;
+
+    [Header("Combat Settings")]
+    [SerializeField] private float invincibilityDuration = 1.0f;
 
     // Animation Constants
     public const string ANIM_PARAM_SPEED = "Speed";
@@ -147,11 +151,27 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable
     private void HandleDamage(int damage)
     {
         if (_health.IsDead) return;
+
+        // 무적 처리 (스턴 상태 중복 방지 및 후속타 무시)
+        StartCoroutine(InvincibilityRoutine());
+
         _stateMachine.ChangeState(HitState);
+    }
+
+    private IEnumerator InvincibilityRoutine()
+    {
+        if (_health != null)
+        {
+            _health.SetInvincible(true);
+            yield return new WaitForSeconds(invincibilityDuration);
+            _health.SetInvincible(false);
+        }
     }
 
     private void HandleDeath()
     {
+        // 진행 중인 코루틴 정리 (InvincibilityRoutine 등)
+        StopAllCoroutines();
         _stateMachine.ChangeState(DeadState);
     }
 

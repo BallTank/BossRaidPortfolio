@@ -12,10 +12,19 @@ namespace Core.Player.States
 
         public MoveState(PlayerController controller) : base(controller) { }
 
+        private const float GroundedGravity = -2.0f;
+
         public override void Enter()
         {
-            // 수직 속도 초기화
-            _verticalVelocity = 0;
+            // 수직 속도 초기화 (공중에서 전이된 경우 속도 유지)
+            if (Controller.CharController.isGrounded)
+            {
+                _verticalVelocity = GroundedGravity;
+            }
+            else
+            {
+                _verticalVelocity = Controller.CharController.velocity.y;
+            }
             _wasDashPressed = false;
             _wasJumpPressed = false;
 
@@ -44,14 +53,14 @@ namespace Core.Player.States
                 return;
             }
 
-            // Jump Transition (엣지 트리거 + 지면 체크)
-            bool jumpPressed = input.HasFlag(InputFlag.Jump);
-            if (jumpPressed && !_wasJumpPressed && Controller.CharController.isGrounded)
-            {
-                Controller.StateMachine.ChangeState(Controller.JumpState);
-                return;
-            }
-            _wasJumpPressed = jumpPressed;
+            // [DISABLED] Jump Transition - 애니메이션 미구현으로 비활성화
+            // bool jumpPressed = input.HasFlag(InputFlag.Jump);
+            // if (jumpPressed && !_wasJumpPressed && Controller.CharController.isGrounded)
+            // {
+            //     Controller.StateMachine.ChangeState(Controller.JumpState);
+            //     return;
+            // }
+            // _wasJumpPressed = jumpPressed;
 
             // Dash Transition (엣지 트리거 + 쿨타임 체크)
             bool dashPressed = input.HasFlag(InputFlag.Dash);
@@ -81,7 +90,7 @@ namespace Core.Player.States
             // Calc Velocity
             if (Controller.CharController.isGrounded && _verticalVelocity < 0)
             {
-                _verticalVelocity = -2f;
+                _verticalVelocity = GroundedGravity;
             }
             _verticalVelocity += Controller.Gravity * Time.deltaTime;
 

@@ -1,4 +1,5 @@
-﻿using Core.Combat;
+﻿using Core.Boss.Attacks;
+using Core.Combat;
 using Core.Common.Patterns;
 using UnityEngine;
 
@@ -23,6 +24,12 @@ namespace Core.Boss
         [SerializeField] private float searchDuration = 5.0f;
         [SerializeField] private LayerMask obstacleMask;
 
+        [Header("공격 설정 (Attack Settings)")]
+        [SerializeField] private int attackDamage = 20;
+        [SerializeField] private float attackDuration = 1.0f;
+        [SerializeField] private float attackCooldown = 2.0f;
+        [SerializeField] private DamageCaster _damageCaster;
+
         // FSM (제네릭 StateMachine 사용)
         private StateMachine<BossBaseState> _stateMachine;
         public StateMachine<BossBaseState> StateMachine => _stateMachine;
@@ -31,12 +38,17 @@ namespace Core.Boss
         public BossIdleState IdleState { get; private set; }
         public BossCombatState CombatState { get; private set; }
         public BossSearchingState SearchingState { get; private set; }
+        public BossAttackState AttackState { get; private set; }
         public BossHitState HitState { get; private set; }
         public BossDeadState DeadState { get; private set; }
+
+        // Attack Patterns
+        public BasicAttackPattern BasicAttackPattern { get; private set; }
 
         // Components
         private CharacterController _characterController;
         private Health _health;
+        private float _nextAttackTime;
 
         // Public Properties for States
         public Transform Target => playerTransform;
@@ -46,6 +58,10 @@ namespace Core.Boss
         public float DetectionRange => detectionRange;
         public float AttackRange => attackRange;
         public float SearchDuration => searchDuration;
+        public int AttackDamage => attackDamage;
+        public float AttackDuration => attackDuration;
+        public bool CanAttack => Time.time >= _nextAttackTime;
+        public DamageCaster DamageCaster => _damageCaster;
 
         private void Awake()
         {
@@ -63,9 +79,13 @@ namespace Core.Boss
             _stateMachine = new StateMachine<BossBaseState>();
             IdleState = new BossIdleState(this);
             CombatState = new BossCombatState(this);
+            AttackState = new BossAttackState(this);
             SearchingState = new BossSearchingState(this);
             HitState = new BossHitState(this);
             DeadState = new BossDeadState(this);
+
+            // Attack Patterns 초기화
+            BasicAttackPattern = new BasicAttackPattern();
 
             if (_health != null)
             {
@@ -164,6 +184,11 @@ namespace Core.Boss
         public void StopMoving()
         {
             if (animator) animator.SetSpeed(0f);
+        }
+
+        public void StartAttackCooldown()
+        {
+            _nextAttackTime = Time.time + attackCooldown;
         }
 
         #endregion
