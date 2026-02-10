@@ -159,14 +159,10 @@ classDiagram
         +MoveSpeed float
         +DetectionRange float
         +AttackRange float
-        +AttackDamage int
-        +AttackDuration float
         +CanAttack bool
         -StateMachine~BossBaseState~ _stateMachine
         +BossVisual Visual
         +DamageCaster DamageCaster
-        +BasicAttackPattern BasicAttackPattern
-        +StartAttackCooldown()
         +Update()
     }
 
@@ -182,31 +178,13 @@ classDiagram
         +TriggerAttack()
     }
 
-    class IBossAttackPattern {
-        <<Interface>>
-        +Enter(BossController)*
-        +Update(BossController)* bool
-        +Exit(BossController)*
-    }
-
-    class BasicAttackPattern {
-        -float _timer
-        +Enter(BossController)
-        +Update(BossController) bool
-        +Exit(BossController)
-    }
-
     class DamageCaster { +EnableHitbox(int) +DisableHitbox() }
     class Health { +CurrentHP int }
 
     %% Concrete States
     class BossIdleState { +Update() }
     class BossCombatState { +Update() }
-    class BossAttackState {
-        -IBossAttackPattern _currentPattern
-        +SetPattern(IBossAttackPattern)
-        +Update()
-    }
+    class BossAttackState { +Update() }
     class BossSearchingState { +Update() }
     class BossHitState { +Update() }
     class BossDeadState { +Update() }
@@ -224,9 +202,52 @@ classDiagram
     BossBaseState <|-- BossHitState
     BossBaseState <|-- BossDeadState
 
-    IBossAttackPattern <|.. BasicAttackPattern : Implements
-    BossAttackState --> IBossAttackPattern : Delegates
     DamageCaster ..> IDamageable : Hits
+```
+
+### 2.4. Boss Attack System (Strategy Pattern)
+공격 패턴의 확장성을 위해 `Strategy Pattern`을 적용했습니다. `BossAttackState`는 구체적인 공격 로직을 알지 못하며, 주입된 `IBossAttackPattern`에게 실행을 위임합니다.
+
+**관련 코드:**
+*   **Attack Patterns**: `Assets/Scripts/Boss/Attacks/` (`IBossAttackPattern.cs`, `BasicAttackPattern.cs`)
+
+```mermaid
+classDiagram
+    direction TB
+
+    class BossController {
+        +BasicAttackPattern BasicAttackPattern
+        +StartAttackCooldown()
+        +AttackDamage int
+        +AttackDuration float
+    }
+
+    class BossAttackState {
+        -IBossAttackPattern _currentPattern
+        +SetPattern(IBossAttackPattern)
+        +Enter()
+        +Update()
+        +Exit()
+    }
+
+    class IBossAttackPattern {
+        <<Interface>>
+        +Enter(BossController)*
+        +Update(BossController)* bool
+        +Exit(BossController)*
+    }
+
+    class BasicAttackPattern {
+        -float _timer
+        +Enter(BossController)
+        +Update(BossController) bool
+        +Exit(BossController)
+    }
+
+    %% Relationships
+    BossAttackState --> IBossAttackPattern : Delegates (Context -> Strategy)
+    IBossAttackPattern <|.. BasicAttackPattern : Implements
+    BossController --> BasicAttackPattern : Owns
 ```
 
 ---

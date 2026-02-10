@@ -1,6 +1,6 @@
 # 🚀 Progress Log: Boss Raid Portfolio
 
-## 📅 [2월 1주차] 목표: 플레이어 컨트롤러 및 상태 머신 (The Capsule)
+## 📅 [2월 1주차] 목표: 플레이어 컨트롤러 및 상태 머신
 
 ### **2026-02-02 (월): 기획 및 아키텍처 설계**
 
@@ -168,39 +168,35 @@
 
 ---
 
-### **2026-02-10 (화): Documentation Synchronization**
+### **2026-02-10 (화): Combat System 구현 & 프로젝트 구조화**
+
 
 *   **작업 내용**
-    *   **System Blueprint Update**: `StateMachine<T>` 및 `BossVisual` 분리 등 최신 아키텍처를 반영하여 클래스 다이어그램 현행화.
-    *   **Status Check**: 보스 AI 진행 상황(Pattern 1 완료)을 `System_Blueprint` 상태표에 갱신.
-    *   **Progress Log**: 개발 내역과 문서 간의 동기화 완료.
-    *   **Architecture Restructuring**: 프로젝트 폴더 구조를 `Common`, `Player`, `Boss`로 명확히 분리하여 모듈성 강화.
-    *   **Namespace Refactoring**: `BossRaid` 네임스페이스를 `Core`로 변경하여 직관성 확보 (`Core.Player`, `Core.Boss`, `Core.Common`).
-    *   **Dependency Cleanup**: `PlayerController.cs`를 `Assets/Scripts/Player/`로 이동하고, 루트 디렉토리의 중복 폴더(`Patterns`, `Interfaces`, `Combat`) 정리.
-    *   **Lint Fixes**: 네임스페이스 변경에 따른 모든 참조(`using`) 수정 및 컴파일 에러 해결.
 
-*   **기술적 포인트**
-    *   **Living Documentation**: 코드가 변하면 문서도 즉시 변해야 한다는 원칙(`AI_Maintenance_Guide.md`) 실천.
-    *   **Visual Communication**: 다이어그램을 통해 'Generic FSM' 구조와 'Visual Separation' 설계 의도를 명확히 전달.
-    *   **Namespace Strategy**: `Core` 네임스페이스를 도입하여 "System"과 "Content"를 명확히 구분하고, 이름 충돌 방지 및 인텔리센스 가독성 향상.
-    *   **Project Organization**: 스크립트의 물리적 위치(폴더)와 논리적 위치(네임스페이스)를 일치시켜 유지보수성을 높임.
+    **플레이어 피격 및 사망 로직 구현**
+    *   `HitState` 구현: 중력 적용(공중 피격 시 부유 방지), 무적 시간, `CrossFade` 애니메이션.
+    *   `HandleDeath`에 `StopAllCoroutines()` 추가하여 사망 후 무적 코루틴 잔존 방지.
+    *   점프 전환 비활성화 (애니메이션 부재, `MoveState` 주석 처리).
+    *   `BaseVisual`: `TriggerHit`/`TriggerDie` CrossFade 방식으로 변경.
 
----
+    **보스 공격 시스템 및 전략 패턴(Strategy Pattern) 적용**
+    *   `BossAttackState` 구현: `IBossAttackPattern`에 위임하는 범용 실행기로 설계 (Strategy Pattern).
+    *   `BasicAttackPattern`: 기존 근접 공격 로직 이관 (애니메이션 + DamageCaster + 타이머).
+    *   `BossCombatState`: attackRange 내 + 쿨다운 완료 시 공격 전환.
 
-### **2026-02-10 (화) 오후: Boss Attack & Player Hit/Death 구현**
+    **프로젝트 구조화**
+    *   폴더 구조를 `Common`, `Player`, `Boss`로 분리. `BossRaid` → `Core` 네임스페이스 리팩토링.
+    *   `PlayerController.cs` 이동 및 중복 폴더(`Patterns`, `Interfaces`, `Combat`) 정리.
 
-*   **작업 내용**
-    *   **보스 공격 로직**: `BossAttackState` 구현. `CombatState`에서 공격 사거리 내 진입 시 공격 애니메이션 재생 + `DamageCaster` 활성화 + 쿨다운 시스템.
-    *   **플레이어 피격 로직**: `HitState`에 중력 적용(공중 피격 시 부유 방지), 무적 시간, `CrossFade` 애니메이션 적용.
-    *   **플레이어 사망 로직**: `HandleDeath`에 `StopAllCoroutines()` 추가하여 사망 후 무적 코루틴 잔존 문제 해결.
-    *   **공격 패턴 시스템**: Strategy Pattern 적용. `IBossAttackPattern` 인터페이스 정의 및 `BasicAttackPattern`으로 기본 근접 공격 이관. 새 패턴 추가 시 코드 수정 최소화.
-    *   **점프 비활성화**: 애니메이션 부재로 `MoveState`에서 점프 전환 블록 주석 처리.
-    *   **문서 동기화**: `System_Blueprint.md` 클래스 다이어그램 현행화, `Progress_Log.md` 작성, `Technical_Glossary.md` 용어 추가.
+    **기술 문서 및 아키텍처 최신화**
+    *   `System_Blueprint.md`: Boss AI 클래스 다이어그램에 `BossAttackState`, `IBossAttackPattern`, `DamageCaster` 추가.
+    *   `Technical_Glossary.md`: Strategy Pattern, Invincibility Frame 등 용어 추가 및 섹션 재배치.
 
 *   **기술적 포인트 (Senior's Review)**
-    *   **Strategy Pattern**: 공격 패턴을 인터페이스로 추상화하여 `BossAttackState`가 패턴 내용을 몰라도 실행할 수 있도록 설계. OCP(개방-폐쇄 원칙) 준수.
+    *   **Strategy Pattern (OCP)**: 공격 패턴을 인터페이스로 추상화하여 `BossAttackState`가 패턴 내용을 몰라도 실행 가능. 새 패턴 추가 시 기존 코드 수정 불필요.
     *   **Defensive Exit**: `BossAttackState.Exit()`에서 `DisableHitbox()` 호출로 사망 등 강제 전환 시 유령 데미지 방지.
-    *   **Coroutine Cleanup**: 사망 시 `StopAllCoroutines()`로 진행 중인 무적 코루틴을 정리하여, 좽은 객체에서 예상치 못한 상태 변경을 방지.
+    *   **Coroutine Cleanup**: 사망 시 `StopAllCoroutines()`로 잔존 코루틴이 죽은 객체에 부작용을 일으키는 것을 방지.
+    *   **Namespace Strategy**: `Core` 네임스페이스로 물리적 위치(폴더)와 논리적 위치(네임스페이스)를 일치시켜 유지보수성 향상.
 
 ## 📈 2월 마일스톤: 싱글플레이 로직 완성 (Capsule vs Cube)
 
@@ -230,7 +226,7 @@
 - [x] **IState 인터페이스**: `Enter()`/`Exit()` 공통 계약 정의로 StateMachine의 구체 타입 의존 제거.
 - [x] **BossVisual 분리**: 애니메이션/UI 제어를 `BossVisual` 클래스로 이관하여 SRP 준수.
 
-#### 피격 로직 (Player & Boss 공통) 🔄
+#### 피격 로직 (Player & Boss 공통) ✅
 - [x] **IDamageable 인터페이스**: 공격자가 타겟 타입을 몰라도 데미지 전달 가능.
 - [x] **Health 컴포넌트**: HP 관리, `OnDamage`/`OnDie` 이벤트 발행.
 - [x] **DamageCaster**: `OverlapSphereNonAlloc`으로 GC-Free 타격 판정.
