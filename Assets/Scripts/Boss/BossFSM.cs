@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using Core.Boss.Attacks;
+using UnityEngine;
 
 namespace Core.Boss
 {
@@ -62,12 +63,65 @@ namespace Core.Boss
             else
             {
                 Controller.StopMoving();
-                // 임시로 바라보기만 함
                 Controller.RotateTowards(Controller.Target.position);
+
+                // 공격 쿨타임 확인 후 공격 전환
+                if (Controller.CanAttack)
+                {
+                    Controller.AttackState.SetPattern(Controller.BasicAttackPattern);
+                    Controller.StateMachine.ChangeState(Controller.AttackState);
+                }
             }
         }
 
         public override void Exit() { }
+    }
+
+    public class BossAttackState : BossBaseState
+    {
+        private IBossAttackPattern _currentPattern;
+
+        public BossAttackState(BossController controller) : base(controller) { }
+
+        /// <summary>
+        /// 실행할 공격 패턴을 설정한다. CombatState에서 전환 전에 호출.
+        /// </summary>
+        public void SetPattern(IBossAttackPattern pattern)
+        {
+            _currentPattern = pattern;
+        }
+
+        public override void Enter()
+        {
+            // 패턴 미할당 시 안전하게 복귀
+            if (_currentPattern == null)
+            {
+                Debug.LogWarning("BossAttackState: No pattern assigned!");
+                Controller.StateMachine.ChangeState(Controller.CombatState);
+                return;
+            }
+
+            _currentPattern.Enter(Controller);
+        }
+
+        public override void Update()
+        {
+            if (_currentPattern == null) return;
+
+            // true 반환 = 공격 종료
+            if (_currentPattern.Update(Controller))
+            {
+                Controller.StateMachine.ChangeState(Controller.CombatState);
+            }
+        }
+
+        public override void Exit()
+        {
+            _currentPattern?.Exit(Controller);
+
+            // 공격 쿨다운 시작
+            Controller.StartAttackCooldown();
+        }
     }
 
     public class BossSearchingState : BossBaseState

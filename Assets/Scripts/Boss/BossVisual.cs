@@ -21,7 +21,10 @@ namespace Core.Boss
 
         public void TriggerAttack()
         {
-            if (_animator) _animator.SetTrigger(AnimAttack);
+            if (_animator)
+            {
+                _animator.CrossFade(AnimAttack, 0.1f);
+            }
         }
 
         public void SetSearchingUI(bool active)
