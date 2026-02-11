@@ -119,3 +119,20 @@ stateDiagram-v2
 ### 6.2. Event-Driven Interaction (`Health.OnDie`)
 *   **Decoupling**: 보스 AI가 매 프레임 `if (hp <= 0)`을 체크하지 않습니다.
 *   **Efficiency**: 오직 사망 사건이 발생했을 때만 로직이 실행되므로 성능 낭비가 없습니다.
+
+## 7. 구현된 공격 패턴 (Implemented Attack Patterns)
+
+### 7.1. Basic Attack (기본 공격)
+*   **동작**: 제자리에서 플레이어를 향해 머리를 휘두르는 근접 공격.
+*   **로직**:
+    1.  `DamageCaster` 활성화 (Animation Event).
+    2.  `attackDamage` 적용.
+    3.  `attackDuration` 동안 대기 후 종료.
+
+### 7.2. Claw Attack (할퀴기 돌진)
+*   **동작**: 플레이어를 향해 회전 후, 짧은 거리를 도약(Rush)하여 발톱으로 할퀴는 공격.
+*   **전략 패턴(Strategy)**: `IBossAttackPattern`을 구현하여 `BossAttackState`의 수정 없이 추가됨.
+*   **설정(`ClawAttackSettings`)**:
+    *   `damageMultiplier`: 기본 공격력의 1.5배.
+    *   `rushSpeed`: 도약 속도.
+    *   `rushDuration`: 도약 시간.

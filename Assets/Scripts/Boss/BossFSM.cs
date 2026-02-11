@@ -58,7 +58,17 @@ namespace Core.Boss
             // 공격 사거리 체크
             if (distance > Controller.AttackRange)
             {
-                Controller.MoveTo(Controller.Target.position, Controller.MoveSpeed);
+                // 추적 기능이 켜져 있을 때만 이동 (디버그용)
+                if (Controller.EnableChase)
+                {
+                    Controller.MoveTo(Controller.Target.position, Controller.MoveSpeed);
+                }
+                else
+                {
+                    // 추적 비활성화 시 제자리에서 회전만 수행
+                    Controller.StopMoving();
+                    Controller.RotateTowards(Controller.Target.position);
+                }
             }
             else
             {
@@ -68,8 +78,29 @@ namespace Core.Boss
                 // 공격 쿨타임 확인 후 공격 전환
                 if (Controller.CanAttack)
                 {
-                    Controller.AttackState.SetPattern(Controller.BasicAttackPattern);
-                    Controller.StateMachine.ChangeState(Controller.AttackState);
+                    IBossAttackPattern selectedPattern = null;
+
+                    // 활성화된 공격 패턴 확인 및 선택
+                    if (Controller.EnableBasicAttack && Controller.EnableClawAttack)
+                    {
+                        // 둘 다 활성화 시 50% 확률로 선택
+                        selectedPattern = (Random.value > 0.5f) ? Controller.BasicAttackPattern : Controller.ClawAttackPattern;
+                    }
+                    else if (Controller.EnableBasicAttack)
+                    {
+                        selectedPattern = Controller.BasicAttackPattern;
+                    }
+                    else if (Controller.EnableClawAttack)
+                    {
+                        selectedPattern = Controller.ClawAttackPattern;
+                    }
+
+                    // 선택된 패턴이 있을 경우에만 공격 상태로 전환
+                    if (selectedPattern != null)
+                    {
+                        Controller.AttackState.SetPattern(selectedPattern);
+                        Controller.StateMachine.ChangeState(Controller.AttackState);
+                    }
                 }
             }
         }

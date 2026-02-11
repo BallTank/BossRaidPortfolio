@@ -252,6 +252,7 @@
 #### 🚧 폴리싱 
 - [ ] **(플레이어)대쉬 방향 수정**: 공격 방향이 아닌 키보드 입력 방향으로 대쉬.
 - [ ] **피격 플래시 이펙트**: `BaseVisual.FlashRoutine`을 Emission 기반으로 변경 (`material.SetColor("_EmissionColor")`) 또는 머티리얼 교체 방식 적용.
+- [ ] **(보스)Run/Walk 애니매이션 추가**: Run 애니메이션 추가 및 그에 맞는 보스 움직임 속도 부드럽게 증가시키기
 
 ---
 
@@ -260,3 +261,26 @@
 
 ---
 
+### **2026-02-11 (수): Boss Asset & Physics Integration**
+
+*   **작업 내용**
+    *   **Asset 교체**: 기존 **Cube**를 **Dragon** 모델로 전면 교체.
+    *   **Animator & Blend Tree**: Idle/Walk 모션 혼합을 위한 Blend Tree 구축.
+        *   Threshold 수동 설정: `0`(Idle), `3.5`(Walk).
+    *   **Movement Sync**:          
+        *   `CharacterController` Radius/Height(1/1) 조정으로 공중 부양(Floating) 이슈 해결.
+        *   플레이어와 동일한 중력(`Physics.gravity`) 로직 적용.
+    *   **Boss Logic & Patterns**:
+        *   **ClawAttackPattern 구현**: `IBossAttackPattern`을 구현한 신규 공격 클래스 추가 (Strategy Pattern 확장).
+        *   **로직**: 타겟 회전 → 애니메이션 → Hitbox 활성화(데미지 계수) → 돌진(Rush) → 정지.
+        *   **Feature Toggles**: `enableChase`, `enableRotation`, `enableBasic/ClawAttack` 등 기능별 On/Off 디버그 인스펙터 추가.
+    *   **Hitbox System**:
+        *   **Compound Colliders**: 이동용 `CharacterController`와 피격용 `Capsule Collider`(Head, Body, Tail - Bone 부착) 역할 분리.
+        *   `BossHitBox` - `BossHealth` 중계 구조 구현.
+        *   `DamageCaster` 중복 피격 방지(단일 프레임 다중 히트 무시) 로직 추가.
+    *   **Tools**: 기능별(Attack, Chase) Toggle 인스펙터 추가, Raycast 시각화(Gizmo 색상 변경).
+
+*   **기술적 포인트**
+    *   **Asset Migration Strategy**: 단순 모델 교체가 아닌, 물리(Controller)와 피격(Collider)을 분리하여 유지보수성 확보.
+    *   **Compound Collider**: Mesh Collider의 오버헤드를 피하고, Bone을 따라가는 Primitive Collider 조합으로 성능 최적화.
+    *   **Strategy Pattern Flexibility**: `BasicAttackPattern`에 이어 `ClawAttackPattern`을 추가할 때, **`BossAttackState`의 코드 수정 없이** 패턴 클래스만 추가하여 확장이 가능함을 입증 (OCP 준수).

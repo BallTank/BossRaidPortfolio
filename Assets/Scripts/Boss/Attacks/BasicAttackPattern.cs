@@ -21,7 +21,7 @@ namespace Core.Boss.Attacks
             }
 
             // 공격 애니메이션 재생
-            controller.Visual?.TriggerAttack();
+            controller.Visual?.PlayAttack();
 
             // DamageCaster 활성화
             controller.DamageCaster?.EnableHitbox(controller.AttackDamage);

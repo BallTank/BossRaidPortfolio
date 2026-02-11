@@ -73,9 +73,30 @@ namespace Core.Combat
                 IDamageable target = col.GetComponent<IDamageable>();
                 if (target != null)
                 {
+                    // 중복 타격 방지 로직 개선:
+                    // BossHitBox인 경우 Owner(보스 본체)의 ID를 추적, 일반 몬스터는 자신의 ID 추적.
+                    int realTargetID = 0;
+
+                    if (target is BossHitBox bossHitBox && bossHitBox.Owner != null)
+                    {
+                        realTargetID = bossHitBox.Owner.gameObject.GetInstanceID();
+                    }
+                    else if (target is MonoBehaviour targetMono)
+                    {
+                        realTargetID = targetMono.gameObject.GetInstanceID();
+                    }
+                    else
+                    {
+                        realTargetID = targetID;
+                    }
+
+                    if (_hitTargets.Contains(realTargetID)) continue;
+
                     target.TakeDamage(_damagePayload);
-                    _hitTargets.Add(targetID); // 중복 타격 방지 목록에 추가
-                    Debug.Log($"⚔️ Hit Logic: Dealt {_damagePayload} damage to {col.name}");
+                    _hitTargets.Add(realTargetID); // 실제 대상 ID 등록
+
+                    // 디버그 로그 (필요시 주석 해제)
+                    // Debug.Log($"⚔️ Hit: {col.name} -> RealTarget: {realTargetID}");
                 }
             }
         }

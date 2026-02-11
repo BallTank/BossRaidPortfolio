@@ -12,7 +12,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable
     [Header("Movement Settings")]
     [SerializeField] private float moveSpeed = 6.0f;
     [SerializeField] private float rotationSpeed = 10.0f;
-    [SerializeField] private float gravity = -9.81f;
+    // [SerializeField] private float gravity = -9.81f; // Removed in favor of Physics.gravity.y
 
     [Header("Camera")]
     [SerializeField] private Transform cameraRoot;
@@ -64,7 +64,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable
     // Public Properties for States
     public float MoveSpeed => moveSpeed;
     public float RotationSpeed => rotationSpeed;
-    public float Gravity => gravity;
+    public float Gravity => Physics.gravity.y; // 전역 중력 설정 사용 (Uses global Physics.gravity.y)
     public Transform CameraRoot => cameraRoot;
     public IInputProvider InputProvider => _inputProvider;
     public PlayerVisual Visual => playerVisual;

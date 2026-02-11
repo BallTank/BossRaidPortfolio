@@ -78,6 +78,10 @@ crashlytics-build.properties
 /[Aa]ssets/CombatGirlsCharacterPack/
 /[Aa]ssets/CombatGirlsCharacterPack.meta
 
+# Dragon Asset
+/[Aa]ssets/FourEvilDragonsPBR/
+/[Aa]ssets/FourEvilDragonsPBR.meta
+
 # IDE and Tooling
 .vscode/
 .gemini/

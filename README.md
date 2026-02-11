@@ -71,4 +71,4 @@ Assets/Scripts/Core
 ## 📧 Contact
 
 *   **이름**: 이종휘
-*   **Email**: [osmf12@naver.com]
+*   **Email**: osmf12@naver.com
