@@ -106,3 +106,46 @@ The type 'PlayerController' already contains a definition for 'ANIM_STATE_ATTACK
 - ✅ Quickshift_F 대시 애니메이션
 - ✅ Jump 애니메이션 (임시 모션)
 - ✅ 모든 State에서 Locomotion으로 정상 복귀
+
+---
+
+## 6. Boss (Dragon) 애니메이션 구현 (2025-02-11)
+
+### 6.1. 아키텍처
+```
+Boss (Root)
+├── BossController.cs (AI 로직)
+├── CharacterController (물리)
+└── Dragon (Child)
+    ├── BossVisual.cs (애니메이션/이펙트)
+    ├── Animator
+    └── Dragon Mesh
+```
+
+**핵심 원리**: Player와 동일하게 Logic/Visual 분리. `BossController`는 `BossVisual`에 애니메이션 호출을 위임.
+
+### 6.2. 애니메이션 상수 정의 (`BossVisual.cs`)
+```csharp
+private const string ANIM_LOCOMOTION   = "Locomotion";
+private const string ANIM_BASIC_ATTACK = "Basic Attack";
+private const string ANIM_CLAW_ATTACK  = "Claw Attack";
+// Hit, Die는 BaseVisual에서 상속
+```
+
+### 6.3. State별 애니메이션 호출
+| 상태 | 메서드 | 호출 코드 |
+|------|--------|-----------|
+| Idle/Combat (이동) | `PlayMove()` / `SetSpeed()` | Blend Tree의 `Speed` 파라미터 조절 |
+| Basic Attack | `PlayAttack()` | `CrossFade("Basic Attack")` |
+| Claw Attack | `PlayClawAttack()` | `CrossFade("Claw Attack")` |
+| Hit | `TriggerHit()` | `CrossFade("Hit")` + Flash 이펙트 |
+| Dead | `TriggerDie()` | `CrossFade("Die")` |
+
+### 6.4. Blend Tree 설정
+| 파라미터 | 값 범위 | 동작 |
+|----------|---------|------|
+| `Speed` = 0 | Idle | 정지 애니메이션 |
+| `Speed` ≥ 3.5 | Walk | 걷기 애니메이션 |
+
+> Threshold `3.5`는 `BossController.moveSpeed`와 동기화되어 있습니다.
+

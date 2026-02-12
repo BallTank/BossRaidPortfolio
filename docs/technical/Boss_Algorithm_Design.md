@@ -14,37 +14,33 @@
 
 ## 3. 상태 머신 흐름도 (State Machine Flow)
 ```mermaid
-stateDiagram-v2
-    [*] --> Idle
+flowchart TD
+    Start(( )) --> Idle
 
-    state Idle {
-        [*] --> Waiting
-        Waiting --> Detect: 거리 < 10m
-        Detect --> Combat: 시야 확보됨 (Raycast)
-    }
+    subgraph Idle
+        Waiting -->|"거리 < 10m"| Detect
+        Detect -->|"시야 확보 (Raycast)"| Combat_Entry
+    end
 
-    state Combat {
-        [*] --> Chasing
-        Chasing --> Attacking: 거리 < 2.5m
-        Attacking --> Chasing: 공격 종료
-        Chasing --> Searching: 거리 > 10m (도망감)
-    }
+    subgraph Combat
+        Combat_Entry[Chasing] -->|"거리 < 2.5m"| Attacking
+        Attacking -->|"공격 종료"| Combat_Entry
+        Combat_Entry -->|"거리 > 10m (도망감)"| Search_Entry
+    end
 
-    state Searching {
-        [*] --> MoveToLastKnown
-        MoveToLastKnown --> Scanning: 5초 대기
-        Scanning --> Idle: 시간 초과
-        Scanning --> Combat: 플레이어 재발견
-    }
+    subgraph Searching
+        Search_Entry[MoveToLastKnown] -->|"5초 대기"| Scanning
+        Scanning -->|"시간 초과"| Idle
+        Scanning -->|"플레이어 재발견"| Combat_Entry
+    end
 
-    state Dead {
-        [*] --> DieAnimation
-        DieAnimation --> [*]
-    }
+    subgraph Dead
+        DieAnimation --> End(( ))
+    end
 
-    Idle --> Dead: HP <= 0
-    Combat --> Dead: HP <= 0
-    Searching --> Dead: HP <= 0
+    Idle -->|"HP <= 0"| DieAnimation
+    Combat -->|"HP <= 0"| DieAnimation
+    Searching -->|"HP <= 0"| DieAnimation
 ```
 
 ## 4. 상태 머신 로직 (State Machine Logic)

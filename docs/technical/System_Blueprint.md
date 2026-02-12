@@ -1,6 +1,3 @@
-### 📄 [File Content] `System_Blueprint.md`
-
-```markdown
 # 🛠️ System Blueprint: Boss Raid Portfolio
 
 이 문서는 프로젝트의 핵심 아키텍처 설계와 데이터 규칙을 정의합니다. AI 및 개발자는 이 청사진을 준수하여 코드를 작성해야 합니다.
@@ -20,12 +17,25 @@
 classDiagram
     direction TB
 
-    %% Interfaces & Data
-    class IInputProvider { +GetInput() PlayerInputPacket }
-    class IDashContext { +StartDashCooldown() }
-    class IAttackable { +AttackCombos AttackComboData[] }
-    class IDamageable { +TakeDamage(int) }
-    
+    %% Interfaces
+    class IInputProvider {
+        <<Interface>>
+        +GetInput() PlayerInputPacket
+    }
+    class IDashContext {
+        <<Interface>>
+        +StartDashCooldown()
+    }
+    class IAttackable {
+        <<Interface>>
+        +AttackCombos AttackComboData[]
+    }
+    class IDamageable {
+        <<Interface>>
+        +TakeDamage(int)
+    }
+
+    %% Data
     class PlayerInputPacket { <<Struct>> }
     class AttackComboData { <<Struct>> }
     class InputFlag { <<Enumeration>> }
@@ -35,7 +45,7 @@ classDiagram
         <<MonoBehaviour>>
         +MoveSpeed float
         +Animator Animator
-        -StateMachine~PlayerBaseState~ _stateMachine
+        -_stateMachine StateMachine
         +MoveState MoveState
         +DashState DashState
         +JumpState JumpState
@@ -46,6 +56,12 @@ classDiagram
         +Update()
     }
 
+    class BaseState {
+        <<Abstract>>
+        +Enter()
+        +Exit()
+    }
+
     class PlayerBaseState {
         <<Abstract>>
         +Update(PlayerInputPacket)*
@@ -53,8 +69,12 @@ classDiagram
 
     class LocalInputProvider { +GetInput() }
     class PlayerVisual { +Animator Animator }
-    class DamageCaster { +EnableHitbox(int) }
-    class Health { +CurrentHP int }
+    class DamageCaster { +EnableHitbox(int) +DisableHitbox() }
+    class Health {
+        +CurrentHP int
+        +OnDamageTaken Action
+        +OnDeath Action
+    }
 
     %% Concrete States
     class MoveState { +Update() }
@@ -65,26 +85,26 @@ classDiagram
     class DeadState { +Update() }
 
     %% Relationships
-    IInputProvider <|.. LocalInputProvider : Implements
-    IDashContext <|.. PlayerController : Implements
-    IAttackable <|.. PlayerController : Implements
-    IDamageable <|.. Health : Implements
+    LocalInputProvider ..|> IInputProvider : implements
+    PlayerController ..|> IDashContext : implements
+    PlayerController ..|> IAttackable : implements
+    Health ..|> IDamageable : implements
 
-    PlayerController --> IInputProvider : Uses
-    PlayerController --> PlayerVisual : Controls
-    PlayerController --> DamageCaster : Controls
-    PlayerController --> Health : Uses
-    
-    PlayerBaseState --|> BaseState
-    PlayerBaseState <|-- MoveState
-    PlayerBaseState <|-- DashState
-    PlayerBaseState <|-- JumpState
-    PlayerBaseState <|-- AttackState
-    PlayerBaseState <|-- HitState
-    PlayerBaseState <|-- DeadState
+    PlayerController --> IInputProvider : uses
+    PlayerController --> PlayerVisual : controls
+    PlayerController --> DamageCaster : controls
+    PlayerController --> Health : owns
 
-    DamageCaster ..> IDamageable : Hits
-    PlayerInputPacket --* LocalInputProvider : Creates
+    PlayerBaseState --|> BaseState : extends
+    MoveState --|> PlayerBaseState : extends
+    DashState --|> PlayerBaseState : extends
+    JumpState --|> PlayerBaseState : extends
+    AttackState --|> PlayerBaseState : extends
+    HitState --|> PlayerBaseState : extends
+    DeadState --|> PlayerBaseState : extends
+
+    DamageCaster ..> IDamageable : depends
+    LocalInputProvider o-- PlayerInputPacket : creates
 ```
 
 ### 2.2. Boss AI Architecture (The Dragon)
@@ -94,8 +114,8 @@ classDiagram
 *   **Controller**: `Assets/Scripts/Boss/BossController.cs`
 *   **Visual**: `Assets/Scripts/Boss/BossVisual.cs`
 *   **States**: `Assets/Scripts/Boss/BossFSM.cs` (모든 Boss State 클래스 포함)
-*   **Attack Patterns**: `Assets/Scripts/Boss/Attacks/` (`IBossAttackPattern.cs`, `BasicAttackPattern.cs`)
-*   **Combat**: `Assets/Scripts/Common/Combat/Health.cs`, `Assets/Scripts/Common/Combat/DamageCaster.cs`
+*   **Attack Patterns**: `Assets/Scripts/Boss/Attacks/` (`IBossAttackPattern.cs`, `BasicAttackPattern.cs`, `ClawAttackPattern.cs`)
+*   **Combat**: `Assets/Scripts/Common/Combat/Health.cs`, `Assets/Scripts/Common/Combat/DamageCaster.cs`, `Assets/Scripts/Common/Combat/BossHitBox.cs`
 
 ```mermaid
 classDiagram
@@ -110,8 +130,11 @@ classDiagram
         +CanAttack bool
         -StateMachine~BossBaseState~ _stateMachine
         +BossVisual Visual
-        +DamageCaster DamageCaster
+        +DamageCaster HeadDamageCaster
+        +DamageCaster ClawDamageCaster
+        +ClawAttackSettings ClawAttackSettings
         +Update()
+        +MoveRaw(Vector3, float)
     }
 
     class BossBaseState {
@@ -123,11 +146,23 @@ classDiagram
         <<MonoBehaviour>>
         +Animator Animator
         +SetSpeed(float)
-        +TriggerAttack()
+        +PlayIdle()
+        +PlayMove()
+        +PlayAttack()
+        +PlayClawAttack()
+        +TriggerHit()
+        +TriggerDie()
+        +SetSearchingUI(bool)
     }
 
-    class DamageCaster { +EnableHitbox(int) +DisableHitbox() }
-    class Health { +CurrentHP int }
+    class BossHitBox {
+        <<MonoBehaviour>>
+        +Owner Health
+        +TakeDamage(int)
+    }
+
+    class DamageCaster { +EnableHitbox(int) +DisableHitbox() +SetOwner(GameObject) }
+    class Health { +CurrentHP int +OnDamageTaken Action~int~ +OnDeath Action }
 
     %% Concrete States
     class BossIdleState { +Update() }
@@ -150,6 +185,8 @@ classDiagram
     BossBaseState <|-- BossHitState
     BossBaseState <|-- BossDeadState
 
+    IDamageable <|.. BossHitBox : Implements
+    BossHitBox --> Health : Delegates
     DamageCaster ..> IDamageable : Hits
 ```
 
@@ -295,4 +332,4 @@ classDiagram
 
 > "System_Blueprint.md의 **FSM Layer** 섹션을 참고해서, 현재 `PlayerController.cs`에 있는 이동 로직을 추출하여 `MoveState` 클래스를 작성하고, `PlayerController`에는 상태 머신을 연결해줘."
 
-```
+

@@ -8,11 +8,11 @@
 
 ```mermaid
 sequenceDiagram
-    participant Input as [1] LocalInputProvider
-    participant Packet as [2] PlayerInputPacket
-    participant PC as [3] PlayerController
-    participant SM as [4] StateMachine
-    participant State as [5] States (Move/Jump/Attack)
+    participant Input as 1. LocalInputProvider
+    participant Packet as 2. PlayerInputPacket
+    participant PC as 3. PlayerController
+    participant SM as 4. StateMachine
+    participant State as 5. States (Move/Jump/Attack)
 
     Note over Input: 매 프레임 Update()
     Input->>Input: 키보드/마우스 값 읽기

@@ -69,3 +69,43 @@ Base Layer에 다음 상태들을 만드십시오.
    - *참고: 현재 프로젝트에 명시적인 'Jump' 모션이 안 보인다면 `CrouchIdle`이나 `Evade`를 임시로 사용하십시오.*
 
 *팁: 코드가 `CrossFade`로 애니메이션을 직접 제어하므로 복잡한 트랜지션 연결은 필요 없습니다.*
+
+---
+
+## 5. Boss (Dragon) Animator 설정
+
+### 5.1. 계층 구조
+```
+Boss (Root)          <-- BossController (Logic), CharacterController (Physics)
+ └── Dragon (Child)  <-- Animator (Visual), BossVisual.cs
+```
+
+### 5.2. Controller 구성
+
+**파일**: `Assets/Animations/BossAnimator.controller` (또는 Dragon 프리팹 내장)
+
+#### Parameters
+| Name | Type | 용도 |
+|------|------|------|
+| `Speed` | Float | Locomotion Blend Tree (Idle ↔ Walk 전환) |
+
+#### States
+| State Name | Motion | 비고 |
+|------------|--------|------|
+| `Locomotion` | Blend Tree (Idle ↔ Walk) | Threshold `3.5` 기준 전환 |
+| `Basic Attack` | BasicAttack clip | 근접 머리 휘두르기 |
+| `Claw Attack` | ClawAttack clip | 돌진 + 할퀴기 |
+| `Hit` | Hit clip | 피격 경직 |
+| `Die` | Die clip | 사망 |
+
+### 5.3. 코드 제어 방식 (`BossVisual.cs`)
+```csharp
+// CrossFade로 직접 전환 — Animator Transition 화살표 불필요
+public void PlayIdle()       => CrossFade(AnimLocomotion);
+public void PlayMove()       => CrossFade(AnimLocomotion);  // Speed 파라미터로 제어
+public void PlayAttack()     => CrossFade(AnimBasicAttack);
+public void PlayClawAttack() => CrossFade(AnimClawAttack);
+```
+
+> **참고**: `PlayIdle()`과 `PlayMove()`는 둘 다 Locomotion Blend Tree를 사용하며, `SetSpeed()` 메서드로 `Speed` 파라미터를 조절하여 Idle/Walk을 전환합니다.
+
