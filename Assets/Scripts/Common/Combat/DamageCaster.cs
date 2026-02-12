@@ -26,6 +26,7 @@ namespace Core.Combat
 
         // 한 번의 공격(Enable~Disable 기간) 동안 중복 피격을 방지하기 위한 Set
         private HashSet<int> _hitTargets = new HashSet<int>();
+        private int _ownerInstanceID = 0; // 자신을 타격하지 않도록 Owner ID 저장
 
         private void Awake()
         {
@@ -51,6 +52,12 @@ namespace Core.Combat
         public void DisableHitbox()
         {
             _isCasting = false;
+        }
+
+        public void SetOwner(GameObject owner)
+        {
+            if (owner != null)
+                _ownerInstanceID = owner.GetInstanceID();
         }
 
         private void FixedUpdate()
@@ -91,6 +98,8 @@ namespace Core.Combat
                     }
 
                     if (_hitTargets.Contains(realTargetID)) continue;
+                    // Owner(자신)인 경우 공격 판정 제외
+                    if (_ownerInstanceID != 0 && realTargetID == _ownerInstanceID) continue;
 
                     target.TakeDamage(_damagePayload);
                     _hitTargets.Add(realTargetID); // 실제 대상 ID 등록
