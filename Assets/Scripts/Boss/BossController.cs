@@ -38,7 +38,12 @@ namespace Core.Boss
         [SerializeField] private int attackDamage = 20;
         [SerializeField] private float attackDuration = 1.0f;
         [SerializeField] private float attackCooldown = 2.0f;
-        [SerializeField] private DamageCaster _damageCaster;
+
+        [Header("부위별 DamageCaster (Explicit per-part)")]
+        [Tooltip("Basic Attack(물기) 판정용 — Head Bone에 부착")]
+        [SerializeField] private DamageCaster _headDamageCaster;
+        [Tooltip("Claw Attack(할퀴기) 판정용 — 앞발 Bone에 부착 (미설정 시 Head 사용)")]
+        [SerializeField] private DamageCaster _clawDamageCaster;
 
         [Header("Claw Attack Settings")]
         [SerializeField] private ClawAttackSettings clawAttackSettings;
@@ -81,7 +86,8 @@ namespace Core.Boss
         public int AttackDamage => attackDamage;
         public float AttackDuration => attackDuration;
         public bool CanAttack => Time.time >= _nextAttackTime;
-        public DamageCaster DamageCaster => _damageCaster;
+        public DamageCaster HeadDamageCaster => _headDamageCaster;
+        public DamageCaster ClawDamageCaster => _clawDamageCaster;
 
         public bool EnableChase => enableChase;
         public bool EnableBasicAttack => enableBasicAttack;
@@ -130,6 +136,10 @@ namespace Core.Boss
 
         private void Start()
         {
+            // DamageCaster에 Owner 설정 (자해 방지)
+            if (_headDamageCaster != null) _headDamageCaster.SetOwner(gameObject);
+            if (_clawDamageCaster != null) _clawDamageCaster.SetOwner(gameObject);
+
             _stateMachine.ChangeState(IdleState);
         }
 
@@ -213,6 +223,19 @@ namespace Core.Boss
             }
         }
 
+        /// <summary>
+        /// 애니메이션 변경 없이 물리 이동만 수행합니다.
+        /// 공격 패턴 등 자체 애니메이션이 있는 상태에서 사용합니다.
+        /// </summary>
+        public void MoveRaw(Vector3 direction, float speed)
+        {
+            direction.y = 0;
+            if (direction != Vector3.zero)
+            {
+                _characterController.Move(direction.normalized * speed * Time.deltaTime);
+            }
+        }
+
         public void StopMoving()
         {
             if (animator)
@@ -274,9 +297,16 @@ namespace Core.Boss
         [System.Serializable]
         public class ClawAttackSettings
         {
+            [Tooltip("기본 공격력 대비 배수")]
             public float damageMultiplier = 1.5f;
+            [Tooltip("돌진 속도")]
             public float rushSpeed = 10.0f;
-            public float rushDuration = 0.5f;
+            [Tooltip("애니메이션 진행률 기준 돌진 구간 (0~1). 0.3 = 전체 애니메이션의 30% 시점까지 돌진")]
+            [Range(0f, 1f)]
+            public float rushPhaseRatio = 0.3f;
+            [Tooltip("애니메이션 종료 시점 (0~1). 0.5 = 도약 동작만 재생하고 복귀 모션 생략")]
+            [Range(0.1f, 1f)]
+            public float exitPhaseRatio = 0.5f;
         }
     }
 }

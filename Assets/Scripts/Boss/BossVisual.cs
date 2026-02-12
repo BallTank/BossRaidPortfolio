@@ -8,6 +8,11 @@ namespace Core.Boss
         [Header("Visual Elements")]
         [SerializeField] private GameObject _questionMarkUI;
 
+        /// <summary>
+        /// Animator 접근 프로퍼티 (ClawAttackPattern의 normalizedTime 체크 등에 사용)
+        /// </summary>
+        public Animator Animator => _animator;
+
         // Animation Name Constants (Add only new ones)
         private const string ANIM_LOCOMOTION = "Locomotion";
         private const string ANIM_BASIC_ATTACK = "Basic Attack";
