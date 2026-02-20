@@ -41,7 +41,6 @@
     *   **VS Alloc (`Physics.OverlapSphere`)**: 호출할 때마다 매번 `Collider[]` 배열을 새로 생성(Allocation)하여 힙 메모리를 사용함. 프레임마다 호출하면 GC Spaike(랙)의 주범이 됨.
     *   **VS NonAlloc (`Physics.OverlapSphereNonAlloc`)**: 미리 만들어둔 배열(`pre-allocated array`)을 재사용함. 메모리 할당이 전혀 발생하지 않음(Garbage Free). 단, 배열 크기(`_maxTargets`) 이상의 충돌체는 감지하지 못하므로 크기 설정에 주의 필요.
 * **Object Pooling**: 투사체나 이펙트를 파괴(Destroy)하지 않고 비활성화 후 재사용하여 CPU 부하를 줄이는 관리 방식.
-* **Object Pool (Prewarm/Max/Expand)**: 풀을 초기 개수(`Prewarm`)로 미리 채우고, 최대치(`Max`)까지 확장(`Expand`) 여부를 제어하는 런타임 메모리 관리 전략.
 * **Compound Collider (복합 충돌체)**: 하나의 무거운 Mesh Collider 대신, 여러 개의 가벼운 Primitive Collider(Box, Sphere, Capsule)를 조합하여 복잡한 형태의 충돌을 효율적으로 처리하는 기법. 보스의 부위별 피격 판정에 사용됨.
 
 ## 5. Combat System
@@ -55,18 +54,6 @@
 * **Animation Event Bridge**: 애니메이터의 타임라인 이벤트를 코드 로직(`PlayerController` 등)으로 연결해주는 중계 클래스.
 * **IBossAttackPattern**: 보스 공격 패턴 인터페이스 (Strategy Pattern 적용). `Enter`/`Update`/`Exit` 메서드를 정의하여 `BossAttackState`가 구체 패턴을 몰라도 실행할 수 있게 함.
 * **BasicAttackPattern**: `IBossAttackPattern`의 기본 구현체. 보스의 근접 공격(애니메이션 재생 + DamageCaster 활성화 + 타이머 기반 종료)을 측술화.
-* **LungeAttackPattern**: `IBossAttackPattern` 구현체. 보스가 타겟 방향으로 도약 돌진하며 공격하는 패턴. `exitPhaseRatio`로 복귀 모션 구간을 건너뛸 수 있다.
-* **ProjectileAttackPattern**: `IBossAttackPattern` 구현체. `telegraph -> volley 발사 -> 종료` 순서로 동작하며, 진입 시 `Flame Attack` 애니메이션을 우선 재생하고 투사체는 풀에서 대여/반납한다.
-* **Projectile Volley**: 짧은 간격으로 여러 발을 연속 발사하는 공격 묶음. 본 프로젝트 기본값은 3발(`-8°, 0°, +8°`)이다.
-* **Homing Strength**: 투사체의 수평(XZ) 유도 강도. `0`은 직진, `1`은 강한 유도.
-* **Homing Duration**: 유도 로직이 활성화되는 시간 창. 시간이 끝나면 투사체는 현재 진행 방향으로 직진한다.
-* **Vertical Follow Speed**: 투사체 Y축 보정 속도. 발사 후 플레이어 높이로 수렴하는 강도를 나타내며, `0`이면 발사 높이를 유지한다.
-* **Axis-Separated Guidance**: 유도를 XZ 회전과 Y 보정으로 분리하는 방식. 수평 추적 안정성과 높이 보간 제어를 동시에 확보한다.
-* **Parent Damage Lookup**: 충돌한 콜라이더에서 `IDamageable`이 직접 없을 때 부모(`GetComponentInParent`)로 폴백해 데미지 전달 누락을 방지하는 처리.
-* **Owner Filter**: 공격 발신자(Owner)의 `InstanceID`를 기록해 자기 자신에게 데미지가 들어가지 않도록 차단하는 필터링 기법.
-* **VFX Event Contract**: VFX Graph 기반 투사체가 코드와 약속하는 이벤트 이름 집합. 본 프로젝트는 `create`(스폰), `loop`(유지), `hit`(충돌), `stop`(종료) 흐름을 사용한다.
-* **Hit Phase (투사체 피격 페이즈)**: 투사체 충돌 직후 즉시 풀 반납하지 않고, `hit` 이벤트를 재생하는 짧은 전이 구간. 이 구간에서 이동/콜라이더를 정지해 중복 타격을 방지한다.
-* **Hit Return Delay (`hitReturnDelay`)**: 피격 페이즈 유지 시간. 풀링을 유지하면서도 피격 팝 연출이 잘리지 않도록 반납 타이밍을 지연시키는 직렬화 파라미터.
 * **Invincibility Frame (무적 시간)**: 피격 후 일정 시간 동안 추가 데미지를 받지 않는 보호 기간. `Health.SetInvincible(true/false)`와 코루틴으로 관리.
 * **Bone-Synced Hitbox (본 동기화 피격 판정)**: `DamageCaster._castCenter`를 스켈레톤의 Bone 자식 Transform으로 설정하여, 애니메이션에 따라 히트박스 위치가 자동으로 동기화되는 기법. 코드 수정 없이 물리 판정과 애니메이션을 연동할 수 있음.
 * **Partial Animation (부분 애니메이션)**: 애니메이션 클립 전체를 재생하지 않고, 특정 구간(예: 도약 부분)만 재생한 후 강제로 종료(`exitPhaseRatio`)하여 동작의 템포를 조절하는 기법. 복귀 모션 등을 생략하여 타격감을 높일 때 사용됨.
@@ -76,8 +63,16 @@
 * **Animator Controller**: Unity의 애니메이션 상태 머신. FSM과 연동하여 상태 전환 시 애니메이션을 재생함.
 * **CrossFade**: 현재 애니메이션에서 목표 애니메이션으로 부드럽게 블렌딩하는 Unity Animator 메서드. 끊김 없는 전환을 위해 사용.
 * **Blend Tree**: 하나의 파라미터(예: `Speed`)에 따라 여러 애니메이션을 자동으로 섞어 재생하는 구조. Idle↔Run 전환에 사용.
-* **Flame Attack State**: 보스 투사체 패턴 진입 시 재생되는 공격 모션 상태명. `BossVisual.PlayProjectileAttack()`가 우선 탐색한다.
 
 ## 7. Design Patterns
 
 * **Strategy Pattern (전략 패턴)**: 알고리즘(행동)을 인터페이스로 추상화하여 런타임에 교체 가능하게 하는 디자인 패턴. 본 프로젝트에서는 `IBossAttackPattern`으로 보스 공격 패턴을 교체 가능하게 구현함.
+---
+
+## Boss Phase Addendum (2026-02-20)
+
+- **Boss Phase**: 보스 전투를 구간별로 분리해 공격 풀과 행동 규칙을 다르게 적용하는 상태.
+- **Phase Intro (Scream)**: 각 페이즈 시작 시 1회 재생되는 전환 연출. 재생 중 공격 선택을 잠시 잠근다.
+- **Phase Attack Window**: 페이즈 인트로가 끝난 뒤 실제 공격 패턴 선택이 허용되는 구간.
+- **No-Immediate-Repeat Selector**: 두 패턴이 모두 활성일 때 직전 패턴과 동일한 패턴을 연속 선택하지 않도록 하는 선택 규칙.
+- **HealthRatio**: `CurrentHealth / MaxHealth` 값. 보스의 페이즈 전환 임계치 판정(예: 0.5)에 사용.

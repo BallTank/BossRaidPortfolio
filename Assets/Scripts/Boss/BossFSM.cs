@@ -34,9 +34,15 @@ namespace Core.Boss
 
     public class BossCombatState : BossBaseState
     {
+        private IBossAttackPattern _lastPhaseOnePattern;
+        private IBossAttackPattern _lastPhaseTwoPattern;
+
         public BossCombatState(BossController controller) : base(controller) { }
 
-        public override void Enter() { }
+        public override void Enter()
+        {
+            Controller.EnsurePhaseIntroForCurrentPhase();
+        }
 
         public override void Update()
         {
@@ -47,6 +53,12 @@ namespace Core.Boss
             }
 
             float distance = Vector3.Distance(Controller.transform.position, Controller.Target.position);
+
+            if (Controller.IsPhaseIntroPlaying)
+            {
+                Controller.RotateTowards(Controller.Target.position);
+                return;
+            }
 
             // 범위 벗어남 -> 수색
             if (distance > Controller.DetectionRange)
@@ -69,6 +81,15 @@ namespace Core.Boss
                     Controller.StopMoving();
                     Controller.RotateTowards(Controller.Target.position);
                 }
+
+                // 페이즈 2는 원거리에서도 패턴을 실행한다.
+                if (Controller.CanAttack && Controller.IsPhaseTwoAttackWindow)
+                {
+                    IBossAttackPattern selectedPattern = SelectPatternByPhase();
+                    if (selectedPattern == null) return;
+                    Controller.AttackState.SetPattern(selectedPattern);
+                    Controller.StateMachine.ChangeState(Controller.AttackState);
+                }
             }
             else
             {
@@ -78,35 +99,8 @@ namespace Core.Boss
                 // 공격 쿨타임 확인 후 공격 전환
                 if (Controller.CanAttack)
                 {
-                    // 매 프레임 List 할당을 피하기 위해 카운트/인덱스 방식으로 선택
-                    int enabledPatternCount = 0;
-                    if (Controller.EnableBasicAttack) enabledPatternCount++;
-                    if (Controller.EnableLungeAttack) enabledPatternCount++;
-                    if (Controller.EnableProjectileAttack) enabledPatternCount++;
-
-                    // 활성 패턴이 하나도 없으면 공격 상태로 전환하지 않음
-                    if (enabledPatternCount == 0) return;
-
-                    int pick = Random.Range(0, enabledPatternCount);
-                    IBossAttackPattern selectedPattern = null;
-
-                    if (Controller.EnableBasicAttack)
-                    {
-                        if (pick == 0) selectedPattern = Controller.BasicAttackPattern;
-                        pick--;
-                    }
-
-                    if (selectedPattern == null && Controller.EnableLungeAttack)
-                    {
-                        if (pick == 0) selectedPattern = Controller.LungeAttackPattern;
-                        pick--;
-                    }
-
-                    if (selectedPattern == null && Controller.EnableProjectileAttack)
-                    {
-                        selectedPattern = Controller.ProjectileAttackPattern;
-                    }
-
+                    IBossAttackPattern selectedPattern = SelectPatternByPhase();
+                    if (selectedPattern == null) return;
                     Controller.AttackState.SetPattern(selectedPattern);
                     Controller.StateMachine.ChangeState(Controller.AttackState);
                 }
@@ -114,6 +108,63 @@ namespace Core.Boss
         }
 
         public override void Exit() { }
+
+        private IBossAttackPattern SelectPatternByPhase()
+        {
+            if (Controller.IsPhaseOneAttackWindow)
+            {
+                return PickPhaseOnePattern();
+            }
+
+            if (Controller.IsPhaseTwoAttackWindow)
+            {
+                return PickPhaseTwoPattern();
+            }
+
+            return null;
+        }
+
+        private IBossAttackPattern PickPhaseOnePattern()
+        {
+            return PickFromTwo(
+                Controller.EnableBasicAttack ? Controller.BasicAttackPattern : null,
+                Controller.EnableLungeAttack ? Controller.LungeAttackPattern : null,
+                ref _lastPhaseOnePattern);
+        }
+
+        private IBossAttackPattern PickPhaseTwoPattern()
+        {
+            return PickFromTwo(
+                Controller.EnableProjectileAttack ? Controller.ProjectileAttackPattern : null,
+                Controller.EnableAoEAttack ? Controller.AoEAttackPattern : null,
+                ref _lastPhaseTwoPattern);
+        }
+
+        private static IBossAttackPattern PickFromTwo(
+            IBossAttackPattern first,
+            IBossAttackPattern second,
+            ref IBossAttackPattern lastPicked)
+        {
+            bool hasFirst = first != null;
+            bool hasSecond = second != null;
+            if (!hasFirst && !hasSecond) return null;
+            if (!hasFirst)
+            {
+                lastPicked = second;
+                return second;
+            }
+
+            if (!hasSecond)
+            {
+                lastPicked = first;
+                return first;
+            }
+
+            // 두 패턴이 모두 가능하면 직전 패턴을 피해서 번갈아 사용한다.
+            IBossAttackPattern picked = lastPicked == first ? second : first;
+            lastPicked = picked;
+            return picked;
+        }
     }
 
     public class BossAttackState : BossBaseState

@@ -1,4 +1,5 @@
-﻿using Core.Boss.Attacks;
+﻿using Core.Boss.AoE;
+using Core.Boss.Attacks;
 using Core.Boss.Projectiles;
 using Core.Combat;
 using Core.Common.Patterns;
@@ -11,6 +12,12 @@ namespace Core.Boss
     [RequireComponent(typeof(Health))]
     public class BossController : MonoBehaviour
     {
+        public enum BossPhase
+        {
+            Phase1,
+            Phase2
+        }
+
         [Header("참조 (References)")]
         [SerializeField] private Transform playerTransform;
         [SerializeField] private BossVisual animator;
@@ -20,6 +27,9 @@ namespace Core.Boss
         [SerializeField] private float searchingMoveSpeed = 2.0f;
         [SerializeField] private float rotationSpeed = 5.0f;
 
+        [Header("페이즈 설정 (Phase Settings)")]
+        [SerializeField, Range(0.05f, 1f)] private float phaseTwoHealthThreshold = 0.5f;
+
         /// <summary>
         /// Unity 에디터에서 스크립트가 로드되거나 인스펙터의 값이 변경될 때 호출되어 데이터의 유효성을 검사합니다.
         /// </summary>
@@ -28,6 +38,7 @@ namespace Core.Boss
             // 이동 속도는 음수가 되지 않도록 보정
             if (moveSpeed < 0) moveSpeed = 0f;
             if (searchingMoveSpeed < 0) searchingMoveSpeed = 0f;
+            phaseTwoHealthThreshold = Mathf.Clamp01(phaseTwoHealthThreshold);
         }
 
         [Header("감지 설정 (Detection Settings)")]
@@ -42,9 +53,9 @@ namespace Core.Boss
         [SerializeField] private float attackCooldown = 2.0f;
 
         [Header("부위별 DamageCaster (Explicit per-part)")]
-        [Tooltip("Basic Attack(물기) 판정용 — Head Bone에 부착")]
+        [Tooltip("Basic Attack(물기) 판정용 - Head Bone에 부착")]
         [SerializeField] private DamageCaster _headDamageCaster;
-        [Tooltip("Lunge Attack(도약) 판정용 — 앞발 Bone에 부착 (미설정 시 Head 사용)")]
+        [Tooltip("Lunge Attack(도약) 판정용 - 앞발 Bone에 부착 (미설정 시 Head 사용)")]
         [FormerlySerializedAs("_clawDamageCaster")]
         [SerializeField] private DamageCaster _lungeDamageCaster;
 
@@ -57,6 +68,9 @@ namespace Core.Boss
         [SerializeField] private BossProjectilePool projectilePool;
         [SerializeField] private Transform projectileSpawnPoint;
 
+        [Header("AoE Attack Settings")]
+        [SerializeField] private AoEAttackSettings aoeAttackSettings;
+
         [Header("디버그 설정 (Debug Settings)")]
         [SerializeField] private bool enableChase = true;
         [SerializeField] private bool enableRotation = true;
@@ -64,6 +78,8 @@ namespace Core.Boss
         [FormerlySerializedAs("enableClawAttack")]
         [SerializeField] private bool enableLungeAttack = true;
         [SerializeField] private bool enableProjectileAttack = true;
+        [SerializeField] private bool enableAoEAttack = true;
+        [SerializeField] private bool showPhaseDebugLabel = true;
 
         // FSM (제네릭 StateMachine 사용)
         private StateMachine<BossBaseState> _stateMachine;
@@ -81,11 +97,20 @@ namespace Core.Boss
         public BasicAttackPattern BasicAttackPattern { get; private set; }
         public LungeAttackPattern LungeAttackPattern { get; private set; }
         public ProjectileAttackPattern ProjectileAttackPattern { get; private set; }
+        public AoEAttackPattern AoEAttackPattern { get; private set; }
 
         // Components
         private CharacterController _characterController;
         private Health _health;
         private float _nextAttackTime;
+
+        // Phase Flow
+        private BossPhase _currentPhase = BossPhase.Phase1;
+        private bool _phaseOneIntroCompleted;
+        private bool _phaseTwoIntroCompleted;
+        private bool _phaseTwoTriggered;
+        private bool _phaseIntroPlaying;
+        private float _phaseIntroEndTime;
 
         // Public Properties for States
         public Transform Target => playerTransform;
@@ -105,8 +130,13 @@ namespace Core.Boss
         public bool EnableBasicAttack => enableBasicAttack;
         public bool EnableLungeAttack => enableLungeAttack;
         public bool EnableProjectileAttack => enableProjectileAttack;
+        public bool EnableAoEAttack => enableAoEAttack;
         public BossProjectilePool ProjectilePool => projectilePool;
         public Transform ProjectileSpawnPoint => projectileSpawnPoint;
+        public BossPhase CurrentPhase => _currentPhase;
+        public bool IsPhaseIntroPlaying => _phaseIntroPlaying;
+        public bool IsPhaseOneAttackWindow => _currentPhase == BossPhase.Phase1 && _phaseOneIntroCompleted && !_phaseIntroPlaying;
+        public bool IsPhaseTwoAttackWindow => _currentPhase == BossPhase.Phase2 && _phaseTwoIntroCompleted && !_phaseIntroPlaying;
 
         private void Awake()
         {
@@ -114,6 +144,7 @@ namespace Core.Boss
             _health = GetComponent<Health>();
             if (projectileAttackSettings == null) projectileAttackSettings = new ProjectileAttackSettings();
             if (lungeAttackSettings == null) lungeAttackSettings = new LungeAttackSettings();
+            if (aoeAttackSettings == null) aoeAttackSettings = new AoEAttackSettings();
 
             // 플레이어가 할당되지 않았다면 자동으로 찾음
             if (playerTransform == null)
@@ -135,6 +166,7 @@ namespace Core.Boss
             BasicAttackPattern = new BasicAttackPattern();
             LungeAttackPattern = new LungeAttackPattern(lungeAttackSettings);
             ProjectileAttackPattern = new ProjectileAttackPattern(projectileAttackSettings);
+            AoEAttackPattern = new AoEAttackPattern(aoeAttackSettings);
 
             if (_health != null)
             {
@@ -164,6 +196,8 @@ namespace Core.Boss
         private void Update()
         {
             ApplyGravity();
+            UpdatePhaseFlow();
+
             // Controller에서 직접 Update 호출
             _stateMachine.CurrentState?.Update();
         }
@@ -180,6 +214,91 @@ namespace Core.Boss
         private void HandleDeath()
         {
             _stateMachine.ChangeState(DeadState);
+        }
+
+        #region Phase Methods
+
+        public void EnsurePhaseIntroForCurrentPhase()
+        {
+            if (_health != null && _health.IsDead) return;
+
+            if (_currentPhase == BossPhase.Phase1 && !_phaseOneIntroCompleted && !_phaseIntroPlaying)
+            {
+                BeginPhaseIntro(BossPhase.Phase1);
+                return;
+            }
+
+            if (_currentPhase == BossPhase.Phase2 && !_phaseTwoIntroCompleted && !_phaseIntroPlaying)
+            {
+                BeginPhaseIntro(BossPhase.Phase2);
+            }
+        }
+
+        private void UpdatePhaseFlow()
+        {
+            if (_health == null || _health.IsDead) return;
+
+            if (!_phaseTwoTriggered && _health.HealthRatio <= phaseTwoHealthThreshold)
+            {
+                TriggerPhaseTwo();
+            }
+
+            if (_phaseIntroPlaying && Time.time >= _phaseIntroEndTime)
+            {
+                _phaseIntroPlaying = false;
+                if (_currentPhase == BossPhase.Phase1)
+                {
+                    _phaseOneIntroCompleted = true;
+                }
+                else
+                {
+                    _phaseTwoIntroCompleted = true;
+                }
+            }
+        }
+
+        private void TriggerPhaseTwo()
+        {
+            if (_phaseTwoTriggered) return;
+
+            _phaseTwoTriggered = true;
+            _currentPhase = BossPhase.Phase2;
+            _phaseTwoIntroCompleted = false;
+
+            BeginPhaseIntro(BossPhase.Phase2);
+
+            if (_stateMachine.CurrentState != DeadState && _stateMachine.CurrentState != CombatState)
+            {
+                _stateMachine.ChangeState(CombatState);
+            }
+        }
+
+        private void BeginPhaseIntro(BossPhase phase)
+        {
+            _currentPhase = phase;
+            StopMoving();
+
+            float introDuration = animator != null ? animator.PlayScream() : 1.2f;
+            _phaseIntroPlaying = true;
+            _phaseIntroEndTime = Time.time + Mathf.Max(0.1f, introDuration);
+        }
+
+        #endregion
+
+        private void OnGUI()
+        {
+            if (!showPhaseDebugLabel) return;
+
+            float healthRatio = _health != null ? _health.HealthRatio : 0f;
+            string debugText =
+                $"Boss Phase: {_currentPhase}\n" +
+                $"HP: {healthRatio * 100f:0.#}%\n" +
+                $"Intro Playing: {_phaseIntroPlaying}\n" +
+                $"Phase2 Triggered: {_phaseTwoTriggered}";
+
+            Rect rect = new Rect(16f, 16f, 260f, 90f);
+            GUI.Box(rect, GUIContent.none);
+            GUI.Label(rect, debugText);
         }
 
         #region Public Helper Methods for States
@@ -349,6 +468,78 @@ namespace Core.Boss
             public float homingDuration = 1.2f;
             [Tooltip("Y축 추적 속도 (0이면 발사 높이 유지)")]
             public float verticalFollowSpeed = 4f;
+        }
+
+        [System.Serializable]
+        public class AoEAttackSettings
+        {
+            [Header("Runtime References")]
+            [Tooltip("장판 프리팹 (AoECircleController 포함)")]
+            public AoECircleController circlePrefab;
+            [Tooltip("장판 인스턴스가 생성될 부모 Transform")]
+            public Transform circleRoot;
+
+            [Header("Pattern Timing")]
+            [Tooltip("이륙 연출 시간")]
+            public float takeOffDuration = 0.35f;
+            [Tooltip("전진 비행 연출 시간")]
+            public float flyForwardDuration = 0.35f;
+            [Tooltip("전진 비행 중 추적 속도")]
+            public float flyForwardSpeed = 6.0f;
+            [Tooltip("이 거리 이하로 들어오면 FlyIdle 캐스팅 시작")]
+            public float castRange = 3.0f;
+            [Tooltip("착지 연출 시간")]
+            public float landDuration = 0.4f;
+            [Tooltip("장판 생성 간격")]
+            public float spawnInterval = 0.1f;
+            [Tooltip("fire 착지/장판 발동 동기화 시간. 0 이하면 telegraphDuration 사용")]
+            public float impactSyncTime = 0f;
+
+            [Header("AoE Damage")]
+            public int damage = 10;
+            [Tooltip("텔레그래프 시간 (impactSyncTime 미설정 시 사용)")]
+            public float telegraphDuration = 0.9f;
+            [Tooltip("장판 활성 유지 시간")]
+            public float activeDuration = 0.9f;
+            [Tooltip("틱 데미지 간격")]
+            public float tickInterval = 0.25f;
+            [Tooltip("AoE 데미지 대상 레이어")]
+            public LayerMask targetMask = ~0;
+
+            [Header("AoE Spawn Area")]
+            [Tooltip("한 번의 패턴에서 생성할 장판 개수")]
+            public int circleCount = 3;
+            [Tooltip("장판 최대 동시 인스턴스 수")]
+            public int maxCircleInstances = 12;
+            [Tooltip("장판 반경")]
+            public float radius = 2.5f;
+            [Tooltip("타겟 주변 랜덤 생성 반경")]
+            public float spawnSpreadRadius = 4.5f;
+            [Tooltip("타겟 진행 방향 예측 시간(초)")]
+            public float headingLeadTime = 0.35f;
+            [Tooltip("예측 오프셋 최대 거리")]
+            public float maxHeadingLeadDistance = 6f;
+            [Tooltip("진행 방향 전방 확산 반경")]
+            public float forwardSpreadRadius = 6f;
+            [Tooltip("진행 방향 측면 확산 반경")]
+            public float sideSpreadRadius = 3.5f;
+            [Tooltip("전방 편향 강도 (0 = 균등, 1 = 전방 집중)")]
+            [Range(0f, 1f)]
+            public float headingBias = 0.7f;
+            [Tooltip("예측 적용 최소 속도")]
+            public float headingMinSpeed = 0.1f;
+            [Tooltip("지면 투영 Ray 시작 높이")]
+            public float groundRayHeight = 15f;
+            [Tooltip("지면 투영 Ray 최대 거리")]
+            public float groundRayDistance = 40f;
+            [Tooltip("장판 Y 오프셋")]
+            public float groundOffset = 0.05f;
+            [Tooltip("지면 판정 레이어")]
+            public LayerMask groundMask = ~0;
+
+            [Header("Projectile Sync")]
+            [Tooltip("SpawnPoint 미할당/저지대일 때 보정할 발사 높이")]
+            public float fallbackProjectileHeight = 6f;
         }
     }
 }
