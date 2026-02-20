@@ -187,6 +187,8 @@ sequenceDiagram
         Proj->>Proj: Y값 보정 (MoveTowards -> target.y)
     end
     Proj->>Target: TakeDamage(damage)
+    Proj->>Proj: SendEvent("hit"), Collider Off
+    Proj->>Proj: wait hitReturnDelay
     Proj->>Pool: ReturnProjectile()
     Pattern-->>Attack: Update() == true (종료)
     Attack->>Combat: ChangeState(Combat)
@@ -197,4 +199,5 @@ sequenceDiagram
 - 투사체는 **발사 시점에는 SpawnPoint의 Y값**으로 시작하고, 비행 중 `verticalFollowSpeed`로 플레이어 Y값에 수렴합니다.
 - 유도(`homingStrength`, `homingDuration`)는 XZ 평면 기준으로 처리하여 수평 추적 안정성을 유지합니다.
 - 피격 판정은 `OnTriggerEnter` + `OnCollisionEnter`를 모두 처리하며, 필요 시 `GetComponentInParent<IDamageable>()`로 부모 컴포넌트까지 탐색합니다.
+- VFX 프리팹 사용 시 충돌 즉시 반납하지 않고 `hit` 이벤트 재생 후 `hitReturnDelay`가 끝나면 풀로 반납합니다.
 

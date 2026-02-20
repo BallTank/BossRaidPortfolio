@@ -312,7 +312,7 @@ classDiagram
 
 ---
 
-## 4. Implementation Status Check (Antigravity Context)
+## 4. Implementation Status Check
 
 ### 4.1. Core Systems & Input
 | Component | Status | Note |
@@ -341,7 +341,7 @@ classDiagram
 | **Boss Sensors** | ✅ Done | `CheckLineOfSight` (Raycast) 및 거리 감지 로직 |
 | **Boss Navigation** | ✅ Done | `MoveTo` (추적 이동) 및 `RotateTowards` (회전) 로직 |
 | **Boss Visuals** | ✅ Done | 구조 분리 및 Dragon Asset(Animator/BlendTree) 통합 완료. |
-| **Boss Combat** | 🔃 progress | `Pattern 1`(Basic), `Pattern 2`(Lunge), `Pattern 3`(Projectile: Flame Attack + Homing + Vertical Follow) 완료. `Pattern 4`(AoE) 진행 중. |
+| **Boss Combat** | 🔃 progress | `Pattern 1`(Basic), `Pattern 2`(Lunge), `Pattern 3`(Projectile: Flame Attack + Homing + Vertical Follow + VFX create/hit + hitReturnDelay) 완료. `Pattern 4`(AoE) 진행 중. |
 
 ### 4.4. User Interface (UI)
 | Component | Status | Note |

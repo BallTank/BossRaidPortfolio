@@ -64,6 +64,9 @@
 * **Axis-Separated Guidance**: 유도를 XZ 회전과 Y 보정으로 분리하는 방식. 수평 추적 안정성과 높이 보간 제어를 동시에 확보한다.
 * **Parent Damage Lookup**: 충돌한 콜라이더에서 `IDamageable`이 직접 없을 때 부모(`GetComponentInParent`)로 폴백해 데미지 전달 누락을 방지하는 처리.
 * **Owner Filter**: 공격 발신자(Owner)의 `InstanceID`를 기록해 자기 자신에게 데미지가 들어가지 않도록 차단하는 필터링 기법.
+* **VFX Event Contract**: VFX Graph 기반 투사체가 코드와 약속하는 이벤트 이름 집합. 본 프로젝트는 `create`(스폰), `loop`(유지), `hit`(충돌), `stop`(종료) 흐름을 사용한다.
+* **Hit Phase (투사체 피격 페이즈)**: 투사체 충돌 직후 즉시 풀 반납하지 않고, `hit` 이벤트를 재생하는 짧은 전이 구간. 이 구간에서 이동/콜라이더를 정지해 중복 타격을 방지한다.
+* **Hit Return Delay (`hitReturnDelay`)**: 피격 페이즈 유지 시간. 풀링을 유지하면서도 피격 팝 연출이 잘리지 않도록 반납 타이밍을 지연시키는 직렬화 파라미터.
 * **Invincibility Frame (무적 시간)**: 피격 후 일정 시간 동안 추가 데미지를 받지 않는 보호 기간. `Health.SetInvincible(true/false)`와 코루틴으로 관리.
 * **Bone-Synced Hitbox (본 동기화 피격 판정)**: `DamageCaster._castCenter`를 스켈레톤의 Bone 자식 Transform으로 설정하여, 애니메이션에 따라 히트박스 위치가 자동으로 동기화되는 기법. 코드 수정 없이 물리 판정과 애니메이션을 연동할 수 있음.
 * **Partial Animation (부분 애니메이션)**: 애니메이션 클립 전체를 재생하지 않고, 특정 구간(예: 도약 부분)만 재생한 후 강제로 종료(`exitPhaseRatio`)하여 동작의 템포를 조절하는 기법. 복귀 모션 등을 생략하여 타격감을 높일 때 사용됨.

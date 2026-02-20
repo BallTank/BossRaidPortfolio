@@ -70,9 +70,3 @@
 ## 6. 결론 및 향후 계획
 
 이번 작업으로 패턴 3은 "투사체 기능"을 넘어, 보스의 전투 연출과 피격 안정성을 동시에 갖춘 불 뿜기 패턴으로 정리됐다.
-
-**Next Steps:**
-
-- 렌더링 파이프라인 방향 결정(Built-in vs URP)
-- `Assets/CombatGirlsCharacterPack`, `Assets/FourEvilDragonsPBR` 분홍색 머티리얼 이슈 복구
-- Built-in 유지 시 재임포트 복구 / URP 전환 시 파이프라인 할당 및 머티리얼 업그레이드

@@ -1,5 +1,6 @@
 ﻿using Core.Interfaces;
 using UnityEngine;
+using UnityEngine.VFX;
 
 namespace Core.Boss.Projectiles
 {
@@ -10,6 +11,8 @@ namespace Core.Boss.Projectiles
     public class BossProjectile : MonoBehaviour
     {
         [SerializeField] private LayerMask hitMask = ~0;
+        [SerializeField] private VisualEffect visualEffect;
+        [SerializeField] private float hitReturnDelay = 0.35f;
 
         private BossProjectilePool _pool;
         private int _damage;
@@ -21,7 +24,20 @@ namespace Core.Boss.Projectiles
         private float _homingTimer;
         private float _verticalFollowSpeed;
         private Vector3 _moveDirection;
+        private Collider _projectileCollider;
         private bool _isActive;
+        private bool _isReturned;
+        private float _pendingReturnTimer = -1f;
+
+        private void Awake()
+        {
+            if (visualEffect == null)
+            {
+                visualEffect = GetComponentInChildren<VisualEffect>(true);
+            }
+
+            _projectileCollider = GetComponent<Collider>();
+        }
 
         public void SetPool(BossProjectilePool pool)
         {
@@ -62,16 +78,37 @@ namespace Core.Boss.Projectiles
             _homingStrength = Mathf.Clamp01(homingStrength);
             _homingTimer = Mathf.Max(0f, homingDuration);
             _verticalFollowSpeed = Mathf.Max(0f, verticalFollowSpeed);
+            _pendingReturnTimer = -1f;
+            _isReturned = false;
             _isActive = true;
+
+            if (_projectileCollider != null)
+            {
+                _projectileCollider.enabled = true;
+            }
+
+            RestartVfx();
         }
 
         private void OnEnable()
         {
+            _pendingReturnTimer = -1f;
+            _isReturned = false;
             _isActive = true;
         }
 
         private void Update()
         {
+            if (_pendingReturnTimer >= 0f)
+            {
+                _pendingReturnTimer -= Time.deltaTime;
+                if (_pendingReturnTimer <= 0f)
+                {
+                    ReturnToPool();
+                }
+                return;
+            }
+
             if (!_isActive) return;
 
             ApplyHoming();
@@ -150,7 +187,7 @@ namespace Core.Boss.Projectiles
             if (_ownerInstanceID != 0 && targetInstanceID == _ownerInstanceID) return;
 
             damageable.TakeDamage(_damage);
-            ReturnToPool();
+            EnterHitPhase();
         }
 
         private bool IsLayerAllowed(Collider other)
@@ -182,9 +219,50 @@ namespace Core.Boss.Projectiles
 
         private void ReturnToPool()
         {
-            if (!_isActive) return;
+            if (_isReturned) return;
+
+            _isReturned = true;
             _isActive = false;
+            _pendingReturnTimer = -1f;
+
+            if (visualEffect != null)
+            {
+                visualEffect.Stop();
+            }
+
             _pool?.ReturnProjectile(this);
+        }
+
+        private void RestartVfx()
+        {
+            if (visualEffect == null) return;
+
+            visualEffect.Reinit();
+            visualEffect.SendEvent("create");
+            visualEffect.Play();
+        }
+
+        private void EnterHitPhase()
+        {
+            if (_isReturned) return;
+
+            _isActive = false;
+
+            if (_projectileCollider != null)
+            {
+                _projectileCollider.enabled = false;
+            }
+
+            if (visualEffect != null)
+            {
+                visualEffect.SendEvent("hit");
+            }
+
+            _pendingReturnTimer = Mathf.Max(0f, hitReturnDelay);
+            if (_pendingReturnTimer <= 0f)
+            {
+                ReturnToPool();
+            }
         }
     }
 }

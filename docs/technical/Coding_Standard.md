@@ -13,6 +13,7 @@
 
 * **Collection Pre-allocation**: 물리 판정 결과나 객체 리스트를 담는 배열/리스트는 `Awake`에서 미리 최대 크기로 할당하여 재사용한다.
 * **Pooling Lifecycle Rule**: 투사체/이펙트는 `Object Pool`로 관리하며, 런타임 `Instantiate/Destroy`를 금지한다. 활성화 시 `Initialize`, 종료 시 반드시 `ReturnToPool` 경로로만 반납한다.
+* **Pooled VFX Event Rule**: 풀링 투사체 VFX는 이벤트 계약을 고정한다. 스폰 시 `create`, 피격 시 `hit`, 반납 시 `stop`을 사용하며, 피격 연출이 필요한 프리팹은 콜라이더를 비활성화한 뒤 `hitReturnDelay` 후 반납한다.
 
 ## 2. Architecture: Input & Logic Separation
 

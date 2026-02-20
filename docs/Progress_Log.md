@@ -317,6 +317,37 @@
     *   [ ] Built-in 유지 시: 두 에셋 팩 재임포트로 Standard 셰이더 복구.
     *   [ ] URP 전환 시: URP 설치, 파이프라인 에셋 할당, 머티리얼 업그레이드.
 
+---
+
+### **2026-02-20 (금): Sphere → VFX 에셋 전환 & URP 전환 정리**
+
+*   **✅ 오늘 완료한 작업 (순서대로)**
+    *   **1) 문제 진단**
+        *   `UNI VFX` 컨버터 오류와 씬 핑크 머티리얼 이슈를 분리해서 원인을 확인.
+        *   원인: URP/HDRP/Built-in 머티리얼 혼재 + `Default-Material` 사용 오브젝트 존재.
+    *   **2) URP 전환**
+        *   `com.unity.render-pipelines.universal` 설치(14.0.12).
+        *   `Assets/Settings/New Universal Render Pipeline Asset.asset` 생성 및 렌더러 에셋 연결.
+        *   `ProjectSettings/GraphicsSettings.asset`, `ProjectSettings/QualitySettings.asset`에 URP 에셋 할당.
+    *   **3) 씬 머티리얼 복구**
+        *   `GamePlayScene`의 Ground/Wall `Default-Material`을 명시적 `URP/Lit` 머티리얼로 교체하여 핑크 바닥/벽 문제를 복구.
+    *   **4) 투사체 비주얼 교체**
+        *   기존 Sphere 표시 기반에서 `Assets/UNI VFX/Missiles & Explosions/Prefabs/Mark of Death Crimson.prefab`을 거쳐
+          `Assets/UNI VFX/Missiles & Explosions/Prefabs/Crushing Pull Gold.prefab` 중심으로 전환.
+    *   **5) 풀링 투사체 VFX 수명주기 코드 반영**
+        *   `Assets/Scripts/Boss/Projectiles/BossProjectile.cs`에 `VisualEffect` 참조 추가.
+        *   `Initialize()` 시 `Reinit() -> SendEvent("create") -> Play()` 호출로 재사용 인스턴스의 VFX 재시작 보장.
+        *   `ReturnToPool()` 시 `visualEffect.Stop()`으로 이펙트 정리.
+    *   **6) 피격 팝(Hit) 연출 반영**
+        *   `UNI_Crushing_Pull.vfx` 이벤트(`create`, `loop`, `hit`, `stop`)를 확인.
+        *   충돌 시 즉시 풀 반납하지 않고 `SendEvent("hit")` 전송 후, `hitReturnDelay`(기본 0.35s) 경과 뒤 반납하도록 변경.
+        *   Hit Phase 동안 콜라이더 비활성화 + 중복 반납 가드(`_isReturned`) 적용.
+
+*   **🧠 기술적 고민 (Senior's Review)**
+    *   **연출/성능 트레이드오프 제어**: 풀링을 유지하면서도 피격 연출이 잘리지 않게 `딜레이 반납` 단계(히트 페이즈)를 분리.
+    *   **VFX 이벤트 계약 명시화**: 투사체 이펙트를 `create -> hit -> stop` 이벤트 계약으로 고정해 프리팹 교체 시에도 코드 변경 범위를 최소화.
+    *   **컨버터 범위 관리**: Built-in→URP 변환기는 HDRP 전용 커스텀 머티리얼에 일괄 적용하지 않고, 대상 범위를 분리해 오류 전파를 차단.
+
 
 ## 📈 2월 마일스톤: 싱글플레이 로직 완성 (Capsule vs Cube)
 
@@ -364,11 +395,11 @@
 ### 3주차: 보스 행동 패턴 & 시스템 최적화 & 게임 루프 (The Logic) 
 
 #### 보스 행동 패턴 🔄
-- [ ] **패턴 3 (투사체)**: 풀링 기반 발사 + Flame Attack 연동 + 유도/수직 추적 튜닝.
-- [ ] 프로젝트 렌더링 파이프라인 방향 결정 (Built-in vs URP).
-- [ ] `Assets/CombatGirlsCharacterPack`, `Assets/FourEvilDragonsPBR` 분홍색 머티리얼 문제 해결.
+- [v] **패턴 3 (투사체)**: 풀링 기반 발사 + Flame Attack 연동 + 유도/수직 추적 튜닝 + VFX(create/hit) 연동.
+- [v] 프로젝트 렌더링 파이프라인 방향 결정 (Built-in vs URP).
+- [v] `Assets/CombatGirlsCharacterPack`, `Assets/FourEvilDragonsPBR` 분홍색 머티리얼 문제 해결.
 - [ ] Built-in 유지 시: 두 에셋 팩 재임포트로 Standard 셰이더 복구.
-- [ ] URP 전환 시: URP 설치, 파이프라인 에셋 할당, 머티리얼 업그레이드.
+- [v] URP 전환 시: URP 설치, 파이프라인 에셋 할당, 머티리얼 업그레이드(진행 씬 기준).
 - [ ] **패턴 4 (장판)**: 용이 날아서 불을 쏘면 바닥에 장판을 쏜다.
 
 #### 시스템 최적화 & 게임 루프 (The Logic) ✅
