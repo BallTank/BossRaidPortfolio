@@ -1,4 +1,4 @@
-# 📖 Technical Glossary: Boss Raid Portfolio
+﻿# 📖 Technical Glossary: Boss Raid Portfolio
 
 이 문서는 프로젝트 내에서 통용되는 주요 용어와 개념을 정의합니다.
 
@@ -33,6 +33,8 @@
 * **Coroutine Cleanup**: `StopAllCoroutines()`를 호출하여 진행 중인 비동기 작업(무적 타이머 등)을 강제 중단하는 기법. 상태 전환(사망 등) 시 잔존 코루틴이 예상치 못한 부작용을 일으키는 것을 방지.
 * **Generic State Machine (제네릭 상태 머신)**: `StateMachine<T>` 형태로 구현하여, 플레이어와 보스가 동일한 상태 관리 로직을 공유하면서도 각자의 상태 타입(`PlayerState` vs `BossState`)을 안전하게 사용할 수 있게 하는 기법.
 * **Feature Toggle (기능 토글)**: 개발 중인 기능이나 특정 로직(예: 보스 추적, 회전)을 인스펙터 체크박스 하나로 켜고 끌 수 있게 하여, 테스트 효율을 높이고 버그 추적을 용이하게 하는 개발 패턴.
+* **Planar Distance Gate (평면 거리 게이트)**: Boss의 상태 전환 거리 판정에서 높이(Y)를 제외하고 XZ 평면 거리만 사용해 점프/지형 높이 차로 인한 오판정을 줄이는 규칙.
+* **Chase Hysteresis (추적 히스테리시스)**: 단일 공격 사거리 임계값 대신 `AttackRange`(해제)와 `AttackRange + ChaseReengageBuffer`(재진입) 이중 임계값을 두어 Walk/Idle 경계 지터를 완화하는 기법.
 
 ## 4. Optimization (Performance)
 
@@ -63,6 +65,12 @@
 * **Animator Controller**: Unity의 애니메이션 상태 머신. FSM과 연동하여 상태 전환 시 애니메이션을 재생함.
 * **CrossFade**: 현재 애니메이션에서 목표 애니메이션으로 부드럽게 블렌딩하는 Unity Animator 메서드. 끊김 없는 전환을 위해 사용.
 * **Blend Tree**: 하나의 파라미터(예: `Speed`)에 따라 여러 애니메이션을 자동으로 섞어 재생하는 구조. Idle↔Run 전환에 사용.
+* **Boss Attack Priority**: `BossCombatState.Update()`는 공격 패턴 진입이 가능하면 `MoveTo`/`PlayMove`와 같은 추적 이동 호출보다 `AttackState` 전환을 우선 적용한다.
+* **Package Baseline Rollback (패키지 기준선 롤백)**: Unity 버전 복귀 시 `ProjectVersion`만 변경하면 패키지 그래프가 어긋날 수 있으므로, `manifest` 정규화와 `packages-lock` 재생성을 함께 수행해 의존성 해석 오류를 제거하는 복구 절차.
+* **Locomotion Visual Suppression (이동 시각 잠금)**: AoE 공중 패턴처럼 비행 애니메이션이 우선이어야 할 때 `MoveTo`/`StopMoving`가 `PlayMove`/`PlayIdle`를 강제하지 않도록 막아 Walk가 `TakeOff/Fly`를 덮어쓰지 못하게 하는 보호 계층.
+* **FlyForward Fallback (비행 전진 폴백)**: `FlyForward` 상태가 Animator에 없을 때 지상 `Locomotion`으로 떨어지지 않고 `FlyIdle`로 폴백해 공중 연출을 연속 유지하는 보정 규칙.
+* **Post-Fire Recovery Window (발사 후 복귀 윈도우)**: Projectile 패턴에서 마지막 발사 직후 곧바로 Combat으로 복귀하지 않고 최소 대기(`postFireRecoveryDuration`) 및 애니메이션 진행률(`exitNormalizedTime`) 조건을 만족할 때 전환하는 안정화 구간.
+* **Exit Normalized Time (종료 정규화 시점)**: 공격 애니메이션이 어느 진행률에서 종료 판정을 허용할지 정의하는 기준값. `AnimatorStateInfo.normalizedTime`과 비교해 패턴 복귀 타이밍을 제어한다.
 
 ## 7. Design Patterns
 
@@ -76,3 +84,10 @@
 - **Phase Attack Window**: 페이즈 인트로가 끝난 뒤 실제 공격 패턴 선택이 허용되는 구간.
 - **No-Immediate-Repeat Selector**: 두 패턴이 모두 활성일 때 직전 패턴과 동일한 패턴을 연속 선택하지 않도록 하는 선택 규칙.
 - **HealthRatio**: `CurrentHealth / MaxHealth` 값. 보스의 페이즈 전환 임계치 판정(예: 0.5)에 사용.
+
+
+
+## Unity Compatibility Addendum (2026-02-20)
+- **Editor Assembly Anchor (에디터 어셈블리 앵커)**: `Assets/Editor`에 최소 1개 스크립트를 유지해 `Assembly-CSharp-Editor` 생성이 보장되도록 하는 안정화 패턴.
+- **Unity API Drift (API 드리프트)**: Unity 버전 전환 시 동일 기능의 프로퍼티/메서드 시그니처가 달라져 발생하는 호환성 문제. 본 프로젝트에서는 `Rigidbody.linearVelocity` -> `Rigidbody.velocity` 교체로 복구.
+

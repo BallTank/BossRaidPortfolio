@@ -41,6 +41,7 @@ namespace Core.Boss.Attacks
         {
             if (_settings == null || _settings.circlePrefab == null)
             {
+                controller.SetLocomotionVisualSuppressed(false);
                 Debug.LogWarning("AoEAttackPattern: circlePrefab is not assigned.");
                 _phase = PatternPhase.Complete;
                 return;
@@ -49,6 +50,8 @@ namespace Core.Boss.Attacks
             CleanupActiveCircles();
             EnsureCirclePool(Mathf.Max(1, _settings.circleCount));
 
+            // 공중 연출 시작 시 지상 Locomotion 애니메이션 진입을 잠금한다.
+            controller.SetLocomotionVisualSuppressed(true);
             controller.StopMoving();
             if (controller.Target != null)
             {
@@ -96,6 +99,7 @@ namespace Core.Boss.Attacks
 
         public void Exit(BossController controller)
         {
+            controller.SetLocomotionVisualSuppressed(false);
             CleanupActiveCircles();
             _phase = PatternPhase.Complete;
             _phaseTimer = 0f;
@@ -339,6 +343,7 @@ namespace Core.Boss.Attacks
             Rigidbody targetRigidbody = target.GetComponent<Rigidbody>();
             if (targetRigidbody != null)
             {
+                // Unity 2022 호환: Rigidbody.linearVelocity 대신 velocity를 사용한다.
                 Vector3 velocity = targetRigidbody.velocity;
                 velocity.y = 0f;
                 planarSpeed = velocity.magnitude;

@@ -20,10 +20,10 @@ namespace Core.Boss
         {
             if (Controller.Target == null) return;
 
-            float distance = Vector3.Distance(Controller.transform.position, Controller.Target.position);
+            float planarDistance = Controller.GetPlanarDistanceToTarget();
 
             // 감지 범위 내 & 시야 확보 시 전투 전환
-            if (distance <= Controller.DetectionRange && Controller.CheckLineOfSight())
+            if (planarDistance <= Controller.DetectionRange && Controller.CheckLineOfSight())
             {
                 Controller.StateMachine.ChangeState(Controller.CombatState);
             }
@@ -36,12 +36,17 @@ namespace Core.Boss
     {
         private IBossAttackPattern _lastPhaseOnePattern;
         private IBossAttackPattern _lastPhaseTwoPattern;
+        private bool _isChasingTarget;
 
         public BossCombatState(BossController controller) : base(controller) { }
 
         public override void Enter()
         {
             Controller.EnsurePhaseIntroForCurrentPhase();
+
+            // 공격 종료 직후 경계 지터를 줄이기 위해 재진입 버퍼를 기준으로 추적 래치를 초기화한다.
+            float planarDistance = Controller.GetPlanarDistanceToTarget();
+            _isChasingTarget = planarDistance > Controller.AttackRange + Controller.ChaseReengageBuffer;
         }
 
         public override void Update()
@@ -52,7 +57,7 @@ namespace Core.Boss
                 return;
             }
 
-            float distance = Vector3.Distance(Controller.transform.position, Controller.Target.position);
+            float planarDistance = Controller.GetPlanarDistanceToTarget();
 
             if (Controller.IsPhaseIntroPlaying)
             {
@@ -61,15 +66,23 @@ namespace Core.Boss
             }
 
             // 범위 벗어남 -> 수색
-            if (distance > Controller.DetectionRange)
+            if (planarDistance > Controller.DetectionRange)
             {
                 Controller.StateMachine.ChangeState(Controller.SearchingState);
                 return;
             }
 
-            // 공격 사거리 체크
-            if (distance > Controller.AttackRange)
+            UpdateChaseLatch(planarDistance);
+
+            // 추적 상태에서는 이동/원거리 패턴 전환을 우선 처리한다.
+            if (_isChasingTarget)
             {
+                // 공격 발동 조건이 이미 충족되면 이동 전환보다 패턴 전환을 우선한다.
+                if (Controller.CanAttack && Controller.IsPhaseTwoAttackWindow && TryStartAttackState())
+                {
+                    return;
+                }
+
                 // 추적 기능이 켜져 있을 때만 이동 (디버그용)
                 if (Controller.EnableChase)
                 {
@@ -82,29 +95,53 @@ namespace Core.Boss
                     Controller.RotateTowards(Controller.Target.position);
                 }
 
-                // 페이즈 2는 원거리에서도 패턴을 실행한다.
-                if (Controller.CanAttack && Controller.IsPhaseTwoAttackWindow)
-                {
-                    IBossAttackPattern selectedPattern = SelectPatternByPhase();
-                    if (selectedPattern == null) return;
-                    Controller.AttackState.SetPattern(selectedPattern);
-                    Controller.StateMachine.ChangeState(Controller.AttackState);
-                }
+                return;
             }
-            else
-            {
-                Controller.StopMoving();
-                Controller.RotateTowards(Controller.Target.position);
 
-                // 공격 쿨타임 확인 후 공격 전환
-                if (Controller.CanAttack)
-                {
-                    IBossAttackPattern selectedPattern = SelectPatternByPhase();
-                    if (selectedPattern == null) return;
-                    Controller.AttackState.SetPattern(selectedPattern);
-                    Controller.StateMachine.ChangeState(Controller.AttackState);
-                }
+            // 근접 교전 상태에서는 Locomotion을 멈추고 공격 기회를 탐색한다.
+            Controller.StopMoving();
+            Controller.RotateTowards(Controller.Target.position);
+
+            // 공격 쿨타임 확인 후 공격 전환
+            if (Controller.CanAttack && TryStartAttackState())
+            {
+                return;
             }
+        }
+
+        private void UpdateChaseLatch(float planarDistance)
+        {
+            float attackRange = Controller.AttackRange;
+            float chaseReengageRange = attackRange + Controller.ChaseReengageBuffer;
+
+            if (_isChasingTarget)
+            {
+                // 추적 중에는 공격 사거리 안으로 충분히 들어왔을 때만 추적을 해제한다.
+                if (planarDistance <= attackRange)
+                {
+                    _isChasingTarget = false;
+                }
+                return;
+            }
+
+            // 정지 상태에서는 재진입 버퍼를 넘겼을 때만 추적을 다시 시작한다.
+            if (planarDistance >= chaseReengageRange)
+            {
+                _isChasingTarget = true;
+            }
+        }
+
+        private bool TryStartAttackState()
+        {
+            IBossAttackPattern selectedPattern = SelectPatternByPhase();
+            if (selectedPattern == null)
+            {
+                return false;
+            }
+
+            Controller.AttackState.SetPattern(selectedPattern);
+            Controller.StateMachine.ChangeState(Controller.AttackState);
+            return true;
         }
 
         public override void Exit() { }
@@ -235,8 +272,8 @@ namespace Core.Boss
             // 재탐색 성공 시 Combat 복귀
             if (Controller.Target != null)
             {
-                float distance = Vector3.Distance(Controller.transform.position, Controller.Target.position);
-                if (distance <= Controller.DetectionRange && Controller.CheckLineOfSight())
+                float planarDistance = Controller.GetPlanarDistanceToTarget();
+                if (planarDistance <= Controller.DetectionRange && Controller.CheckLineOfSight())
                 {
                     Controller.StateMachine.ChangeState(Controller.CombatState);
                     return;
@@ -251,7 +288,7 @@ namespace Core.Boss
             }
 
             // 마지막 위치로 이동
-            if (Vector3.Distance(Controller.transform.position, _lastKnownPos) > 0.5f)
+            if (BossController.GetPlanarDistance(Controller.transform.position, _lastKnownPos) > 0.5f)
             {
                 Controller.MoveTo(_lastKnownPos, Controller.SearchingMoveSpeed);
             }
@@ -289,7 +326,7 @@ namespace Core.Boss
             {
                 // 경직 종료 후 상태 결정
                 if (Controller.Target != null &&
-                    Vector3.Distance(Controller.transform.position, Controller.Target.position) <= Controller.DetectionRange)
+                    Controller.GetPlanarDistanceToTarget() <= Controller.DetectionRange)
                 {
                     Controller.StateMachine.ChangeState(Controller.CombatState);
                 }

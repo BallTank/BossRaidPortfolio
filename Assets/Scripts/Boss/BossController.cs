@@ -39,11 +39,25 @@ namespace Core.Boss
             if (moveSpeed < 0) moveSpeed = 0f;
             if (searchingMoveSpeed < 0) searchingMoveSpeed = 0f;
             phaseTwoHealthThreshold = Mathf.Clamp01(phaseTwoHealthThreshold);
+            if (detectionRange < 0f) detectionRange = 0f;
+            if (attackRange < 0f) attackRange = 0f;
+            if (chaseReengageBuffer < 0f) chaseReengageBuffer = 0f;
+
+            if (projectileAttackSettings != null)
+            {
+                if (projectileAttackSettings.volleyCount < 1) projectileAttackSettings.volleyCount = 1;
+                if (projectileAttackSettings.volleyInterval < 0f) projectileAttackSettings.volleyInterval = 0f;
+                if (projectileAttackSettings.postFireRecoveryDuration < 0f) projectileAttackSettings.postFireRecoveryDuration = 0f;
+                projectileAttackSettings.exitNormalizedTime =
+                    Mathf.Clamp(projectileAttackSettings.exitNormalizedTime, 0.5f, 1.2f);
+            }
         }
 
         [Header("감지 설정 (Detection Settings)")]
         [SerializeField] private float detectionRange = 10.0f;
         [SerializeField] private float attackRange = 2.5f;
+        [SerializeField, Tooltip("공격 사거리 경계 지터 완화를 위한 추적 재진입 여유 거리")]
+        private float chaseReengageBuffer = 1.0f;
         [SerializeField] private float searchDuration = 5.0f;
         [SerializeField] private LayerMask obstacleMask;
 
@@ -111,6 +125,7 @@ namespace Core.Boss
         private bool _phaseTwoTriggered;
         private bool _phaseIntroPlaying;
         private float _phaseIntroEndTime;
+        private bool _suppressLocomotionVisual;
 
         // Public Properties for States
         public Transform Target => playerTransform;
@@ -119,6 +134,7 @@ namespace Core.Boss
         public float SearchingMoveSpeed => searchingMoveSpeed;
         public float DetectionRange => detectionRange;
         public float AttackRange => attackRange;
+        public float ChaseReengageBuffer => chaseReengageBuffer;
         public float SearchDuration => searchDuration;
         public int AttackDamage => attackDamage;
         public float AttackDuration => attackDuration;
@@ -137,6 +153,7 @@ namespace Core.Boss
         public bool IsPhaseIntroPlaying => _phaseIntroPlaying;
         public bool IsPhaseOneAttackWindow => _currentPhase == BossPhase.Phase1 && _phaseOneIntroCompleted && !_phaseIntroPlaying;
         public bool IsPhaseTwoAttackWindow => _currentPhase == BossPhase.Phase2 && _phaseTwoIntroCompleted && !_phaseIntroPlaying;
+        public bool IsLocomotionVisualSuppressed => _suppressLocomotionVisual;
 
         private void Awake()
         {
@@ -326,6 +343,25 @@ namespace Core.Boss
             return false;
         }
 
+        /// <summary>
+        /// 보스와 타겟 간 수평(XZ) 거리만 계산한다.
+        /// </summary>
+        public float GetPlanarDistanceToTarget()
+        {
+            if (playerTransform == null) return float.PositiveInfinity;
+            return GetPlanarDistance(transform.position, playerTransform.position);
+        }
+
+        /// <summary>
+        /// Y축을 제외한 수평 거리 계산 유틸리티.
+        /// </summary>
+        public static float GetPlanarDistance(Vector3 from, Vector3 to)
+        {
+            Vector3 delta = to - from;
+            delta.y = 0f;
+            return delta.magnitude;
+        }
+
         public void MoveTo(Vector3 targetPosition, float speed)
         {
             Vector3 direction = (targetPosition - transform.position).normalized;
@@ -343,8 +379,16 @@ namespace Core.Boss
 
                 if (animator)
                 {
-                    animator.PlayMove();
-                    animator.SetSpeed(speed);
+                    if (_suppressLocomotionVisual)
+                    {
+                        // 공중 연출 중에는 Locomotion 진입을 막고 속도 파라미터만 정지 상태로 유지한다.
+                        animator.SetSpeed(0f);
+                    }
+                    else
+                    {
+                        animator.PlayMove();
+                        animator.SetSpeed(speed);
+                    }
                 }
             }
         }
@@ -377,7 +421,22 @@ namespace Core.Boss
         {
             if (animator)
             {
-                animator.PlayIdle();
+                animator.SetSpeed(0f);
+                if (!_suppressLocomotionVisual)
+                {
+                    animator.PlayIdle();
+                }
+            }
+        }
+
+        /// <summary>
+        /// 공중 공격 연출 중 지상 이동 애니메이션(Locomotion) 오염을 방지한다.
+        /// </summary>
+        public void SetLocomotionVisualSuppressed(bool suppressed)
+        {
+            _suppressLocomotionVisual = suppressed;
+            if (animator && suppressed)
+            {
                 animator.SetSpeed(0f);
             }
         }
@@ -468,6 +527,11 @@ namespace Core.Boss
             public float homingDuration = 1.2f;
             [Tooltip("Y축 추적 속도 (0이면 발사 높이 유지)")]
             public float verticalFollowSpeed = 4f;
+            [Tooltip("발사 종료 후 상태 복귀 전 최소 대기 시간(초)")]
+            public float postFireRecoveryDuration = 0.12f;
+            [Tooltip("공격 애니메이션 종료 판정 normalizedTime")]
+            [Range(0.5f, 1.2f)]
+            public float exitNormalizedTime = 0.9f;
         }
 
         [System.Serializable]

@@ -9,10 +9,15 @@ namespace Core.Boss.Attacks
     /// </summary>
     public class ProjectileAttackPattern : IBossAttackPattern
     {
+        private const string AnimFlameAttack = "Flame Attack";
+        private const string AnimFireballShoot = "Fireball Shoot";
+        private const string AnimBasicAttack = "Basic Attack";
+
         private readonly BossController.ProjectileAttackSettings _settings;
 
         private float _telegraphTimer;
         private float _volleyTimer;
+        private float _postFireRecoveryTimer;
         private int _shotsFired;
         private bool _isFiringPhase;
 
@@ -34,6 +39,7 @@ namespace Core.Boss.Attacks
 
             _telegraphTimer = _settings.telegraphDuration;
             _volleyTimer = 0f;
+            _postFireRecoveryTimer = Mathf.Max(0f, _settings.postFireRecoveryDuration);
             _shotsFired = 0;
             _isFiringPhase = false;
         }
@@ -50,16 +56,21 @@ namespace Core.Boss.Attacks
             }
 
             // 2) 발사 간격에 맞춰 연속 발사
-            _volleyTimer -= Time.deltaTime;
-            if (_volleyTimer <= 0f)
+            if (_shotsFired < _settings.volleyCount)
             {
-                FireShot(controller, _shotsFired);
-                _shotsFired++;
-                _volleyTimer = _settings.volleyInterval;
+                _volleyTimer -= Time.deltaTime;
+                if (_volleyTimer <= 0f)
+                {
+                    FireShot(controller, _shotsFired);
+                    _shotsFired++;
+                    _volleyTimer = _settings.volleyInterval;
+                }
+
+                return false;
             }
 
-            // 3) 지정 발사 수를 채우면 공격 종료
-            return _shotsFired >= _settings.volleyCount;
+            // 3) 발사 완료 후 애니메이션 마무리 시점까지 대기
+            return IsRecoveryComplete(controller);
         }
 
         public void Exit(BossController controller)
@@ -115,6 +126,30 @@ namespace Core.Boss.Attacks
             if (shotIndex == 1) return 0f;
             if (shotIndex == 2) return 8f;
             return 0f;
+        }
+
+        private bool IsRecoveryComplete(BossController controller)
+        {
+            // 최소 대기 시간 보장(발사 직후 즉시 복귀 방지)
+            if (_postFireRecoveryTimer > 0f)
+            {
+                _postFireRecoveryTimer -= Time.deltaTime;
+                if (_postFireRecoveryTimer > 0f) return false;
+            }
+
+            Animator animator = controller.Visual?.Animator;
+            if (animator == null) return true;
+
+            AnimatorStateInfo stateInfo = animator.GetCurrentAnimatorStateInfo(0);
+            bool isProjectileAnim =
+                stateInfo.IsName(AnimFlameAttack) ||
+                stateInfo.IsName(AnimFireballShoot) ||
+                stateInfo.IsName(AnimBasicAttack);
+
+            // 이미 다른 상태로 전환된 경우에는 복귀를 허용한다.
+            if (!isProjectileAnim) return true;
+
+            return stateInfo.normalizedTime >= _settings.exitNormalizedTime;
         }
     }
 }

@@ -200,6 +200,8 @@ sequenceDiagram
 - 유도(`homingStrength`, `homingDuration`)는 XZ 평면 기준으로 처리하여 수평 추적 안정성을 유지합니다.
 - 피격 판정은 `OnTriggerEnter` + `OnCollisionEnter`를 모두 처리하며, 필요 시 `GetComponentInParent<IDamageable>()`로 부모 컴포넌트까지 탐색합니다.
 - VFX 프리팹 사용 시 충돌 즉시 반납하지 않고 `hit` 이벤트 재생 후 `hitReturnDelay`가 끝나면 풀로 반납합니다.
+- Projectile 패턴 종료는 단순 `volleyCount`가 아니라 `postFireRecoveryDuration` + `exitNormalizedTime` 조건을 함께 만족해야 하므로 Flame 공격 직후 조기 Locomotion 복귀를 줄입니다.
+- `BossCombatState`의 추적/공격 거리 판정은 평면(XZ) 거리와 `AttackRange + ChaseReengageBuffer` 히스테리시스를 사용해 경계 지터를 완화합니다.
 
 ---
 
@@ -256,4 +258,6 @@ sequenceDiagram
 - 데미지 판정은 `Physics.OverlapSphereNonAlloc` + 선할당 버퍼로 처리합니다.
 - 장판 생성 위치는 지면 투영(Raycast)으로 확정하며, 마스크 미스매치 상황에서는 공통 지면 레이어/비타겟 레이어 폴백을 사용합니다.
 - 비행 연출 기본 체인은 `takeOff -> FlyForward -> FlyIdle -> Land`로 고정하고, 브레스 타이밍은 `FlyIdle` 구간에서 동기화합니다.
+- AoE Enter~Exit 구간에서는 `SetLocomotionVisualSuppressed(true/false)`로 Locomotion 시각 잠금을 적용해 Walk가 비행 애니메이션을 덮어쓰지 않게 보호합니다.
+- `FlyForward` 상태가 없는 Animator에서는 `PlayFlyIdle()`로 폴백해 공중 연출 연속성을 유지합니다.
 

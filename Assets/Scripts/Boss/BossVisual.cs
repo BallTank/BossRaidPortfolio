@@ -110,7 +110,8 @@ namespace Core.Boss
         {
             if (TryCrossFade(AnimFlyForward)) return;
             if (TryCrossFade(AnimFlyForwardAlt)) return;
-            PlayMove();
+            // FlyForward 상태가 없을 때도 Walk로 떨어지지 않도록 비행 계열로 폴백한다.
+            PlayFlyIdle();
         }
 
         public void PlayFlyIdle()

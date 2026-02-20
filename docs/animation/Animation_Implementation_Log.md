@@ -177,3 +177,23 @@ private const string ANIM_FLAME_ATTACK = "Flame Attack";
 - 장판 분포는 타겟 진행 방향 예측(`headingLeadTime`, `headingBias` 등)으로 전방 편향되어, 플레이어 진행 경로를 더 강하게 압박합니다.
 - 런타임 폴백 디스크는 `fallbackYOffset = 0`으로 고정해 바닥 밀착을 유지합니다.
 
+### 6.7. Projectile(Flame) 종료 복귀 안정화 (2026-02-20)
+| 항목 | 구현 |
+|------|------|
+| 조기 복귀 방지 | 마지막 발사 후 즉시 Combat으로 복귀하지 않고 `postFireRecoveryDuration`만큼 대기 |
+| 애니메이션 종료 동기화 | `AnimatorStateInfo.normalizedTime`가 `exitNormalizedTime` 이상일 때 상태 종료 허용 |
+| 대상 상태 | `Flame Attack`, `Fireball Shoot`, `Basic Attack` 상태를 모두 종료 판정 대상으로 취급 |
+
+- `volleyCount`만으로 종료를 판단하던 기존 방식에서, 최소 대기 + normalizedTime 조건 결합 방식으로 변경했습니다.
+- Flame Attack 이후 Locomotion으로 급복귀하며 발생하던 시각적 튐(지터)을 완화합니다.
+
+### 6.8. AoE 비행 연출 보호(Locomotion 잠금) (2026-02-20)
+| 항목 | 구현 |
+|------|------|
+| 지상 이동 애니메이션 오염 방지 | `AoEAttackPattern.Enter()`에서 `SetLocomotionVisualSuppressed(true)` 적용 |
+| 종료 시 복구 | `AoEAttackPattern.Exit()`에서 `SetLocomotionVisualSuppressed(false)` 해제 |
+| FlyForward 폴백 보강 | `BossVisual.PlayFlyForward()`에서 비행 상태 미존재 시 `PlayFlyIdle()` 폴백 |
+
+- 공중 연출(`TakeOff -> FlyForward -> FlyIdle -> Land`) 중 `MoveTo`/`StopMoving`가 Walk/Idle을 덮어쓰지 않도록 시각 보호 계층을 적용했습니다.
+- Animator 구성 편차(FlyForward 미구성)에서도 Walk 혼입 대신 비행 루프를 유지해 연출 안정성을 확보했습니다.
+

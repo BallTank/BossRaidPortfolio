@@ -1,4 +1,4 @@
-# 🛠️ System Blueprint: Boss Raid Portfolio
+﻿# 🛠️ System Blueprint: Boss Raid Portfolio
 
 이 문서는 프로젝트의 핵심 아키텍처 설계와 데이터 규칙을 정의합니다. AI 및 개발자는 이 청사진을 준수하여 코드를 작성해야 합니다.
 
@@ -114,7 +114,7 @@ classDiagram
 *   **Controller**: `Assets/Scripts/Boss/BossController.cs`
 *   **Visual**: `Assets/Scripts/Boss/BossVisual.cs`
 *   **States**: `Assets/Scripts/Boss/BossFSM.cs` (모든 Boss State 클래스 포함)
-*   **Attack Patterns**: `Assets/Scripts/Boss/Attacks/` (`IBossAttackPattern.cs`, `BasicAttackPattern.cs`, `LungeAttackPattern.cs`, `ProjectileAttackPattern.cs`)
+*   **Attack Patterns**: `Assets/Scripts/Boss/Attacks/` (`IBossAttackPattern.cs`, `BasicAttackPattern.cs`, `LungeAttackPattern.cs`, `ProjectileAttackPattern.cs`, `AoEAttackPattern.cs`)
 *   **Combat**: `Assets/Scripts/Common/Combat/Health.cs`, `Assets/Scripts/Common/Combat/DamageCaster.cs`, `Assets/Scripts/Common/Combat/BossHitBox.cs`
 
 ```mermaid
@@ -127,7 +127,9 @@ classDiagram
         +MoveSpeed float
         +DetectionRange float
         +AttackRange float
+        +ChaseReengageBuffer float
         +CanAttack bool
+        +IsLocomotionVisualSuppressed bool
         -StateMachine~BossBaseState~ _stateMachine
         +BossVisual Visual
         +DamageCaster HeadDamageCaster
@@ -136,6 +138,9 @@ classDiagram
         +ProjectileAttackSettings ProjectileAttackSettings
         +BossProjectilePool ProjectilePool
         +Transform ProjectileSpawnPoint
+        +SetLocomotionVisualSuppressed(bool)
+        +GetPlanarDistanceToTarget() float
+        +GetPlanarDistance(Vector3, Vector3) float
         +Update()
         +MoveRaw(Vector3, float)
     }
@@ -154,6 +159,10 @@ classDiagram
         +PlayAttack()
         +PlayLungeAttack()
         +PlayProjectileAttack()
+        +PlayTakeOff()
+        +PlayFlyForward()
+        +PlayFlyIdle()
+        +PlayLand()
         +TriggerHit()
         +TriggerDie()
         +SetSearchingUI(bool)
@@ -198,7 +207,7 @@ classDiagram
 공격 패턴의 확장성을 위해 `Strategy Pattern`을 적용했습니다. `BossAttackState`는 구체적인 공격 로직을 알지 못하며, 주입된 `IBossAttackPattern`에게 실행을 위임합니다.
 
 **관련 코드:**
-*   **Attack Patterns**: `Assets/Scripts/Boss/Attacks/` (`IBossAttackPattern.cs`, `BasicAttackPattern.cs`, `LungeAttackPattern.cs`, `ProjectileAttackPattern.cs`)
+*   **Attack Patterns**: `Assets/Scripts/Boss/Attacks/` (`IBossAttackPattern.cs`, `BasicAttackPattern.cs`, `LungeAttackPattern.cs`, `ProjectileAttackPattern.cs`, `AoEAttackPattern.cs`)
 *   **Projectile Pooling**: `Assets/Scripts/Boss/Projectiles/` (`BossProjectilePool.cs`, `BossProjectile.cs`)
 
 ```mermaid
@@ -209,6 +218,7 @@ classDiagram
         +BasicAttackPattern BasicAttackPattern
         +LungeAttackPattern LungeAttackPattern
         +ProjectileAttackPattern ProjectileAttackPattern
+        +AoEAttackPattern AoEAttackPattern
         +BossProjectilePool ProjectilePool
         +StartAttackCooldown()
         +AttackDamage int
@@ -248,7 +258,17 @@ classDiagram
         -ProjectileAttackSettings _settings
         -float _telegraphTimer
         -float _volleyTimer
+        -float _postFireRecoveryTimer
         -int _shotsFired
+        +Enter(BossController)
+        +Update(BossController) bool
+        +Exit(BossController)
+    }
+
+    class AoEAttackPattern {
+        -PatternPhase _phase
+        -float _phaseTimer
+        -float _spawnTimer
         +Enter(BossController)
         +Update(BossController) bool
         +Exit(BossController)
@@ -271,11 +291,14 @@ classDiagram
     IBossAttackPattern <|.. BasicAttackPattern : Implements
     IBossAttackPattern <|.. LungeAttackPattern : Implements
     IBossAttackPattern <|.. ProjectileAttackPattern : Implements
+    IBossAttackPattern <|.. AoEAttackPattern : Implements
     BossController --> BasicAttackPattern : Owns
     BossController --> LungeAttackPattern : Owns
     BossController --> ProjectileAttackPattern : Owns
+    BossController --> AoEAttackPattern : Owns
     BossController --> BossProjectilePool : Owns
     ProjectileAttackPattern --> BossProjectilePool : Uses
+    AoEAttackPattern --> BossProjectilePool : Uses
     BossProjectilePool --> BossProjectile : Reuses
 ```
 
@@ -297,6 +320,8 @@ classDiagram
 * `lookYaw`, `lookPitch`: **CameraRoot** 회전용 (마우스 입력).
 * `moveDir`: **Character Body** 회전 및 이동용 (키보드 입력).
 * 캐릭터 몸통은 카메라가 바라보는 방향(`cameraRoot.forward`)을 기준으로 이동 벡터를 변환해야 한다.
+* **Boss Planar Distance Rule**: Boss의 감지/추적/공격 사거리 판정은 Y축을 제외한 수평(XZ) 거리 기준으로 계산한다.
+* **Boss Chase Hysteresis**: `AttackRange` 단일 임계값 대신 `AttackRange + ChaseReengageBuffer` 재진입 구간을 사용해 경계 왕복 지터를 완화한다.
 
 
 * **Optimization**:
@@ -322,6 +347,7 @@ classDiagram
 | **StateMachine** | ✅ Done | `BossRaid.Patterns` 네임스페이스 적용 및 구현 완료. |
 | **Physics System** | ✅ Done | `NonAlloc` 물리 판정(OverlapSphere) 및 최적화 완료. |
 | **Object Pooling** | ✅ Done | `BossProjectilePool` 기반 투사체 재사용(Prewarm/Max/Expand) 구현 완료. |
+| **Package Baseline** | ✅ Done | Unity 2022.3 기준으로 package manifest 정리 및 lock 재생성 경로 복구 (`URP/VFX 14.0.12`, `TMP 추가`, Unity 6 전용 의존성 제거). |
 
 ### 4.2. Player System
 | Component | Status | Note |
@@ -339,9 +365,9 @@ classDiagram
 | --- | --- | --- |
 | **Boss Logic (FSM)** | ✅ Done | `BossController` 상태 머신 (Idle, Combat, Searching, Dead) |
 | **Boss Sensors** | ✅ Done | `CheckLineOfSight` (Raycast) 및 거리 감지 로직 |
-| **Boss Navigation** | ✅ Done | `MoveTo` (추적 이동) 및 `RotateTowards` (회전) 로직 |
-| **Boss Visuals** | ✅ Done | 구조 분리 및 Dragon Asset(Animator/BlendTree) 통합 완료. |
-| **Boss Combat** | 🔃 progress | `Pattern 1`(Basic), `Pattern 2`(Lunge), `Pattern 3`(Projectile: Flame Attack + Homing + Vertical Follow + VFX create/hit + hitReturnDelay) 완료. `Pattern 4`(AoE) 진행 중. |
+| **Boss Navigation** | ✅ Done | `MoveTo` (추적 이동) 및 `RotateTowards` (회전) 로직 + AoE 공중 연출 중 Locomotion 시각 잠금 가드 + `ChaseReengageBuffer` 기반 히스테리시스 추적 |
+| **Boss Visuals** | ✅ Done | 구조 분리 및 Dragon Asset(Animator/BlendTree) 통합 완료. `PlayFlyForward` 폴백을 비행 계열로 정리해 Walk 혼입 방지. |
+| **Boss Combat** | 🔃 progress | `Pattern 1`(Basic), `Pattern 2`(Lunge), `Pattern 3`(Projectile: Flame Attack + Homing + Vertical Follow + VFX create/hit + hitReturnDelay + postFireRecovery/exitNormalizedTime) 완료. 경계 지터 완화를 위한 추적 히스테리시스 및 Flame 종료 동기화 반영. `Pattern 4`(AoE) 진행 중. |
 
 ### 4.4. User Interface (UI)
 | Component | Status | Note |
@@ -367,3 +393,10 @@ classDiagram
 > "System_Blueprint.md의 **FSM Layer** 섹션을 참고해서, 현재 `PlayerController.cs`에 있는 이동 로직을 추출하여 `MoveState` 클래스를 작성하고, `PlayerController`에는 상태 머신을 연결해줘."
 
 
+
+
+### 4.7. Compatibility Note (Unity 2022)
+| Component | Status | Note |
+| --- | --- | --- |
+| **AoE Heading Sampling** | ✅ Done | AoEAttackPattern의 타겟 속도 샘플링은 Unity 2022 기준 Rigidbody.velocity를 사용한다. |
+| **Editor Assembly Anchor** | ✅ Done | Assets/Editor/EditorAssemblyAnchor.cs를 통해 에디터 전용 어셈블리 생성 경로를 고정. |
