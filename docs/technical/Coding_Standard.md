@@ -36,6 +36,8 @@
 * `Character Body`: 이동 입력이 있을 때만 이동 방향으로 부드럽게 회전(`Slerp`).
 * **Projectile Axis Separation**: 투사체 유도는 축을 분리한다. 수평 조향은 XZ 평면(`RotateTowards`)으로 처리하고, 수직 추적은 Y축 `MoveTowards`로 별도 처리한다.
 * **Projectile Vertical Follow Tuning**: Y축 추적 강도는 하드코딩하지 않고 인스펙터 직렬화 값(`verticalFollowSpeed`)으로 노출한다. `0`일 때는 발사 높이를 유지해야 한다.
+* **Boss Distance Metric Rule**: Boss의 감지/추적/공격 거리 비교는 `Vector3.Distance` 대신 Y축을 제거한 평면 거리(XZ)를 기준으로 처리한다.
+* **Boss Chase Hysteresis Rule**: 공격 사거리 경계에서 `Move`/`Idle` 왕복이 발생하지 않도록 `AttackRange`와 `AttackRange + chaseReengageBuffer` 이중 임계값을 사용한다.
 * **Hit Resolution Robustness**: 투사체 충돌 처리 시 `OnTriggerEnter`만 가정하지 않는다. `OnCollisionEnter` 경로를 함께 제공하고, 데미지 대상 탐색은 `GetComponent<IDamageable>()` 후 `GetComponentInParent<IDamageable>()` 순으로 폴백한다.
 * **AoE Ground Validation**: 장판 스폰 좌표는 지면 Raycast로 확정하고, 경기장 경계 밖 좌표는 생성 전에 보정(Clamp)하거나 스킵한다.
 * **AoE Tick Determinism**: 장판 틱 데미지는 프레임마다 즉시 호출하지 않고 누적 타이머(`tickInterval`) 기준으로 처리한다.
@@ -52,6 +54,7 @@
 * **Editor-Tunable First**: `radius`, `telegraphDuration`, `activeDuration`, `tickInterval`, `damage`는 하드코딩하지 않고 직렬화 설정으로 노출한다.
 * **Predictive Spread Rule**: 장판 분포는 타겟 현재 위치만 쓰지 않고 진행 방향 예측을 적용한다. 최소 `headingLeadTime`, `maxHeadingLeadDistance`, `forwardSpreadRadius`, `sideSpreadRadius`, `headingBias`, `headingMinSpeed`를 인스펙터에서 조정 가능해야 한다.
 * **Fallback Disc Grounding Rule**: `AoECircleController`의 런타임 폴백 디스크 오프셋(`fallbackYOffset`) 기본값은 `0`을 유지해 바닥 밀착을 보장한다.
+* **Projectile Exit Sync Rule**: Projectile 패턴 종료는 마지막 발사 수만으로 즉시 반환하지 않고 `postFireRecoveryDuration` 및 `exitNormalizedTime` 조건을 함께 만족할 때 복귀한다.
 
 ## 6. Naming & Style Conventions
 
@@ -59,3 +62,12 @@
 * **Properties**: public 프로퍼티는 `PascalCase`를 사용한다. (예: `CurrentState`)
 * **Methods**: 모든 메서드는 `PascalCase`를 사용하며, 동사로 시작한다.
 * **Attributes**: 유니티 인스펙터 노출이 필요한 필드는 `[SerializeField]`를 명시한다.
+
+## 7. Documentation Encoding Standard
+
+* **UTF-8 Only Rule**: `docs/` 내 문서 파일(`.md`, `.txt`)은 UTF-8(UTF-8 with BOM 허용)으로 유지한다.
+* **PowerShell Write Rule**: PowerShell로 문서를 수정/생성할 때는 `-Encoding utf8` 옵션을 반드시 명시한다.
+* **No Legacy Save Rule**: `cp949`, `euc-kr`, `ansi` 등 레거시 인코딩으로 재저장하지 않는다.
+* **Mojibake Diff Rule**: 커밋 전 `git diff`에서 `�`, `??`, `ì`, `ì´` 등 깨짐 패턴을 발견하면 커밋을 중단하고 원인을 분리 진단한다.
+* **Recovery Rule**: 이미 깨진 문자열은 인코딩 변환만으로 복원하지 않는다. 정상본(이전 커밋/백업) 기준으로 수동 복구한다.
+* **Critical Docs Rule**: `Input_FSM_Flow.md`, `System_Blueprint.md`, `Progress_Log.md`는 편집 전 우선 점검 문서로 취급한다.

@@ -1,371 +1,450 @@
-# 🚀 Progress Log: Boss Raid Portfolio
+﻿# ?? Progress Log: Boss Raid Portfolio
 
-## 📅 [2월 1주차] 목표: 플레이어 컨트롤러 및 상태 머신
+## ?뱟 [2??1二쇱감] 紐⑺몴: ?뚮젅?댁뼱 而⑦듃濡ㅻ윭 諛??곹깭 癒몄떊
 
-### **2026-02-02 (월): 기획 및 아키텍처 설계**
+### **2026-02-20 (??: ?좊땲硫붿씠?ㅻ? ?⑦꽩)**
 
-* **작업 내용**
-* GDD(Technical Architecture) 초안 작성 및 시스템 로드맵 수립.
-* 입력 시스템 인터페이스(`IInputProvider`) 및 데이터 구조(`PlayerInputPacket`) 의사코드 설계.
+* **紐⑤뱺 ?댁슜**
+* `BossCombatState.Update()` ?맂?쒖쓬 利덉떖, 추적 구간에서 공격 발동이 가능할 때 `MoveTo`/`PlayMove`보다 `AttackState` 전환을 먼저 수행.
+* AoE/공중 연출 패턴 진입 시 이동 기반 Walk 애니메이션과 충돌하지 않도록 전환 직전 이동 호출 경로를 제거.
+* `Walk + TakeOff` ?낅섏굿 ?섏뿌 泥섎━ 이슈를 해결하기 위한 1차 패치로 반영.
+
+### **2026-02-20 (금: AoE 추적 중 Walk/TakeOff 애니메이션 충돌 수정)**
+
+* **오늘 완료한 작업**
+* `BossController`에 `SetLocomotionVisualSuppressed(bool)`를 추가해 공중 연출 중 `MoveTo`/`StopMoving`에서 `PlayMove`/`PlayIdle`가 덮어쓰지 않도록 시각 잠금을 적용.
+* `AoEAttackPattern.Enter/Exit`에서 잠금을 On/Off 하도록 연결해 `TakeOff -> FlyForward -> FlyIdle -> Land` 체인 동안 Walk 혼입을 차단.
+* `BossVisual.PlayFlyForward()` 폴백을 `PlayMove`에서 `PlayFlyIdle`로 변경해 FlyForward 상태가 없는 Animator에서도 공중 연출이 깨지지 않도록 보정.
+
+* **기술적 고려**
+* FSM 전환 우선순위만으로는 프레임 경계에서 `MoveTo`/`StopMoving` 호출이 시각 상태를 오염시킬 수 있어, 공격 패턴 단위의 시각 잠금 계층을 추가.
+* AoE 패턴 종료 또는 인터럽트 시 `Exit`에서 잠금을 해제해 Combat/Search/Idle 복귀 후 Locomotion 재생이 정상 동작하도록 보장.
+
+### **2026-02-20 (금: Boss 추적/Flame 복귀 지터 완화 2차 패치)**
+
+* **✅ 오늘 완료한 작업**
+* `BossCombatState`의 거리 판정을 `Vector3.Distance`에서 수평(XZ) 기준 `GetPlanarDistanceToTarget()`로 전환.
+* `BossController`에 `chaseReengageBuffer`를 추가하고, `BossCombatState`에 추적 래치(히스테리시스)를 적용해 `Speed 3.5 ↔ 0` 왕복을 완화.
+* `BossIdleState`, `BossSearchingState`, `BossHitState`의 거리 판정도 동일한 평면 기준으로 통일.
+* `ProjectileAttackPattern`에 `postFireRecoveryDuration`, `exitNormalizedTime`을 도입해 Flame Attack 종료 후 조기 Locomotion 복귀를 방지.
+
+* **🧠 기술적 고민**
+* 단일 임계값 기반 전환은 경계 근처에서 상태 왕복이 발생하기 쉬워 애니메이션 파라미터 튐을 유발하므로, 이중 임계값(히스테리시스)으로 완화.
+* 발사 수(`volleyCount`)만으로 패턴 종료를 판단하면 클립 잔여 구간이 잘릴 수 있어 최소 대기 + `normalizedTime` 조건을 결합.
+
+### **2026-02-20 (금: 문서 한글 인코딩 가드레일 정립)**
+
+* **✅ 오늘 완료한 작업**
+* `AI_Maintenance_Guide.md`에 UTF-8 저장/검증/복구 절차를 추가해 문서 유지보수 프로토콜에 반영.
+* `Coding_Standard.md`에 문서 인코딩 표준 섹션을 추가하고 PowerShell `-Encoding utf8` 명시 규칙을 고정.
+* 한글 핵심 문서(`Input_FSM_Flow.md`, `System_Blueprint.md`, `Progress_Log.md`) 편집 전후 깨짐 패턴 점검 기준을 체크리스트에 반영.
+
+* **🧠 기술적 고민**
+* 터미널 출력 깨짐과 파일 손상을 구분하지 않으면 불필요한 재저장으로 손상이 확대될 수 있어, "출력 확인 -> 파일 인코딩 확인 -> 복구" 순서를 표준화.
+* 이미 손상된 텍스트는 인코딩 전환만으로 복구되지 않으므로, 정상 커밋 기준 재적용 원칙을 명시.
+
+### **2026-02-20 (금: 문서 최신화 동기화)**
+
+* **✅ 오늘 완료한 작업**
+* `System_Blueprint.md`에 `AoEAttackPattern` 전략 클래스 및 `BossController` 소유 관계를 다이어그램/관련 코드 목록에 반영.
+* `Animator_Setup_Guide.md`에 `PlayFlyForward`의 비행 폴백(`PlayFlyIdle`)과 AoE 구간 `SetLocomotionVisualSuppressed` 운용 규칙을 추가.
+* `Animation_Implementation_Log.md`, `Input_FSM_Flow.md`, `Technical_Glossary.md`에 Walk-Flight 충돌 방지 규칙(시각 잠금/폴백)과 동작 맥락을 동기화.
+
+* **🧠 기술적 고민**
+* 애니메이션 문제는 코드 수정만으로 끝나지 않고 Animator 설정 가이드/흐름 문서/용어집이 함께 갱신되어야 재발 방지 효과가 생긴다.
+* 시각 잠금과 폴백은 런타임 예외 경로에서만 드러나므로, 문서에 명시해 테스트 케이스(상태 미존재, 경계 구간 지터)까지 함께 공유하는 것이 중요하다.
+
+### **2026-02-02 (??: 湲고쉷 諛??꾪궎?띿쿂 ?ㅺ퀎**
+
+* **?묒뾽 ?댁슜**
+* GDD(Technical Architecture) 珥덉븞 ?묒꽦 諛??쒖뒪??濡쒕뱶留??섎┰.
+* ?낅젰 ?쒖뒪???명꽣?섏씠??`IInputProvider`) 諛??곗씠??援ъ“(`PlayerInputPacket`) ?섏궗肄붾뱶 ?ㅺ퀎.
 
 
-* **기술적 포인트 (Senior's Review)**
-* **Decoupling**: 입력과 로직을 분리하여 나중에 `NetworkInputProvider`만 갈아 끼우면 멀티플레이어가 가능하도록 설계함.
-* **Data-Oriented**: 싱글플레이 단계부터 데이터를 구조체(`struct`)화하여 메모리 효율과 네트워크 직렬화 편의성을 고려함.
+* **湲곗닠???ъ씤??(Senior's Review)**
+* **Decoupling**: ?낅젰怨?濡쒖쭅??遺꾨━?섏뿬 ?섏쨷??`NetworkInputProvider`留?媛덉븘 ?쇱슦硫?硫?고뵆?덉씠?닿? 媛?ν븯?꾨줉 ?ㅺ퀎??
+* **Data-Oriented**: ?깃??뚮젅???④퀎遺???곗씠?곕? 援ъ“泥?`struct`)?뷀븯??硫붾え由??⑥쑉怨??ㅽ듃?뚰겕 吏곷젹???몄쓽?깆쓣 怨좊젮??
 
 
 
 ---
 
-### **2026-02-03 (화): 입력 시스템 및 코어 모터 구현**
+### **2026-02-03 (??: ?낅젰 ?쒖뒪??諛?肄붿뼱 紐⑦꽣 援ы쁽**
 
-* **작업 내용**
-* Unity New Input System 연동 및 `PlayerControlInput` 바인딩 완료.
-* `PlayerInputPacket` 내 **Bit-masking** 적용 (1바이트로 여러 버튼 상태 패킹).
-* **Camera-Relative Movement** 구현: 카메라가 바라보는 방향 기준 이동 벡터 연산 완료.
-* Character Body와 CameraRoot의 회전 로직 분리.
-
-
-* **기술적 포인트 (Senior's Review)**
-* **Bitwise Operation**: `bool` 변수 나열 대신 비트 연산(`&`, `|`, `~`)을 사용하여 패킷 크기를 최소화함. 면접 시 "네트워크 대역폭 최적화 경험"으로 어필 가능.
-* **Vector Math**: `cameraRoot.forward`에서 `y`값을 제거하고 정규화(`Normalize`)하여, 경사로에서도 일정한 이동 속도를 유지하는 조작감 구현.
+* **?묒뾽 ?댁슜**
+* Unity New Input System ?곕룞 諛?`PlayerControlInput` 諛붿씤???꾨즺.
+* `PlayerInputPacket` ??**Bit-masking** ?곸슜 (1諛붿씠?몃줈 ?щ윭 踰꾪듉 ?곹깭 ?⑦궧).
+* **Camera-Relative Movement** 援ы쁽: 移대찓?쇨? 諛붾씪蹂대뒗 諛⑺뼢 湲곗? ?대룞 踰≫꽣 ?곗궛 ?꾨즺.
+* Character Body? CameraRoot???뚯쟾 濡쒖쭅 遺꾨━.
 
 
-
----
-
-### **2026-02-04 (수): FSM Refactoring & Dash Implementation**
-
-* **작업 내용**
-    * `StateMachine` 및 `BaseState` 클래스 구현 (Generic Architecture).
-    * `PlayerController`로부터 이동/회전 로직을 `MoveState`로 완전 이관.
-    * `DashState` 및 **대시 강화(Cooldown, Edge-trigger)** 구현.
-    * `JumpState` 구현: **Air Control(공중 제어)** 및 중력 적용, 착지 판정.
-    * `AttackState` 구현: **3단 콤보 시스템**, 선입력(Buffer), 대시 캔슬(Animation Cancel).
-    * 인스펙터에서 조절 가능한 대시 설정(`Duration`, `Multiplier`, `Cooldown`) 추가.
-    * `PlayerController`는 상태 관리자 및 데이터 컨텍스트 역할 수행.
-
-* **기술적 포인트**
-    * **Separation of Concerns**: 상위 컨트롤러는 설정과 컨텍스트만 관리하고, 실제 로직 수행은 State 클래스에 위임하여 SRP(단일 책임 원칙)를 준수함.
-    * **Input Edge-Triggering**: 대시 버튼을 꾹 누를 때 발생하는 연속 대시 문제를 `bool` 플래그를 이용한 엣지 트리거 방식으로 해결하여 의도치 않은 행위를 방지함.
-    * **Combo Input Buffer**: 공격 애니메이션 도중 입력을 미리 받아두는 `_reserveNextCombo` 로직을 통해 끊김 없는(Fluid) 콤보 연계를 구현함.
-    * **Animation Cancel**: 공격 후딜레이(Release Time) 구간에서 대시로 캔슬 가능하도록 `CheckDashCancel`을 구현하여 조작 반응성을 높임.
-    * **Serialized Configuration**: 기획자가 코드 수정 없이 로직 밸런스를 조절할 수 있도록 `[SerializeField]`를 적극 활용함.
-
-* **기술적 고민**
-    * **State Transition**: 현재 `MoveState` 내부에서 `input.HasFlag(Dash)`를 체크하여 전환하고 있음. 상태가 많아지면 전환 로직이 복잡해질 수 있는데, `TransitionTable` 등을 도입할지 고민 필요.
-    * **Project Structure**: 파일이 점차 늘어남에 따라 폴더를 기능 단위(`Player`, `Patterns`, `UI` 등)로 분리하고 네임스페이스를 더 세분화할 것인지 검토 중.
+* **湲곗닠???ъ씤??(Senior's Review)**
+* **Bitwise Operation**: `bool` 蹂???섏뿴 ???鍮꾪듃 ?곗궛(`&`, `|`, `~`)???ъ슜?섏뿬 ?⑦궥 ?ш린瑜?理쒖냼?뷀븿. 硫댁젒 ??"?ㅽ듃?뚰겕 ???룺 理쒖쟻??寃쏀뿕"?쇰줈 ?댄븘 媛??
+* **Vector Math**: `cameraRoot.forward`?먯꽌 `y`媛믪쓣 ?쒓굅?섍퀬 ?뺢퇋??`Normalize`)?섏뿬, 寃쎌궗濡쒖뿉?쒕룄 ?쇱젙???대룞 ?띾룄瑜??좎??섎뒗 議곗옉媛?援ы쁽.
 
 
 
 ---
 
-### **2026-02-05 (목): Codebase Analysis & Documentation**
+### **2026-02-04 (??: FSM Refactoring & Dash Implementation**
 
-* **작업 내용**
-    * **Dependency Analysis**: 코드 의존성 분석 (Strong vs Weak Coupling) 및 다이어그램 시각화.
-    * **Documentation Update**: `Dependency_Analysis.md` 작성.
-    * **Animation Refactoring**: 애니메이션 상태 이름을 문자열 상수(`const`)로 변환하여 코드 안정성 및 유지보수성 확보.
-    * **Interview Prep**: 기술 면접 대비 코드 구조 및 설계 의도 정리 (Codebase Analysis).
-    * **FSM Visualization**: 상속 및 인터페이스 구조를 `Mermaid` 클래스 다이어그램으로 시각화.
+* **?묒뾽 ?댁슜**
+    * `StateMachine` 諛?`BaseState` ?대옒??援ы쁽 (Generic Architecture).
+    * `PlayerController`濡쒕????대룞/?뚯쟾 濡쒖쭅??`MoveState`濡??꾩쟾 ?닿?.
+    * `DashState` 諛?**???媛뺥솕(Cooldown, Edge-trigger)** 援ы쁽.
+    * `JumpState` 援ы쁽: **Air Control(怨듭쨷 ?쒖뼱)** 諛?以묐젰 ?곸슜, 李⑹? ?먯젙.
+    * `AttackState` 援ы쁽: **3??肄ㅻ낫 ?쒖뒪??*, ?좎엯??Buffer), ???罹붿뒳(Animation Cancel).
+    * ?몄뒪?숉꽣?먯꽌 議곗젅 媛?ν븳 ????ㅼ젙(`Duration`, `Multiplier`, `Cooldown`) 異붽?.
+    * `PlayerController`???곹깭 愿由ъ옄 諛??곗씠??而⑦뀓?ㅽ듃 ??븷 ?섑뻾.
 
-* **기술적 포인트**
-    * **Coupling & Cohesion**: `PlayerController`와 `State` 클래스 간의 결합도를 분석하고, 의존성 주입(Dependency Injection)과 인터페이스(`IInputProvider`) 사용의 중요성을 재확인함.
-    * **Documentation as Code**: 문서를 단순 텍스트가 아닌, 엔지니어링 산출물로 취급하여 코드 변경 사항(상수명 등)을 즉시 반영함.
-    * **Visual Communication**: 복잡한 FSM 구조를 다이어그램으로 표현하여 비주얼 디버깅 및 협업 효율을 높임.
+* **湲곗닠???ъ씤??*
+    * **Separation of Concerns**: ?곸쐞 而⑦듃濡ㅻ윭???ㅼ젙怨?而⑦뀓?ㅽ듃留?愿由ы븯怨? ?ㅼ젣 濡쒖쭅 ?섑뻾? State ?대옒?ㅼ뿉 ?꾩엫?섏뿬 SRP(?⑥씪 梨낆엫 ?먯튃)瑜?以?섑븿.
+    * **Input Edge-Triggering**: ???踰꾪듉??袁??꾨? ??諛쒖깮?섎뒗 ?곗냽 ???臾몄젣瑜?`bool` ?뚮옒洹몃? ?댁슜???ｌ? ?몃━嫄?諛⑹떇?쇰줈 ?닿껐?섏뿬 ?섎룄移??딆? ?됱쐞瑜?諛⑹???
+    * **Combo Input Buffer**: 怨듦꺽 ?좊땲硫붿씠???꾩쨷 ?낅젰??誘몃━ 諛쏆븘?먮뒗 `_reserveNextCombo` 濡쒖쭅???듯빐 ?딄? ?녿뒗(Fluid) 肄ㅻ낫 ?곌퀎瑜?援ы쁽??
+    * **Animation Cancel**: 怨듦꺽 ?꾨뵜?덉씠(Release Time) 援ш컙?먯꽌 ??쒕줈 罹붿뒳 媛?ν븯?꾨줉 `CheckDashCancel`??援ы쁽?섏뿬 議곗옉 諛섏쓳?깆쓣 ?믪엫.
+    * **Serialized Configuration**: 湲고쉷?먭? 肄붾뱶 ?섏젙 ?놁씠 濡쒖쭅 諛몃윴?ㅻ? 議곗젅?????덈룄濡?`[SerializeField]`瑜??곴레 ?쒖슜??
 
-* **기술적 고민**
-    * **Magic Strings**: 애니메이션 상태명 등을 문자열 리터럴로 사용할 때의 위험성(오타, 유지보수)을 인지하고, `const` 상수로 관리하는 패턴을 문서화 및 코드에 적용할 필요성 느낌.
-    * **Documentation Debt**: 기능 구현에 집중하다 보면 문서가 낙후되는 문제가 있음. 이를 방지하기 위해 '작업 후 즉시 문서화' 파이프라인(AI Maintenance Guide)을 철저히 준수하기로 함.
+* **湲곗닠??怨좊?**
+    * **State Transition**: ?꾩옱 `MoveState` ?대??먯꽌 `input.HasFlag(Dash)`瑜?泥댄겕?섏뿬 ?꾪솚?섍퀬 ?덉쓬. ?곹깭媛 留롮븘吏硫??꾪솚 濡쒖쭅??蹂듭옟?댁쭏 ???덈뒗?? `TransitionTable` ?깆쓣 ?꾩엯?좎? 怨좊? ?꾩슂.
+    * **Project Structure**: ?뚯씪???먯감 ?섏뼱?⑥뿉 ?곕씪 ?대뜑瑜?湲곕뒫 ?⑥쐞(`Player`, `Patterns`, `UI` ??濡?遺꾨━?섍퀬 ?ㅼ엫?ㅽ럹?댁뒪瑜????몃텇?뷀븷 寃껋씤吏 寃??以?
+
+
+
+---
+
+### **2026-02-05 (紐?: Codebase Analysis & Documentation**
+
+* **?묒뾽 ?댁슜**
+    * **Dependency Analysis**: 肄붾뱶 ?섏〈??遺꾩꽍 (Strong vs Weak Coupling) 諛??ㅼ씠?닿렇???쒓컖??
+    * **Documentation Update**: `Dependency_Analysis.md` ?묒꽦.
+    * **Animation Refactoring**: ?좊땲硫붿씠???곹깭 ?대쫫??臾몄옄???곸닔(`const`)濡?蹂?섑븯??肄붾뱶 ?덉젙??諛??좎?蹂댁닔???뺣낫.
+    * **Interview Prep**: 湲곗닠 硫댁젒 ?鍮?肄붾뱶 援ъ“ 諛??ㅺ퀎 ?섎룄 ?뺣━ (Codebase Analysis).
+    * **FSM Visualization**: ?곸냽 諛??명꽣?섏씠??援ъ“瑜?`Mermaid` ?대옒???ㅼ씠?닿렇?⑥쑝濡??쒓컖??
+
+* **湲곗닠???ъ씤??*
+    * **Coupling & Cohesion**: `PlayerController`? `State` ?대옒??媛꾩쓽 寃고빀?꾨? 遺꾩꽍?섍퀬, ?섏〈??二쇱엯(Dependency Injection)怨??명꽣?섏씠??`IInputProvider`) ?ъ슜??以묒슂?깆쓣 ?ы솗?명븿.
+    * **Documentation as Code**: 臾몄꽌瑜??⑥닚 ?띿뒪?멸? ?꾨땶, ?붿??덉뼱留??곗텧臾쇰줈 痍④툒?섏뿬 肄붾뱶 蹂寃??ы빆(?곸닔紐?????利됱떆 諛섏쁺??
+    * **Visual Communication**: 蹂듭옟??FSM 援ъ“瑜??ㅼ씠?닿렇?⑥쑝濡??쒗쁽?섏뿬 鍮꾩＜???붾쾭源?諛??묒뾽 ?⑥쑉???믪엫.
+
+* **湲곗닠??怨좊?**
+    * **Magic Strings**: ?좊땲硫붿씠???곹깭紐??깆쓣 臾몄옄??由ы꽣?대줈 ?ъ슜???뚯쓽 ?꾪뿕???ㅽ?, ?좎?蹂댁닔)???몄??섍퀬, `const` ?곸닔濡?愿由ы븯???⑦꽩??臾몄꽌??諛?肄붾뱶???곸슜???꾩슂???먮굦.
+    * **Documentation Debt**: 湲곕뒫 援ы쁽??吏묒쨷?섎떎 蹂대㈃ 臾몄꽌媛 ?숉썑?섎뒗 臾몄젣媛 ?덉쓬. ?대? 諛⑹??섍린 ?꾪빐 '?묒뾽 ??利됱떆 臾몄꽌?? ?뚯씠?꾨씪??AI Maintenance Guide)??泥좎???以?섑븯湲곕줈 ??
 
 * **Next Plan (2026-02-07)**
-    * **Combat Testing**: 실제 공격 판정(Hitbox)과 이펙트 연동.
-    * **Combo Logic**: 선입력(Buffer)과 애니메이션 캔슬 타이밍 미세 조정.
+    * **Combat Testing**: ?ㅼ젣 怨듦꺽 ?먯젙(Hitbox)怨??댄럺???곕룞.
+    * **Combo Logic**: ?좎엯??Buffer)怨??좊땲硫붿씠??罹붿뒳 ??대컢 誘몄꽭 議곗젙.
 
 ---
 
-### **2026-02-06 (금): Hitbox 및 피격 시스템 구현**
+### **2026-02-06 (湲?: Hitbox 諛??쇨꺽 ?쒖뒪??援ы쁽**
 
-* **작업 내용**
+* **?묒뾽 ?댁슜**
     * **Hitbox System**: 
-        * `DamageCaster`: `Physics.OverlapSphereNonAlloc`을 사용한 최적화된 충돌 감지 로직 구현.
-        * `PlayerAnimationEvents`: 애니메이터 이벤트(`OnHitStart`, `OnHitEnd`)를 수신하여 `PlayerController`로 중계하는 브리지 역할 수행.
-        * **Animation Event Keying**: 공격 애니메이션 클립 복제 및 프레임 단위 이벤트 삽입 완료.
+        * `DamageCaster`: `Physics.OverlapSphereNonAlloc`???ъ슜??理쒖쟻?붾맂 異⑸룎 媛먯? 濡쒖쭅 援ы쁽.
+        * `PlayerAnimationEvents`: ?좊땲硫붿씠???대깽??`OnHitStart`, `OnHitEnd`)瑜??섏떊?섏뿬 `PlayerController`濡?以묎퀎?섎뒗 釉뚮━吏 ??븷 ?섑뻾.
+        * **Animation Event Keying**: 怨듦꺽 ?좊땲硫붿씠???대┰ 蹂듭젣 諛??꾨젅???⑥쐞 ?대깽???쎌엯 ?꾨즺.
     * **Damage Architecture**: 
-        * `IDamageable`: 타겟 종류에 관계없이 데미지를 전달할 수 있는 공통 인터페이스 정의.
-        * `Health`: `IDamageable`을 구현하여 HP 관리, 사망 처리, 피격 이벤트(`Action<int>`)를 제공하는 컴포넌트 구현.
+        * `IDamageable`: ?寃?醫낅쪟??愿怨꾩뾾???곕?吏瑜??꾨떖?????덈뒗 怨듯넻 ?명꽣?섏씠???뺤쓽.
+        * `Health`: `IDamageable`??援ы쁽?섏뿬 HP 愿由? ?щ쭩 泥섎━, ?쇨꺽 ?대깽??`Action<int>`)瑜??쒓났?섎뒗 而댄룷?뚰듃 援ы쁽.
     * **Documentation & Blog**: 
-        * `docs/blog/Hitbox_and_StateFlow_Analysis.md`: 기술 블로그 포스트 작성.
-        * `walkthrough.md`: 전체 시스템 흐름 및 실행 파이프라인 심층 분석 문서 작성.
+        * `docs/blog/Hitbox_and_StateFlow_Analysis.md`: 湲곗닠 釉붾줈洹??ъ뒪???묒꽦.
+        * `walkthrough.md`: ?꾩껜 ?쒖뒪???먮쫫 諛??ㅽ뻾 ?뚯씠?꾨씪???ъ링 遺꾩꽍 臾몄꽌 ?묒꽦.
 
-* **기술적 포인트 (Senior's Review)**
-    * **Garbage-Free Physics**: `OverlapSphereNonAlloc`을 통해 런타임 가비지 생성을 방지함. 프레임당 수십 번 호출되어도 GC 스파이크가 발생하지 않는 안정적인 액션 엔진 기반 마련.
-    * **Synchronous State Logic**: `ChangeState` 호출 시 상태 변수는 즉시 교체되지만, 로직 실행 루프는 다음 프레임부터 반영되는 동기적 흐름을 정확히 통제함.
-    * **Interface-Driven Design**: 인터페이스 사용으로 공격자(`DamageCaster`)와 피격 대상(`Health`) 간의 결합도를 최소화함.
+* **湲곗닠???ъ씤??(Senior's Review)**
+    * **Garbage-Free Physics**: `OverlapSphereNonAlloc`???듯빐 ?고???媛鍮꾩? ?앹꽦??諛⑹??? ?꾨젅?꾨떦 ?섏떗 踰??몄텧?섏뼱??GC ?ㅽ뙆?댄겕媛 諛쒖깮?섏? ?딅뒗 ?덉젙?곸씤 ?≪뀡 ?붿쭊 湲곕컲 留덈젴.
+    * **Synchronous State Logic**: `ChangeState` ?몄텧 ???곹깭 蹂?섎뒗 利됱떆 援먯껜?섏?留? 濡쒖쭅 ?ㅽ뻾 猷⑦봽???ㅼ쓬 ?꾨젅?꾨???諛섏쁺?섎뒗 ?숆린???먮쫫???뺥솗???듭젣??
+    * **Interface-Driven Design**: ?명꽣?섏씠???ъ슜?쇰줈 怨듦꺽??`DamageCaster`)? ?쇨꺽 ???`Health`) 媛꾩쓽 寃고빀?꾨? 理쒖냼?뷀븿.
 
 * **Troubleshooting (Solved)**
-    * **Issue**: `EnableHitbox` 이벤트가 수신되나 실제 로그가 출력되지 않음.
-    * **Root Cause**: `PlayerController` 인스펙터 상에서 `_damageCaster` 필드 할당 누락 확인.
-    * **Solution**: 인스펙터 연결 및 물리 레이어(`Enemy`) 설정 검증을 통해 해결.
+    * **Issue**: `EnableHitbox` ?대깽?멸? ?섏떊?섎굹 ?ㅼ젣 濡쒓렇媛 異쒕젰?섏? ?딆쓬.
+    * **Root Cause**: `PlayerController` ?몄뒪?숉꽣 ?곸뿉??`_damageCaster` ?꾨뱶 ?좊떦 ?꾨씫 ?뺤씤.
+    * **Solution**: ?몄뒪?숉꽣 ?곌껐 諛?臾쇰━ ?덉씠??`Enemy`) ?ㅼ젙 寃利앹쓣 ?듯빐 ?닿껐.
 
 
 ---
 ---
 
-### **2026-02-09 (월): Player Dead State & Boss Pattern 1**
+### **2026-02-09 (??: Player Dead State & Boss Pattern 1**
 
-* **작업 내용**
+* **?묒뾽 ?댁슜**
     * **Player Dead Logic (Prioritized)**:
-        * Boss FSM 구현 전, 플레이어와 보스 공통으로 사용될 `DeadState` 및 사망 처리 로직 선행 구현 결정.
-        * `Health.OnDie` 이벤트와 애니메이션 연동, 입력 차단(Input Block) 로직 설계.
-    * **Boss AI 구조 설계**: `BossController`를 통해 거리 기반의 상태(Idle, Combat, Searching) 관리.
-    * **Refactoring**: `BossController`의 비주얼 로직(애니메이션, UI)을 `BossVisual` 클래스로 분리하여 SRP(단일 책임 원칙) 준수.
-    * **Documentation**: `Input_FSM_Flow.md`에 사망 상태(Dead State) 흐름 추가 및 `Boss_Algorithm_Design.md` 작성.
+        * Boss FSM 援ы쁽 ?? ?뚮젅?댁뼱? 蹂댁뒪 怨듯넻?쇰줈 ?ъ슜??`DeadState` 諛??щ쭩 泥섎━ 濡쒖쭅 ?좏뻾 援ы쁽 寃곗젙.
+        * `Health.OnDie` ?대깽?몄? ?좊땲硫붿씠???곕룞, ?낅젰 李⑤떒(Input Block) 濡쒖쭅 ?ㅺ퀎.
+    * **Boss AI 援ъ“ ?ㅺ퀎**: `BossController`瑜??듯빐 嫄곕━ 湲곕컲???곹깭(Idle, Combat, Searching) 愿由?
+    * **Refactoring**: `BossController`??鍮꾩＜??濡쒖쭅(?좊땲硫붿씠?? UI)??`BossVisual` ?대옒?ㅻ줈 遺꾨━?섏뿬 SRP(?⑥씪 梨낆엫 ?먯튃) 以??
+    * **Documentation**: `Input_FSM_Flow.md`???щ쭩 ?곹깭(Dead State) ?먮쫫 異붽? 諛?`Boss_Algorithm_Design.md` ?묒꽦.
 
-* **기술적 포인트**
-    *   **Event-Driven Death**: 매 프레임 체력을 체크하는 것이 아니라, `OnDie` 이벤트를 구독(Subscribe)하여 상태 전환 비용을 최소화.
-    *   **State Reusability**: `DeadState`를 플레이어와 보스가 공유하거나 유사한 로직으로 처리하여 코드 중복 방지.
-    *   **Raycast Optimization**: `CheckLineOfSight`에서 `~LayerMask`와 눈높이(Offset)를 사용하여 연산 효율과 정확도 확보.
-    *   **Visual Debugging**: `OnDrawGizmos`를 활용해 감지 범위와 시야각을 에디터에서 직관적으로 확인 가능하도록 구현.
-    *   **Decoupling (Visual)**: `BossController`가 `Animator`를 직접 제어하지 않고 `BossVisual` 컴포넌트에 위임하여, 로직 변경 시 비주얼 스크립트 수정 최소화.
+* **湲곗닠???ъ씤??*
+    *   **Event-Driven Death**: 留??꾨젅??泥대젰??泥댄겕?섎뒗 寃껋씠 ?꾨땲?? `OnDie` ?대깽?몃? 援щ룆(Subscribe)?섏뿬 ?곹깭 ?꾪솚 鍮꾩슜??理쒖냼??
+    *   **State Reusability**: `DeadState`瑜??뚮젅?댁뼱? 蹂댁뒪媛 怨듭쑀?섍굅???좎궗??濡쒖쭅?쇰줈 泥섎━?섏뿬 肄붾뱶 以묐났 諛⑹?.
+    *   **Raycast Optimization**: `CheckLineOfSight`?먯꽌 `~LayerMask`? ?덈넂??Offset)瑜??ъ슜?섏뿬 ?곗궛 ?⑥쑉怨??뺥솗???뺣낫.
+    *   **Visual Debugging**: `OnDrawGizmos`瑜??쒖슜??媛먯? 踰붿쐞? ?쒖빞媛곸쓣 ?먮뵒?곗뿉??吏곴??곸쑝濡??뺤씤 媛?ν븯?꾨줉 援ы쁽.
+    *   **Decoupling (Visual)**: `BossController`媛 `Animator`瑜?吏곸젒 ?쒖뼱?섏? ?딄퀬 `BossVisual` 而댄룷?뚰듃???꾩엫?섏뿬, 濡쒖쭅 蹂寃???鍮꾩＜???ㅽ겕由쏀듃 ?섏젙 理쒖냼??
 
 ---
 
-### **2026-02-09 (월): FSM Generic Refactoring & Null-Safe 패턴**
+### **2026-02-09 (??: FSM Generic Refactoring & Null-Safe ?⑦꽩**
 
-*   **작업 내용**
-    *   **StateMachine 제네릭화**: Player/Boss 전용 `StateMachine`을 `StateMachine<TState>` 하나로 통합.
-    *   **BaseState 제네릭화**: `BaseState<TController>`로 변경하여 Player/Boss 모두 재사용 가능하도록 리팩토링.
-    *   **IState 인터페이스 도입**: `Enter()`, `Exit()` 공용 계약 정의.
-    *   **PlayerVisual 통합**: `PlayerAnimationEvents.cs` 기능을 `PlayerVisual.cs`로 병합 후 삭제.
-    *   **비트 연산 분석**: `((1 << layer) & obstacleMask) != 0` 코드의 LayerMask 동작 원리 학습 및 문서화.
-    *   **Null-Safe 패턴 적용**: `BossVisual`이 미할당 시 NullReferenceException 방지를 위해 `?.` 연산자 적용.
-    *   **SearchingState 속도 분리**: 탐지 범위 벗어나도 느린 속도(`searchingMoveSpeed`)로 추적 유지.
-    *   **기술 블로그 작성**: `0209_Bitwise_and_NullSafe_Pattern.md` 작성.
+*   **?묒뾽 ?댁슜**
+    *   **StateMachine ?쒕꽕由?솕**: Player/Boss ?꾩슜 `StateMachine`??`StateMachine<TState>` ?섎굹濡??듯빀.
+    *   **BaseState ?쒕꽕由?솕**: `BaseState<TController>`濡?蹂寃쏀븯??Player/Boss 紐⑤몢 ?ъ궗??媛?ν븯?꾨줉 由ы뙥?좊쭅.
+    *   **IState ?명꽣?섏씠???꾩엯**: `Enter()`, `Exit()` 怨듭슜 怨꾩빟 ?뺤쓽.
+    *   **PlayerVisual ?듯빀**: `PlayerAnimationEvents.cs` 湲곕뒫??`PlayerVisual.cs`濡?蹂묓빀 ????젣.
+    *   **鍮꾪듃 ?곗궛 遺꾩꽍**: `((1 << layer) & obstacleMask) != 0` 肄붾뱶??LayerMask ?숈옉 ?먮━ ?숈뒿 諛?臾몄꽌??
+    *   **Null-Safe ?⑦꽩 ?곸슜**: `BossVisual`??誘명븷????NullReferenceException 諛⑹?瑜??꾪빐 `?.` ?곗궛???곸슜.
+    *   **SearchingState ?띾룄 遺꾨━**: ?먯? 踰붿쐞 踰쀬뼱?섎룄 ?먮┛ ?띾룄(`searchingMoveSpeed`)濡?異붿쟻 ?좎?.
+    *   **湲곗닠 釉붾줈洹??묒꽦**: `0209_Bitwise_and_NullSafe_Pattern.md` ?묒꽦.
 
-*   **🧠 기술적 고민 (Q&A 학습 기록)**
+*   **?쭬 湲곗닠??怨좊? (Q&A ?숈뒿 湲곕줉)**
 
-    | 질문 | 결론 |
+    | 吏덈Ц | 寃곕줎 |
     |------|------|
-    | **비제네릭 vs 제네릭 BaseState 차이?** | 비제네릭은 `PlayerController` 하드코딩 → Boss 사용 불가. 제네릭 `BaseState<TController>`는 타입 파라미터로 유동적 → 재사용성 확보. |
-    | **PlayerBaseState와 BossBaseState 통합 가능?** | Update 시그니처가 다름 (`PlayerInputPacket` vs 없음). `NoInput` 타입으로 강제 통합 시 KISS 위반 및 의도 모호화. **분리 유지가 Clean Code**. |
-    | **`TController`에서 T의 의미?** | **Type**의 약자. C# 제네릭 네이밍 관례로 `T` + 역할명(예: `TState`, `TInput`)으로 명명. |
-    | **`1 << layer`의 의미?** | 레이어 인덱스(0~31)를 32비트 비트마스크로 변환. 예: layer=8 → 256 (0001 0000 0000). |
-    | **AND 연산으로 뭘 확인?** | 충돌체 레이어가 `obstacleMask`에 포함되어 있는지 검사. 결과가 0이 아니면 장애물. |
-    | **Null 체크 위치?** | State에서 직접 `Visual` 호출 시 `?.` 사용. 또는 Controller 래퍼 메서드(`StopMoving()`)로 위임. |
+    | **鍮꾩젣?ㅻ┃ vs ?쒕꽕由?BaseState 李⑥씠?** | 鍮꾩젣?ㅻ┃? `PlayerController` ?섎뱶肄붾뵫 ??Boss ?ъ슜 遺덇?. ?쒕꽕由?`BaseState<TController>`??????뚮씪誘명꽣濡??좊룞?????ъ궗?⑹꽦 ?뺣낫. |
+    | **PlayerBaseState? BossBaseState ?듯빀 媛??** | Update ?쒓렇?덉쿂媛 ?ㅻ쫫 (`PlayerInputPacket` vs ?놁쓬). `NoInput` ??낆쑝濡?媛뺤젣 ?듯빀 ??KISS ?꾨컲 諛??섎룄 紐⑦샇?? **遺꾨━ ?좎?媛 Clean Code**. |
+    | **`TController`?먯꽌 T???섎??** | **Type**???쎌옄. C# ?쒕꽕由??ㅼ씠諛?愿濡濡?`T` + ??븷紐??? `TState`, `TInput`)?쇰줈 紐낅챸. |
+    | **`1 << layer`???섎??** | ?덉씠???몃뜳??0~31)瑜?32鍮꾪듃 鍮꾪듃留덉뒪?щ줈 蹂?? ?? layer=8 ??256 (0001 0000 0000). |
+    | **AND ?곗궛?쇰줈 萸??뺤씤?** | 異⑸룎泥??덉씠?닿? `obstacleMask`???ы븿?섏뼱 ?덈뒗吏 寃?? 寃곌낵媛 0???꾨땲硫??μ븷臾? |
+    | **Null 泥댄겕 ?꾩튂?** | State?먯꽌 吏곸젒 `Visual` ?몄텧 ??`?.` ?ъ슜. ?먮뒗 Controller ?섑띁 硫붿꽌??`StopMoving()`)濡??꾩엫. |
 
-*   **기술적 포인트 (Senior's Review)**
-    *   **Generic Reusability**: 한 번 정의한 `StateMachine<TState>`를 Player/Boss가 공유함으로써 DRY 원칙 준수.
-    *   **IState Interface**: `Enter()`/`Exit()` 계약을 분리하여 StateMachine이 구체 타입에 의존하지 않도록 설계.
-    *   **Update는 다르게**: Player는 입력이 "필요"하고 Boss는 "필요 없는" 것. 이 의도적 차이를 코드로 명확히 표현하는 것이 과도한 추상화보다 우선.
-    *   **Visual 통합**: Animation Event 수신과 비주얼 효과를 한 클래스에서 관리하여 응집도(Cohesion) 향상.
-    *   **Defensive Programming**: 외부 의존성(Visual)이 없어도 핵심 로직은 동작해야 함.
-    *   **Graceful Degradation**: 비주얼 컴포넌트 없이도 게임 로직은 정상 실행.
-    *   **LayerMask 이해**: Unity 물리 시스템의 핵심. 비트 연산으로 효율적인 레이어 필터링.
+*   **湲곗닠???ъ씤??(Senior's Review)**
+    *   **Generic Reusability**: ??踰??뺤쓽??`StateMachine<TState>`瑜?Player/Boss媛 怨듭쑀?⑥쑝濡쒖뜥 DRY ?먯튃 以??
+    *   **IState Interface**: `Enter()`/`Exit()` 怨꾩빟??遺꾨━?섏뿬 StateMachine??援ъ껜 ??낆뿉 ?섏〈?섏? ?딅룄濡??ㅺ퀎.
+    *   **Update???ㅻⅤ寃?*: Player???낅젰??"?꾩슂"?섍퀬 Boss??"?꾩슂 ?녿뒗" 寃? ???섎룄??李⑥씠瑜?肄붾뱶濡?紐낇솗???쒗쁽?섎뒗 寃껋씠 怨쇰룄??異붿긽?붾낫???곗꽑.
+    *   **Visual ?듯빀**: Animation Event ?섏떊怨?鍮꾩＜???④낵瑜????대옒?ㅼ뿉??愿由ы븯???묒쭛??Cohesion) ?μ긽.
+    *   **Defensive Programming**: ?몃? ?섏〈??Visual)???놁뼱???듭떖 濡쒖쭅? ?숈옉?댁빞 ??
+    *   **Graceful Degradation**: 鍮꾩＜??而댄룷?뚰듃 ?놁씠??寃뚯엫 濡쒖쭅? ?뺤긽 ?ㅽ뻾.
+    *   **LayerMask ?댄빐**: Unity 臾쇰━ ?쒖뒪?쒖쓽 ?듭떖. 鍮꾪듃 ?곗궛?쇰줈 ?⑥쑉?곸씤 ?덉씠???꾪꽣留?
 
 
 
 
 ---
 
-### **2026-02-10 (화): Combat System 구현 & 프로젝트 구조화**
+### **2026-02-10 (??: Combat System 援ы쁽 & ?꾨줈?앺듃 援ъ“??*
 
 
-*   **작업 내용**
+*   **?묒뾽 ?댁슜**
 
-    **플레이어 피격 및 사망 로직 구현**
-    *   `HitState` 구현: 중력 적용(공중 피격 시 부유 방지), 무적 시간, `CrossFade` 애니메이션.
-    *   `HandleDeath`에 `StopAllCoroutines()` 추가하여 사망 후 무적 코루틴 잔존 방지.
-    *   점프 전환 비활성화 (애니메이션 부재, `MoveState` 주석 처리).
-    *   `BaseVisual`: `TriggerHit`/`TriggerDie` CrossFade 방식으로 변경.
+    **?뚮젅?댁뼱 ?쇨꺽 諛??щ쭩 濡쒖쭅 援ы쁽**
+    *   `HitState` 援ы쁽: 以묐젰 ?곸슜(怨듭쨷 ?쇨꺽 ??遺??諛⑹?), 臾댁쟻 ?쒓컙, `CrossFade` ?좊땲硫붿씠??
+    *   `HandleDeath`??`StopAllCoroutines()` 異붽??섏뿬 ?щ쭩 ??臾댁쟻 肄붾（???붿〈 諛⑹?.
+    *   ?먰봽 ?꾪솚 鍮꾪솢?깊솕 (?좊땲硫붿씠??遺?? `MoveState` 二쇱꽍 泥섎━).
+    *   `BaseVisual`: `TriggerHit`/`TriggerDie` CrossFade 諛⑹떇?쇰줈 蹂寃?
 
-    **보스 공격 시스템 및 전략 패턴(Strategy Pattern) 적용**
-    *   `BossAttackState` 구현: `IBossAttackPattern`에 위임하는 범용 실행기로 설계 (Strategy Pattern).
-    *   `BasicAttackPattern`: 기존 근접 공격 로직 이관 (애니메이션 + DamageCaster + 타이머).
-    *   `BossCombatState`: attackRange 내 + 쿨다운 완료 시 공격 전환.
+    **蹂댁뒪 怨듦꺽 ?쒖뒪??諛??꾨왂 ?⑦꽩(Strategy Pattern) ?곸슜**
+    *   `BossAttackState` 援ы쁽: `IBossAttackPattern`???꾩엫?섎뒗 踰붿슜 ?ㅽ뻾湲곕줈 ?ㅺ퀎 (Strategy Pattern).
+    *   `BasicAttackPattern`: 湲곗〈 洹쇱젒 怨듦꺽 濡쒖쭅 ?닿? (?좊땲硫붿씠??+ DamageCaster + ??대㉧).
+    *   `BossCombatState`: attackRange ??+ 荑⑤떎???꾨즺 ??怨듦꺽 ?꾪솚.
 
-    **프로젝트 구조화**
-    *   폴더 구조를 `Common`, `Player`, `Boss`로 분리. `BossRaid` → `Core` 네임스페이스 리팩토링.
-    *   `PlayerController.cs` 이동 및 중복 폴더(`Patterns`, `Interfaces`, `Combat`) 정리.
+    **?꾨줈?앺듃 援ъ“??*
+    *   ?대뜑 援ъ“瑜?`Common`, `Player`, `Boss`濡?遺꾨━. `BossRaid` ??`Core` ?ㅼ엫?ㅽ럹?댁뒪 由ы뙥?좊쭅.
+    *   `PlayerController.cs` ?대룞 諛?以묐났 ?대뜑(`Patterns`, `Interfaces`, `Combat`) ?뺣━.
 
-    **기술 문서 및 아키텍처 최신화**
-    *   `System_Blueprint.md`: Boss AI 클래스 다이어그램에 `BossAttackState`, `IBossAttackPattern`, `DamageCaster` 추가.
-    *   `Technical_Glossary.md`: Strategy Pattern, Invincibility Frame 등 용어 추가 및 섹션 재배치.
+    **湲곗닠 臾몄꽌 諛??꾪궎?띿쿂 理쒖떊??*
+    *   `System_Blueprint.md`: Boss AI ?대옒???ㅼ씠?닿렇?⑥뿉 `BossAttackState`, `IBossAttackPattern`, `DamageCaster` 異붽?.
+    *   `Technical_Glossary.md`: Strategy Pattern, Invincibility Frame ???⑹뼱 異붽? 諛??뱀뀡 ?щ같移?
 
-*   **기술적 포인트 (Senior's Review)**
-    *   **Strategy Pattern (OCP)**: 공격 패턴을 인터페이스로 추상화하여 `BossAttackState`가 패턴 내용을 몰라도 실행 가능. 새 패턴 추가 시 기존 코드 수정 불필요.
-    *   **Defensive Exit**: `BossAttackState.Exit()`에서 `DisableHitbox()` 호출로 사망 등 강제 전환 시 유령 데미지 방지.
-    *   **Coroutine Cleanup**: 사망 시 `StopAllCoroutines()`로 잔존 코루틴이 죽은 객체에 부작용을 일으키는 것을 방지.
-    *   **Namespace Strategy**: `Core` 네임스페이스로 물리적 위치(폴더)와 논리적 위치(네임스페이스)를 일치시켜 유지보수성 향상.
-
----
-
-### **2026-02-11 (수): Dragon Asset Migration & Strategy Pattern 확장**
-
-*   **작업 내용**
-
-    **Asset Migration (Cube → Dragon)**
-    *   기존 Cube 보스를 드래곤 모델로 전면 교체.
-    *   Unity Animator에 Blend Tree 구축: Idle/Walk 모션 혼합, Threshold 수동 설정 `0`(Idle), `3.5`(Walk).
-    *   `CharacterController` Radius/Height(1/1) 조정으로 공중 부양(Floating) 이슈 해결.
-    *   플레이어와 동일한 중력(`Physics.gravity`) 로직 적용.
-
-    **Strategy Pattern 확장 (ClawAttackPattern)**
-    *   `IBossAttackPattern`을 구현한 `ClawAttackPattern` 신규 추가.
-    *   로직: 타겟 회전 → Claw Attack 애니메이션 → Hitbox 활성화(데미지 1.5배) → 돌진(Rush) → 정지.
-    *   **OCP 입증**: `BasicAttackPattern`에 이어 2번째 패턴을 추가했지만, `BossAttackState.cs`는 **단 한 줄도 수정하지 않음**.
-    *   블로그: [🧠 OCP를 지키는 보스 패턴 설계](file:///d:/Unity-projects/BossRaidPortfolio/docs/blog/0211_Boss_Pattern_Design.md)
-
-    **Compound Collider & 피격 구조**
-    *   이동용 `CharacterController`와 피격용 `CapsuleCollider`(Head, Body, Tail — Bone 부착) 역할 분리.
-    *   `BossHitBox` → `Health` 중계 구조: 드래곤의 각 부위 콜라이더가 본체 HP로 데미지 위임.
-    *   `DamageCaster` 중복 피격 방지: Owner `InstanceID` 추적으로 단일 프레임 다중 히트 무시.
-    *   블로그: [⚡ 화려한 드래곤 뒤에 숨겨진 최적화 기술](file:///d:/Unity-projects/BossRaidPortfolio/docs/blog/0211_Physics_Optimization.md)
-
-    **Feature Toggles & 디버그 도구**
-    *   `enableChase`, `enableRotation`, `enableBasicAttack`, `enableClawAttack` 등 기능별 On/Off 인스펙터 토글 추가.
-    *   Raycast 시각화(Gizmo) 색상 변경으로 디버깅 효율 향상.
-
-*   **기술적 포인트 (Senior's Review)**
-    *   **Asset Migration Strategy**: 단순 모델 교체가 아닌, 물리(Controller)와 피격(Collider)을 분리하여 유지보수성 확보. 드래곤을 다른 모델로 바꿔도 콜라이더 구조만 재배치하면 됨.
-    *   **Compound Collider vs Mesh Collider**: Mesh Collider의 오버헤드를 피하고, Bone을 따라가는 Primitive Collider 조합으로 성능 최적화.
-    *   **Strategy Pattern → OCP**: 새 공격 패턴 100개를 추가해도 `BossAttackState` 코드는 수정 불필요. 기획자의 요청이 들어올 때마다 패턴 클래스만 추가하면 되는 구조.
-    *   **NonAlloc API**: `OverlapSphereNonAlloc` + 사전 할당 배열로 GC Spike 원천 차단. 네트워크 동기화 시에도 프레임당 메모리 할당 0 유지.
+*   **湲곗닠???ъ씤??(Senior's Review)**
+    *   **Strategy Pattern (OCP)**: 怨듦꺽 ?⑦꽩???명꽣?섏씠?ㅻ줈 異붿긽?뷀븯??`BossAttackState`媛 ?⑦꽩 ?댁슜??紐곕씪???ㅽ뻾 媛?? ???⑦꽩 異붽? ??湲곗〈 肄붾뱶 ?섏젙 遺덊븘??
+    *   **Defensive Exit**: `BossAttackState.Exit()`?먯꽌 `DisableHitbox()` ?몄텧濡??щ쭩 ??媛뺤젣 ?꾪솚 ???좊졊 ?곕?吏 諛⑹?.
+    *   **Coroutine Cleanup**: ?щ쭩 ??`StopAllCoroutines()`濡??붿〈 肄붾（?댁씠 二쎌? 媛앹껜??遺?묒슜???쇱쑝?ㅻ뒗 寃껋쓣 諛⑹?.
+    *   **Namespace Strategy**: `Core` ?ㅼ엫?ㅽ럹?댁뒪濡?臾쇰━???꾩튂(?대뜑)? ?쇰━???꾩튂(?ㅼ엫?ㅽ럹?댁뒪)瑜??쇱튂?쒖폒 ?좎?蹂댁닔???μ긽.
 
 ---
 
-### **2026-02-12 (목): Documentation Sync & Boss Pattern Polishing**
+### **2026-02-11 (??: Dragon Asset Migration & Strategy Pattern ?뺤옣**
 
-*   **작업 내용**
-    *   **System_Blueprint 정합성 검증**: 3개 다이어그램(Player, Boss AI, Attack Strategy)을 실제 코드와 대조하여 **6건의 불일치** 발견 및 수정 완료.
-        *   `BossVisual` 메서드 교정, `BossHitBox` 클래스 추가, `Health` 이벤트 반영, `DamageCaster.DisableHitbox()` 추가 등.
-    *   **문서화 부채 전수 점검**: 6개 기술 문서를 2/11 작업 결과와 대조. Medium 4건·Low 2건 부채 발견 후 5건 수정.
-        *   `Boss_Algorithm_Design.md`: 제목 변경, §8 Compound Collider 피격 구조, §9 Feature Toggle 추가.
-        *   `Animator_Setup_Guide.md`: §5 Boss Dragon Animator 설정 추가.
-        *   `Animation_Implementation_Log.md`: §6 Boss 애니메이션 구현 기록 추가.
+*   **?묒뾽 ?댁슜**
+
+    **Asset Migration (Cube ??Dragon)**
+    *   湲곗〈 Cube 蹂댁뒪瑜??쒕옒怨?紐⑤뜽濡??꾨㈃ 援먯껜.
+    *   Unity Animator??Blend Tree 援ъ텞: Idle/Walk 紐⑥뀡 ?쇳빀, Threshold ?섎룞 ?ㅼ젙 `0`(Idle), `3.5`(Walk).
+    *   `CharacterController` Radius/Height(1/1) 議곗젙?쇰줈 怨듭쨷 遺??Floating) ?댁뒋 ?닿껐.
+    *   ?뚮젅?댁뼱? ?숈씪??以묐젰(`Physics.gravity`) 濡쒖쭅 ?곸슜.
+
+    **Strategy Pattern ?뺤옣 (ClawAttackPattern)**
+    *   `IBossAttackPattern`??援ы쁽??`ClawAttackPattern` ?좉퇋 異붽?.
+    *   濡쒖쭅: ?寃??뚯쟾 ??Claw Attack ?좊땲硫붿씠????Hitbox ?쒖꽦???곕?吏 1.5諛? ???뚯쭊(Rush) ???뺤?.
+    *   **OCP ?낆쬆**: `BasicAttackPattern`???댁뼱 2踰덉㎏ ?⑦꽩??異붽??덉?留? `BossAttackState.cs`??**????以꾨룄 ?섏젙?섏? ?딆쓬**.
+    *   釉붾줈洹? [?쭬 OCP瑜?吏?ㅻ뒗 蹂댁뒪 ?⑦꽩 ?ㅺ퀎](file:///d:/Unity-projects/BossRaidPortfolio/docs/blog/0211_Boss_Pattern_Design.md)
+
+    **Compound Collider & ?쇨꺽 援ъ“**
+    *   ?대룞??`CharacterController`? ?쇨꺽??`CapsuleCollider`(Head, Body, Tail ??Bone 遺李? ??븷 遺꾨━.
+    *   `BossHitBox` ??`Health` 以묎퀎 援ъ“: ?쒕옒怨ㅼ쓽 媛?遺??肄쒕씪?대뜑媛 蹂몄껜 HP濡??곕?吏 ?꾩엫.
+    *   `DamageCaster` 以묐났 ?쇨꺽 諛⑹?: Owner `InstanceID` 異붿쟻?쇰줈 ?⑥씪 ?꾨젅???ㅼ쨷 ?덊듃 臾댁떆.
+    *   釉붾줈洹? [???붾젮???쒕옒怨??ㅼ뿉 ?④꺼吏?理쒖쟻??湲곗닠](file:///d:/Unity-projects/BossRaidPortfolio/docs/blog/0211_Physics_Optimization.md)
+
+    **Feature Toggles & ?붾쾭洹??꾧뎄**
+    *   `enableChase`, `enableRotation`, `enableBasicAttack`, `enableClawAttack` ??湲곕뒫蹂?On/Off ?몄뒪?숉꽣 ?좉? 異붽?.
+    *   Raycast ?쒓컖??Gizmo) ?됱긽 蹂寃쎌쑝濡??붾쾭源??⑥쑉 ?μ긽.
+
+*   **湲곗닠???ъ씤??(Senior's Review)**
+    *   **Asset Migration Strategy**: ?⑥닚 紐⑤뜽 援먯껜媛 ?꾨땶, 臾쇰━(Controller)? ?쇨꺽(Collider)??遺꾨━?섏뿬 ?좎?蹂댁닔???뺣낫. ?쒕옒怨ㅼ쓣 ?ㅻⅨ 紐⑤뜽濡?諛붽퓭??肄쒕씪?대뜑 援ъ“留??щ같移섑븯硫???
+    *   **Compound Collider vs Mesh Collider**: Mesh Collider???ㅻ쾭?ㅻ뱶瑜??쇳븯怨? Bone???곕씪媛??Primitive Collider 議고빀?쇰줈 ?깅뒫 理쒖쟻??
+    *   **Strategy Pattern ??OCP**: ??怨듦꺽 ?⑦꽩 100媛쒕? 異붽??대룄 `BossAttackState` 肄붾뱶???섏젙 遺덊븘?? 湲고쉷?먯쓽 ?붿껌???ㅼ뼱???뚮쭏???⑦꽩 ?대옒?ㅻ쭔 異붽??섎㈃ ?섎뒗 援ъ“.
+    *   **NonAlloc API**: `OverlapSphereNonAlloc` + ?ъ쟾 ?좊떦 諛곗뿴濡?GC Spike ?먯쿇 李⑤떒. ?ㅽ듃?뚰겕 ?숆린???쒖뿉???꾨젅?꾨떦 硫붾え由??좊떦 0 ?좎?.
+
+---
+
+### **2026-02-12 (紐?: Documentation Sync & Boss Pattern Polishing**
+
+*   **?묒뾽 ?댁슜**
+    *   **System_Blueprint ?뺥빀??寃利?*: 3媛??ㅼ씠?닿렇??Player, Boss AI, Attack Strategy)???ㅼ젣 肄붾뱶? ?議고븯??**6嫄댁쓽 遺덉씪移?* 諛쒓껄 諛??섏젙 ?꾨즺.
+        *   `BossVisual` 硫붿꽌??援먯젙, `BossHitBox` ?대옒??異붽?, `Health` ?대깽??諛섏쁺, `DamageCaster.DisableHitbox()` 異붽? ??
+    *   **臾몄꽌??遺梨??꾩닔 ?먭?**: 6媛?湲곗닠 臾몄꽌瑜?2/11 ?묒뾽 寃곌낵? ?議? Medium 4嫄는텹ow 2嫄?遺梨?諛쒓껄 ??5嫄??섏젙.
+        *   `Boss_Algorithm_Design.md`: ?쒕ぉ 蹂寃? 짠8 Compound Collider ?쇨꺽 援ъ“, 짠9 Feature Toggle 異붽?.
+        *   `Animator_Setup_Guide.md`: 짠5 Boss Dragon Animator ?ㅼ젙 異붽?.
+        *   `Animation_Implementation_Log.md`: 짠6 Boss ?좊땲硫붿씠??援ы쁽 湲곕줉 異붽?.
     *   **Hitbox Synchronization (Bone-Synced Hierarchy)**:
-        *   **Basic Attack**: Head Bone 자식에 `DamageCasterPlace` 오브젝트를 생성하여 `DamageCaster`와 연결, 애니메이션에 따라 판정 위치 자동 동기화.
-        *   **Claw Attack**: 보스의 `Head`, `Body`, `Tail` 피격 콜라이더를 모델의 본(Bone) 하위 계층으로 이동하여, 도약 공격 시 몸체와 판정 범위가 정확히 일치하도록 개선.
-        *   **Refactoring**: `DamageCaster`를 배열 대신 명시적 필드(`HeadDamageCaster`, `ClawDamageCaster`)로 분리하여 코드 가독성 향상.
+        *   **Basic Attack**: Head Bone ?먯떇??`DamageCasterPlace` ?ㅻ툕?앺듃瑜??앹꽦?섏뿬 `DamageCaster`? ?곌껐, ?좊땲硫붿씠?섏뿉 ?곕씪 ?먯젙 ?꾩튂 ?먮룞 ?숆린??
+        *   **Claw Attack**: 蹂댁뒪??`Head`, `Body`, `Tail` ?쇨꺽 肄쒕씪?대뜑瑜?紐⑤뜽??蹂?Bone) ?섏쐞 怨꾩링?쇰줈 ?대룞?섏뿬, ?꾩빟 怨듦꺽 ??紐몄껜? ?먯젙 踰붿쐞媛 ?뺥솗???쇱튂?섎룄濡?媛쒖꽑.
+        *   **Refactoring**: `DamageCaster`瑜?諛곗뿴 ???紐낆떆???꾨뱶(`HeadDamageCaster`, `ClawDamageCaster`)濡?遺꾨━?섏뿬 肄붾뱶 媛?낆꽦 ?μ긽.
     *   **Claw Attack Polishing**:
-        *   **Animation State Fix**: Animator State 이름 불일치로 인한 전환 실패 문제 해결 및 `CrossFade` 안정성 확보.
-        *   **Partial Animation Logic**: `exitPhaseRatio`(0.5)를 도입하여 공격 애니메이션의 도약(Rush) 부분만 재생 후 즉시 복귀, 복귀 모션을 생략하여 타격감 개선.
-        *   **MoveRaw() 메서드**: 공격 중 이동 시 `PlayMove`(Walk 애니메이션)가 호출되어 공격 모션을 덮어씌우는 문제를 해결하기 위해, 애니메이션 간섭 없는 순수 물리 이동 메서드 구현.
+        *   **Animation State Fix**: Animator State ?대쫫 遺덉씪移섎줈 ?명븳 ?꾪솚 ?ㅽ뙣 臾몄젣 ?닿껐 諛?`CrossFade` ?덉젙???뺣낫.
+        *   **Partial Animation Logic**: `exitPhaseRatio`(0.5)瑜??꾩엯?섏뿬 怨듦꺽 ?좊땲硫붿씠?섏쓽 ?꾩빟(Rush) 遺遺꾨쭔 ?ъ깮 ??利됱떆 蹂듦?, 蹂듦? 紐⑥뀡???앸왂?섏뿬 ?寃⑷컧 媛쒖꽑.
+        *   **MoveRaw() 硫붿꽌??*: 怨듦꺽 以??대룞 ??`PlayMove`(Walk ?좊땲硫붿씠??媛 ?몄텧?섏뼱 怨듦꺽 紐⑥뀡????뼱?뚯슦??臾몄젣瑜??닿껐?섍린 ?꾪빐, ?좊땲硫붿씠??媛꾩꽠 ?녿뒗 ?쒖닔 臾쇰━ ?대룞 硫붿꽌??援ы쁽.
 
-*   **기술적 포인트 (Senior's Review)**
-    *   **Bone-Synced Hitbox**: `DamageCaster._castCenter`를 애니메이션이 움직이는 Bone 자식 Transform으로 설정하면, `OverlapSphereNonAlloc`의 원점이 매 `FixedUpdate`마다 Bone 위치를 자동 추적. 코드 수정 없이 물리 판정과 애니메이션 동기화 달성.
-    *   **Animation-Driven Logic Control**: 애니메이션의 특정 시점(Normalized Time)을 로직의 트리거로 사용하여, 비주얼과 로직의 완벽한 동기화 구현. (0.3까지 돌진, 0.5에서 조기 종료)
-    *   **Separation of Move & Animate**: `MoveTo`(이동+애니)와 `MoveRaw`(이동만)를 분리하여, 상황에 맞는 이동 방식 선택 가능. FSM의 유연성 확보.
-    *   **SoC(관심사 분리) 준수**: `BossHitBox`(피격 수신)에 공격 로직을 합치려는 시도를 배제하고, `DamageCaster`(공격 발신) 컴포넌트를 별도 유지하여 Hurtbox/Hitbox 책임 분리 원칙 준수.
+*   **湲곗닠???ъ씤??(Senior's Review)**
+    *   **Bone-Synced Hitbox**: `DamageCaster._castCenter`瑜??좊땲硫붿씠?섏씠 ?吏곸씠??Bone ?먯떇 Transform?쇰줈 ?ㅼ젙?섎㈃, `OverlapSphereNonAlloc`???먯젏??留?`FixedUpdate`留덈떎 Bone ?꾩튂瑜??먮룞 異붿쟻. 肄붾뱶 ?섏젙 ?놁씠 臾쇰━ ?먯젙怨??좊땲硫붿씠???숆린???ъ꽦.
+    *   **Animation-Driven Logic Control**: ?좊땲硫붿씠?섏쓽 ?뱀젙 ?쒖젏(Normalized Time)??濡쒖쭅???몃━嫄곕줈 ?ъ슜?섏뿬, 鍮꾩＜?쇨낵 濡쒖쭅???꾨꼍???숆린??援ы쁽. (0.3源뚯? ?뚯쭊, 0.5?먯꽌 議곌린 醫낅즺)
+    *   **Separation of Move & Animate**: `MoveTo`(?대룞+?좊땲)? `MoveRaw`(?대룞留?瑜?遺꾨━?섏뿬, ?곹솴??留욌뒗 ?대룞 諛⑹떇 ?좏깮 媛?? FSM???좎뿰???뺣낫.
+    *   **SoC(愿?ъ궗 遺꾨━) 以??*: `BossHitBox`(?쇨꺽 ?섏떊)??怨듦꺽 濡쒖쭅???⑹튂?ㅻ뒗 ?쒕룄瑜?諛곗젣?섍퀬, `DamageCaster`(怨듦꺽 諛쒖떊) 而댄룷?뚰듃瑜?蹂꾨룄 ?좎??섏뿬 Hurtbox/Hitbox 梨낆엫 遺꾨━ ?먯튃 以??
 
-*   **기술적 고민**
-    *   **Animation Event vs Code Timer**: 애니메이션 이벤트를 심는 방식은 직관적이나 클립 교체 시 재작업 필요. 코드로 `normalizedTime`을 체크하는 방식은 클립이 바뀌어도 비율(%)로 동작하므로 유지보수에 더 유리하다고 판단.
+*   **湲곗닠??怨좊?**
+    *   **Animation Event vs Code Timer**: ?좊땲硫붿씠???대깽?몃? ?щ뒗 諛⑹떇? 吏곴??곸씠???대┰ 援먯껜 ???ъ옉???꾩슂. 肄붾뱶濡?`normalizedTime`??泥댄겕?섎뒗 諛⑹떇? ?대┰??諛붾뚯뼱??鍮꾩쑉(%)濡??숈옉?섎?濡??좎?蹂댁닔?????좊━?섎떎怨??먮떒.
 
 ---
 
-### **2026-02-20 (금): AoE 안정화 + Boss 2페이즈 전환 통합 로그**
+### **2026-02-20 (湲?: AoE ?덉젙??+ Boss 2?섏씠利??꾪솚 ?듯빀 濡쒓렇**
 
-* **오늘 완료한 작업 (통합)**
-    * **Pattern 4 (AoE) 안정화**
-        * `AoECircleController`의 바닥 밀착 보정(`fallbackYOffset=0`)을 적용해 장판이 지면에 정확히 붙도록 조정.
-        * AoE 단계별 임시 디버그 로그를 정리해 콘솔 노이즈를 감소.
-    * **Pattern 4 (AoE) 진행 방향 예측 고도화**
-        * `ResolveImpactPoint()`를 타겟 진행 방향 기반 예측 확산 방식으로 확장.
-        * 파라미터(`headingLeadTime`, `maxHeadingLeadDistance`, `forwardSpreadRadius`, `sideSpreadRadius`, `headingBias`, `headingMinSpeed`)를 도입해 인스펙터 튜닝 가능하도록 구성.
-    * **Boss 2페이즈 전환 구현**
-        * `HealthRatio <= 0.5`에서 `Phase1 -> Phase2` 단방향 전환.
-        * 각 페이즈 시작 시 `Scream` 인트로를 1회 재생하고, 인트로 종료 후 공격 허용.
-    * **페이즈별 패턴 선택 안정화**
+* **?ㅻ뒛 ?꾨즺???묒뾽 (?듯빀)**
+    * **Pattern 4 (AoE) ?덉젙??*
+        * `AoECircleController`??諛붾떏 諛李?蹂댁젙(`fallbackYOffset=0`)???곸슜???ν뙋??吏硫댁뿉 ?뺥솗??遺숇룄濡?議곗젙.
+        * AoE ?④퀎蹂??꾩떆 ?붾쾭洹?濡쒓렇瑜??뺣━??肄섏넄 ?몄씠利덈? 媛먯냼.
+    * **Pattern 4 (AoE) 吏꾪뻾 諛⑺뼢 ?덉륫 怨좊룄??*
+        * `ResolveImpactPoint()`瑜??寃?吏꾪뻾 諛⑺뼢 湲곕컲 ?덉륫 ?뺤궛 諛⑹떇?쇰줈 ?뺤옣.
+        * ?뚮씪誘명꽣(`headingLeadTime`, `maxHeadingLeadDistance`, `forwardSpreadRadius`, `sideSpreadRadius`, `headingBias`, `headingMinSpeed`)瑜??꾩엯???몄뒪?숉꽣 ?쒕떇 媛?ν븯?꾨줉 援ъ꽦.
+    * **Boss 2?섏씠利??꾪솚 援ы쁽**
+        * `HealthRatio <= 0.5`?먯꽌 `Phase1 -> Phase2` ?⑤갑???꾪솚.
+        * 媛??섏씠利??쒖옉 ??`Scream` ?명듃濡쒕? 1???ъ깮?섍퀬, ?명듃濡?醫낅즺 ??怨듦꺽 ?덉슜.
+    * **?섏씠利덈퀎 ?⑦꽩 ?좏깮 ?덉젙??*
         * Phase 1: `Basic(Head)` + `Lunge`
         * Phase 2: `Projectile` + `AoE`
-        * 원거리 강제 AoE 분기를 제거하고 공통 선택기로 통합.
-        * 두 패턴이 모두 활성일 때 즉시 동일 패턴 연속 선택을 방지(no-immediate-repeat).
-    * **디버그 가시성 강화**
-        * `showPhaseDebugLabel` 토글 추가.
-        * 표시 항목: 현재 페이즈, HP%, Intro 재생 여부, Phase2 트리거 여부.
-    * **문서/인코딩 정리**
-        * `BossController.cs`의 한글 주석/툴팁 인코딩 깨짐 복구(UTF-8).
+        * ?먭굅由?媛뺤젣 AoE 遺꾧린瑜??쒓굅?섍퀬 怨듯넻 ?좏깮湲곕줈 ?듯빀.
+        * ???⑦꽩??紐⑤몢 ?쒖꽦????利됱떆 ?숈씪 ?⑦꽩 ?곗냽 ?좏깮??諛⑹?(no-immediate-repeat).
+    * **?붾쾭洹?媛?쒖꽦 媛뺥솕**
+        * `showPhaseDebugLabel` ?좉? 異붽?.
+        * ?쒖떆 ??ぉ: ?꾩옱 ?섏씠利? HP%, Intro ?ъ깮 ?щ?, Phase2 ?몃━嫄??щ?.
+    * **臾몄꽌/?몄퐫???뺣━**
+        * `BossController.cs`???쒓? 二쇱꽍/?댄똻 ?몄퐫??源⑥쭚 蹂듦뎄(UTF-8).
 
-* **기술적 고려 / 회고**
-    * **전환 구간 잠금의 필요성**: 페이즈 인트로(`Scream`) 중 공격 선택을 잠가 연출과 FSM 전환 타이밍을 일치시킴.
-    * **선택기 단일화**: 사거리 조건별 별도 선택 경로는 패턴 편중을 유발하므로, 공통 선택기로 통합해 예측 가능한 순환을 확보.
-    * **튜닝 비용 절감**: AoE 예측 파라미터를 인스펙터화해 코드 수정 없이 난이도와 적중률 조절 가능.
+* **湲곗닠??怨좊젮 / ?뚭퀬**
+    * **?꾪솚 援ш컙 ?좉툑???꾩슂??*: ?섏씠利??명듃濡?`Scream`) 以?怨듦꺽 ?좏깮???좉? ?곗텧怨?FSM ?꾪솚 ??대컢???쇱튂?쒗궡.
+    * **?좏깮湲??⑥씪??*: ?ш굅由?議곌굔蹂?蹂꾨룄 ?좏깮 寃쎈줈???⑦꽩 ?몄쨷???좊컻?섎?濡? 怨듯넻 ?좏깮湲곕줈 ?듯빀???덉륫 媛?ν븳 ?쒗솚???뺣낫.
+    * **?쒕떇 鍮꾩슜 ?덇컧**: AoE ?덉륫 ?뚮씪誘명꽣瑜??몄뒪?숉꽣?뷀빐 肄붾뱶 ?섏젙 ?놁씠 ?쒖씠?꾩? ?곸쨷瑜?議곗젅 媛??
 
-* **검증**
-    * `dotnet build BossRaidPortfolio.sln` 빌드 성공(에러 0).
-
-
-## 📈 2월 마일스톤: 싱글플레이 로직 완성 (Capsule vs Cube)
-
-> **목표**: 클라이언트 구축
-
-### 1주차: 플레이어 컨트롤러 & 전투 시스템 (The Capsule & Sword) ✅
-- [x] **Input System**: 키보드/마우스 및 패드 입력을 인터페이스화해서 분리.
-- [x] **FSM (State Machine)**: `PlayerState` 클래스 기반의 상태 머신 (Idle, Move, Attack, Dash).
-- [x] **이동 로직**: `CharacterController`를 이용한 물리 기반 이동.
-- [x] **핵심**: 입력과 로직 분리 완료. (네트워크 입력 교체 대비)
-- [x] **에셋 교체**: `CombatGirls_KatanaCharacterPack` 연동 및 `Visual` 계층 분리 (`Animator_Setup_Guide.md` 준수).
-- [x] **Animator 설정**: `Locomotion`, `Attack1~3`, `Jump`, `Quickshift_F` 상태 연결.
-- [x] **Hitbox 시스템**: 칼이 휘둘러질 때 특정 프레임에서만 판정이 생기도록 설계.
-- [x] **피격 시스템**: 플레이어/보스가 데미지를 받았을 때의 반응 (HP 감소, 피격 애니메이션, 무적 시간).
-- [x] **Damage 클래스**: `IDamageable` 인터페이스 (보스/잡몹 공통 상속).
-- [x] **판정 최적화**: `Physics.OverlapSphereNonAlloc` 사용.
-- [x] **핵심**: 코드가 판정 시점을 정확히 계산하는 것을 보여줘야 함.
+* **寃利?*
+    * `dotnet build BossRaidPortfolio.sln` 鍮뚮뱶 ?깃났(?먮윭 0).
 
 
----
+## ?뱢 2??留덉씪?ㅽ넠: ?깃??뚮젅??濡쒖쭅 ?꾩꽦 (Capsule vs Cube)
 
-### 2주차: 보스 AI 패턴 (The Cube)
+> **紐⑺몴**: ?대씪?댁뼵??援ъ텞
 
-#### 보스 FSM 아키텍처 ✅
-- [x] **StateMachine 제네릭화**: `StateMachine<TState>`로 Player/Boss 공용 상태 머신 통합.
-- [x] **BossBaseState**: `BaseState<BossController>` 상속, `Update()` 입력 없이 내부 로직만 처리.
-- [x] **IState 인터페이스**: `Enter()`/`Exit()` 공통 계약 정의로 StateMachine의 구체 타입 의존 제거.
-- [x] **BossVisual 분리**: 애니메이션/UI 제어를 `BossVisual` 클래스로 이관하여 SRP 준수.
-
-#### 피격 로직 (Player & Boss 공통) ✅
-- [x] **IDamageable 인터페이스**: 공격자가 타겟 타입을 몰라도 데미지 전달 가능.
-- [x] **Health 컴포넌트**: HP 관리, `OnDamage`/`OnDie` 이벤트 발행.
-- [x] **DamageCaster**: `OverlapSphereNonAlloc`으로 GC-Free 타격 판정.
-- [x] **Event-Driven Death**: `OnDie` 이벤트 구독으로 `DeadState` 전환.
-
-#### 보스 행동 패턴 🔄
-- [x] **패턴 1 (추적)**: 플레이어와의 거리 계산, 적정 거리 유지 및 공격 유도.
-- [x] **근접 공격 (BasicAttackPattern)**: `IBossAttackPattern` Strategy Pattern 적용. 쿨다운 시스템.
-- [x] **패턴 2 (돌격)**: 예고 표시 후 돌진.
-- [ ] **패턴 3 (투사체)**: 큐브에서 작은 큐브(미사일) 발사.
-
----
-
-### 3주차: 보스 행동 패턴 & 시스템 최적화 & 게임 루프 (The Logic)
-
-#### 보스 행동 패턴 🔄
-- [x] **패턴 3 (투사체)**: 큐브에서 작은 큐브(미사일) 발사 및 애셋 입히기.
-- [x] **패턴 4 (장판)**: 하늘에서 땅을 향해 불 발사. 
-
-#### 시스템 최적화 & 게임 루프 (The Logic)
-- [x] **오브젝트 풀링**: 미사일/이펙트를 Zero-Allocation으로 관리.
-
----
-
-### 4주차: 보스 행동 패턴 & 시스템 최적화 & 게임 루프 (The Logic)
-#### 시스템 최적화 & 게임 루프 (The Logic)
-- [ ] **UI 시스템**: HP 바, 보스 페이즈 알림 등 코드 제어.
-- [ ] **게임 매니저**: 시작 → 전투 → 페이즈 전환 → 승리/패배 흐름 제어.
----
-
-#### 🚧 폴리싱 
-- [ ] **(플레이어)대쉬 방향 수정**: 공격 방향이 아닌 키보드 입력 방향으로 대쉬.
-- [ ] **피격 플래시 이펙트**: `BaseVisual.FlashRoutine`을 Emission 기반으로 변경 (`material.SetColor("_EmissionColor")`) 또는 머티리얼 교체 방식 적용.
-- [ ] **(보스)Run/Walk 애니매이션 추가**: Run 애니메이션 추가 및 그에 맞는 보스 움직임 속도 부드럽게 증가시키기
-- [ ] **(플레이어)넉백 추가하기**: 플레이어가 보스에게 피격당했을 때 넉백 추가하기
-- [ ] **다중 레이캐스트 탐지**: 눈 위치(몸통 1/2~머리 중간)에서 여러 방향 감지.
-- [ ] **추적 알고리즘 검토**: NavMesh / A* 경로탐색 적용 여부 결정.
+### 1二쇱감: ?뚮젅?댁뼱 而⑦듃濡ㅻ윭 & ?꾪닾 ?쒖뒪??(The Capsule & Sword) ??
+- [x] **Input System**: ?ㅻ낫??留덉슦??諛??⑤뱶 ?낅젰???명꽣?섏씠?ㅽ솕?댁꽌 遺꾨━.
+- [x] **FSM (State Machine)**: `PlayerState` ?대옒??湲곕컲???곹깭 癒몄떊 (Idle, Move, Attack, Dash).
+- [x] **?대룞 濡쒖쭅**: `CharacterController`瑜??댁슜??臾쇰━ 湲곕컲 ?대룞.
+- [x] **?듭떖**: ?낅젰怨?濡쒖쭅 遺꾨━ ?꾨즺. (?ㅽ듃?뚰겕 ?낅젰 援먯껜 ?鍮?
+- [x] **?먯뀑 援먯껜**: `CombatGirls_KatanaCharacterPack` ?곕룞 諛?`Visual` 怨꾩링 遺꾨━ (`Animator_Setup_Guide.md` 以??.
+- [x] **Animator ?ㅼ젙**: `Locomotion`, `Attack1~3`, `Jump`, `Quickshift_F` ?곹깭 ?곌껐.
+- [x] **Hitbox ?쒖뒪??*: 移쇱씠 ?섎몮?ъ쭏 ???뱀젙 ?꾨젅?꾩뿉?쒕쭔 ?먯젙???앷린?꾨줉 ?ㅺ퀎.
+- [x] **?쇨꺽 ?쒖뒪??*: ?뚮젅?댁뼱/蹂댁뒪媛 ?곕?吏瑜?諛쏆븯???뚯쓽 諛섏쓳 (HP 媛먯냼, ?쇨꺽 ?좊땲硫붿씠?? 臾댁쟻 ?쒓컙).
+- [x] **Damage ?대옒??*: `IDamageable` ?명꽣?섏씠??(蹂댁뒪/?〓す 怨듯넻 ?곸냽).
+- [x] **?먯젙 理쒖쟻??*: `Physics.OverlapSphereNonAlloc` ?ъ슜.
+- [x] **?듭떖**: 肄붾뱶媛 ?먯젙 ?쒖젏???뺥솗??怨꾩궛?섎뒗 寃껋쓣 蹂댁뿬以섏빞 ??
 
 
 ---
 
-### 📝 공통 문서화 작업
-- [ ] **책임(Responsibility) 문서화**: 로직별 책임 소재를 코드와 글로 명확히 설명 (면접 대비).
+### 2二쇱감: 蹂댁뒪 AI ?⑦꽩 (The Cube)
+
+#### 蹂댁뒪 FSM ?꾪궎?띿쿂 ??
+- [x] **StateMachine ?쒕꽕由?솕**: `StateMachine<TState>`濡?Player/Boss 怨듭슜 ?곹깭 癒몄떊 ?듯빀.
+- [x] **BossBaseState**: `BaseState<BossController>` ?곸냽, `Update()` ?낅젰 ?놁씠 ?대? 濡쒖쭅留?泥섎━.
+- [x] **IState ?명꽣?섏씠??*: `Enter()`/`Exit()` 怨듯넻 怨꾩빟 ?뺤쓽濡?StateMachine??援ъ껜 ????섏〈 ?쒓굅.
+- [x] **BossVisual 遺꾨━**: ?좊땲硫붿씠??UI ?쒖뼱瑜?`BossVisual` ?대옒?ㅻ줈 ?닿??섏뿬 SRP 以??
+
+#### ?쇨꺽 濡쒖쭅 (Player & Boss 怨듯넻) ??
+- [x] **IDamageable ?명꽣?섏씠??*: 怨듦꺽?먭? ?寃???낆쓣 紐곕씪???곕?吏 ?꾨떖 媛??
+- [x] **Health 而댄룷?뚰듃**: HP 愿由? `OnDamage`/`OnDie` ?대깽??諛쒗뻾.
+- [x] **DamageCaster**: `OverlapSphereNonAlloc`?쇰줈 GC-Free ?寃??먯젙.
+- [x] **Event-Driven Death**: `OnDie` ?대깽??援щ룆?쇰줈 `DeadState` ?꾪솚.
+
+#### 蹂댁뒪 ?됰룞 ?⑦꽩 ?봽
+- [x] **?⑦꽩 1 (異붿쟻)**: ?뚮젅?댁뼱???嫄곕━ 怨꾩궛, ?곸젙 嫄곕━ ?좎? 諛?怨듦꺽 ?좊룄.
+- [x] **洹쇱젒 怨듦꺽 (BasicAttackPattern)**: `IBossAttackPattern` Strategy Pattern ?곸슜. 荑⑤떎???쒖뒪??
+- [x] **?⑦꽩 2 (?뚭꺽)**: ?덇퀬 ?쒖떆 ???뚯쭊.
+- [ ] **?⑦꽩 3 (?ъ궗泥?**: ?먮툕?먯꽌 ?묒? ?먮툕(誘몄궗?? 諛쒖궗.
+
 ---
 
+### 3二쇱감: 蹂댁뒪 ?됰룞 ?⑦꽩 & ?쒖뒪??理쒖쟻??& 寃뚯엫 猷⑦봽 (The Logic)
+
+#### 蹂댁뒪 ?됰룞 ?⑦꽩 ?봽
+- [x] **?⑦꽩 3 (?ъ궗泥?**: ?먮툕?먯꽌 ?묒? ?먮툕(誘몄궗?? 諛쒖궗 諛??좎뀑 ?낇엳湲?
+- [x] **?⑦꽩 4 (?ν뙋)**: ?섎뒛?먯꽌 ?낆쓣 ?ν빐 遺?諛쒖궗. 
+
+#### ?쒖뒪??理쒖쟻??& 寃뚯엫 猷⑦봽 (The Logic)
+- [x] **?ㅻ툕?앺듃 ?留?*: 誘몄궗???댄럺?몃? Zero-Allocation?쇰줈 愿由?
+
+---
+
+### 4二쇱감: 蹂댁뒪 ?됰룞 ?⑦꽩 & ?쒖뒪??理쒖쟻??& 寃뚯엫 猷⑦봽 (The Logic)
+#### ?쒖뒪??理쒖쟻??& 寃뚯엫 猷⑦봽 (The Logic)
+- [ ] **UI ?쒖뒪??*: HP 諛? 蹂댁뒪 ?섏씠利??뚮┝ ??肄붾뱶 ?쒖뼱.
+- [ ] **寃뚯엫 留ㅻ땲?**: ?쒖옉 ???꾪닾 ???섏씠利??꾪솚 ???밸━/?⑤같 ?먮쫫 ?쒖뼱.
+---
+
+#### ?슙 ?대━??
+- [ ] **(?뚮젅?댁뼱)???諛⑺뼢 ?섏젙**: 怨듦꺽 諛⑺뼢???꾨땶 ?ㅻ낫???낅젰 諛⑺뼢?쇰줈 ???
+- [ ] **?쇨꺽 ?뚮옒???댄럺??*: `BaseVisual.FlashRoutine`??Emission 湲곕컲?쇰줈 蹂寃?(`material.SetColor("_EmissionColor")`) ?먮뒗 癒명떚由ъ뼹 援먯껜 諛⑹떇 ?곸슜.
+- [ ] **(蹂댁뒪)Run/Walk ?좊땲留ㅼ씠??異붽?**: Run ?좊땲硫붿씠??異붽? 諛?洹몄뿉 留욌뒗 蹂댁뒪 ?吏곸엫 ?띾룄 遺?쒕읇寃?利앷??쒗궎湲?
+- [ ] **(?뚮젅?댁뼱)?됰갚 異붽??섍린**: ?뚮젅?댁뼱媛 蹂댁뒪?먭쾶 ?쇨꺽?뱁뻽?????됰갚 異붽??섍린
+- [ ] **?ㅼ쨷 ?덉씠罹먯뒪???먯?**: ???꾩튂(紐명넻 1/2~癒몃━ 以묎컙)?먯꽌 ?щ윭 諛⑺뼢 媛먯?.
+- [ ] **異붿쟻 ?뚭퀬由ъ쬁 寃??*: NavMesh / A* 寃쎈줈?먯깋 ?곸슜 ?щ? 寃곗젙.
+
+
+---
+
+### ?뱷 怨듯넻 臾몄꽌???묒뾽
+- [ ] **梨낆엫(Responsibility) 臾몄꽌??*: 濡쒖쭅蹂?梨낆엫 ?뚯옱瑜?肄붾뱶? 湲濡?紐낇솗???ㅻ챸 (硫댁젒 ?鍮?.
+---
+
+
+
+
+### **2026-02-20 (금: Unity 버전 롤백 후 패키지 복구)**
+
+* **오늘 완료한 작업**
+* Packages/manifest.json을 Unity 2022.3 기준으로 정리 (URP/VFX 14.0.12, UGUI 1.0.0, TMP 3.0.6 추가).
+* Unity 6 전용/미지원 의존성(com.unity.multiplayer.center, com.unity.modules.accessibility, com.unity.modules.adaptiveperformance, com.unity.modules.vectorgraphics) 제거.
+* 오염된 Packages/packages-lock.json을 삭제해 Unity 2022에서 잠금 파일을 재생성하도록 복구 경로 정리.
+
+* **기술적 고려**
+* ProjectVersion만 되돌리면 패키지 그래프 불일치가 남을 수 있어, manifest와 lock을 함께 복구해야 컴파일/에셋 임포트 오류 연쇄를 차단할 수 있다.
+
+### **2026-02-20 (금: AoE Rigidbody API 호환 수정)**
+
+* **오늘 완료한 작업**
+* AoEAttackPattern.ResolveTargetHeading()에서 Rigidbody.linearVelocity 사용 코드를 Unity 2022 호환 Rigidbody.velocity로 교체.
+* Unity 6 API 잔재로 인해 발생하던 CS1061 컴파일 오류를 제거.
+
+* **기술적 고려**
+* 컴파일 실패 상태에서는 어셈블리 생성(Assembly-CSharp-Editor)이 깨져 다수 스크립트가 Missing처럼 보일 수 있으므로, 우선 1차 컴파일 에러를 제거해 어셈블리 복구를 우선한다.
+
+### **2026-02-20 (금: Editor 어셈블리 앵커 추가)**
+
+* **오늘 완료한 작업**
+* Assets/Editor/EditorAssemblyAnchor.cs를 추가해 Assembly-CSharp-Editor 어셈블리 생성 경로를 고정.
+* Burst 엔트리포인트 스캔 단계에서 발생하던 Assembly-CSharp-Editor 해석 실패 리스크를 완화.
