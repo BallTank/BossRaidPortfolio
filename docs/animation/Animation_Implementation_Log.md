@@ -140,6 +140,9 @@ private const string ANIM_FLAME_ATTACK = "Flame Attack";
 | Basic Attack | `PlayAttack()` | `CrossFade("Basic Attack")` |
 | Lunge Attack | `PlayLungeAttack()` | `CrossFade("Lunge Attack")` (없으면 `"Claw Attack"` 폴백) |
 | Projectile Attack | `PlayProjectileAttack()` | `CrossFade("Flame Attack")` 우선 (없으면 `"Fireball Shoot"` 폴백) |
+| AoE TakeOff | `PlayTakeOff()` | `CrossFade("TakeOff")` |
+| AoE Flight Loop | `PlayFlyForward()` / `PlayFlyIdle()` | `CrossFade("FlyForward/FlyIdle")` |
+| AoE Land | `PlayLand()` | `CrossFade("Land")` |
 | Hit | `TriggerHit()` | `CrossFade("Hit")` + Flash 이펙트 |
 | Dead | `TriggerDie()` | `CrossFade("Die")` |
 
@@ -158,4 +161,19 @@ private const string ANIM_FLAME_ATTACK = "Flame Attack";
 | 비행 중 높이 | `verticalFollowSpeed`로 `target.y`에 `MoveTowards` 수렴 |
 | 수평 유도 | XZ 평면에서 `RotateTowards` 적용 (`homingStrength`, `homingDuration`) |
 | 충돌 처리 안정성 | `OnTriggerEnter` + `OnCollisionEnter` 동시 지원, 부모 `IDamageable` 폴백 |
+
+### 6.6. Pattern 4 (AoE) 연출 구현 로그 (2026-02-20)
+| 단계 | 애니메이션 | 로직 트리거 |
+|------|------------|-------------|
+| Phase A | `TakeOff` | AoE 패턴 진입 |
+| Phase B | `FlyForward` | 장판 생성 시작 위치 확보 |
+| Phase C | `FlyIdle` + fire prefab 낙하 | 다중 장판 텔레그래프 생성/진행 |
+| Phase D | `Land` | 장판 활성 구간 종료 후 지상 복귀 |
+
+- 장판 텔레그래프는 중심→외곽 Fill(저알파 Red)로 통일.
+- 장판 판정은 `tickInterval` 기반으로 처리하고, 애니메이션 재생 길이와 직접 결합하지 않습니다.
+- AoE fire 연출은 `BossProjectilePool`의 기존 fire prefab을 재사용합니다.
+- 플레이어 공격 시점은 fire prefab 착지 시점과 동기화합니다(`telegraphDuration == impactTime`).
+- 장판 분포는 타겟 진행 방향 예측(`headingLeadTime`, `headingBias` 등)으로 전방 편향되어, 플레이어 진행 경로를 더 강하게 압박합니다.
+- 런타임 폴백 디스크는 `fallbackYOffset = 0`으로 고정해 바닥 밀착을 유지합니다.
 

@@ -10,6 +10,12 @@ namespace Core.Boss.Projectiles
     /// </summary>
     public class BossProjectile : MonoBehaviour
     {
+        private enum ProjectileMode
+        {
+            Combat,
+            TimedImpact
+        }
+
         [SerializeField] private LayerMask hitMask = ~0;
         [SerializeField] private VisualEffect visualEffect;
         [SerializeField] private float hitReturnDelay = 0.35f;
@@ -28,6 +34,12 @@ namespace Core.Boss.Projectiles
         private bool _isActive;
         private bool _isReturned;
         private float _pendingReturnTimer = -1f;
+        private ProjectileMode _mode = ProjectileMode.Combat;
+        private Vector3 _impactStartPos;
+        private Vector3 _impactTargetPos;
+        private float _impactDuration;
+        private float _impactElapsed;
+        private bool _impactTriggered;
 
         private void Awake()
         {
@@ -81,10 +93,60 @@ namespace Core.Boss.Projectiles
             _pendingReturnTimer = -1f;
             _isReturned = false;
             _isActive = true;
+            _mode = ProjectileMode.Combat;
+            _impactElapsed = 0f;
+            _impactDuration = 0f;
+            _impactTriggered = false;
 
             if (_projectileCollider != null)
             {
                 _projectileCollider.enabled = true;
+            }
+
+            RestartVfx();
+        }
+
+        /// <summary>
+        /// AoE용 타임드 임팩트 모드 초기화.
+        /// 지정 시간 뒤에 hit 이벤트를 재생하고 풀로 반납합니다.
+        /// </summary>
+        public void InitializeImpactMarker(
+            Vector3 startPosition,
+            Vector3 impactPosition,
+            float impactTime,
+            int ownerInstanceID)
+        {
+            _mode = ProjectileMode.TimedImpact;
+            _ownerInstanceID = ownerInstanceID;
+
+            _impactStartPos = startPosition;
+            _impactTargetPos = impactPosition;
+            _impactDuration = Mathf.Max(0.01f, impactTime);
+            _impactElapsed = 0f;
+            _impactTriggered = false;
+
+            _pendingReturnTimer = -1f;
+            _isReturned = false;
+            _isActive = true;
+
+            _damage = 0;
+            _speed = 0f;
+            _lifetime = _impactDuration + hitReturnDelay + 0.5f;
+            _target = null;
+            _homingStrength = 0f;
+            _homingTimer = 0f;
+            _verticalFollowSpeed = 0f;
+            _moveDirection = (_impactTargetPos - _impactStartPos).normalized;
+
+            transform.position = _impactStartPos;
+            if (_moveDirection.sqrMagnitude > 0.0001f)
+            {
+                transform.forward = _moveDirection;
+            }
+
+            if (_projectileCollider != null)
+            {
+                _projectileCollider.enabled = false;
             }
 
             RestartVfx();
@@ -111,6 +173,12 @@ namespace Core.Boss.Projectiles
 
             if (!_isActive) return;
 
+            if (_mode == ProjectileMode.TimedImpact)
+            {
+                UpdateTimedImpact();
+                return;
+            }
+
             ApplyHoming();
 
             // 프레임마다 전방 이동
@@ -123,6 +191,26 @@ namespace Core.Boss.Projectiles
             if (_lifetime <= 0f)
             {
                 ReturnToPool();
+            }
+        }
+
+        private void UpdateTimedImpact()
+        {
+            _impactElapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(_impactElapsed / _impactDuration);
+
+            transform.position = Vector3.Lerp(_impactStartPos, _impactTargetPos, t);
+
+            Vector3 forward = _impactTargetPos - transform.position;
+            if (forward.sqrMagnitude > 0.0001f)
+            {
+                transform.forward = forward.normalized;
+            }
+
+            if (!_impactTriggered && t >= 1f)
+            {
+                _impactTriggered = true;
+                EnterHitPhase();
             }
         }
 
@@ -173,6 +261,7 @@ namespace Core.Boss.Projectiles
         private void TryProcessHit(Collider other)
         {
             if (!_isActive || other == null) return;
+            if (_mode != ProjectileMode.Combat) return;
             if (!IsLayerAllowed(other)) return;
 
             IDamageable damageable = other.GetComponent<IDamageable>();

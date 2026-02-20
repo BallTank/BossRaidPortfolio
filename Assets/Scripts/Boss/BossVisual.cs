@@ -20,6 +20,14 @@ namespace Core.Boss
         private const string ANIM_FLAME_ATTACK = "Flame Attack";
         private const string ANIM_FIREBALL_SHOOT = "Fireball Shoot";
         private const string ANIM_LEGACY_CLAW_ATTACK = "Claw Attack";
+        private const string ANIM_TAKE_OFF = "takeOff";
+        private const string ANIM_TAKE_OFF_ALT = "TakeOff";
+        private const string ANIM_FLY_FORWARD = "FlyForward";
+        private const string ANIM_FLY_FORWARD_ALT = "Fly Forward";
+        private const string ANIM_FLY_IDLE = "FlyIdle";
+        private const string ANIM_FLY_IDLE_ALT = "Fly Idle";
+        private const string ANIM_LAND = "Land";
+        private const string ANIM_SCREAM = "Scream";
 
         // Animation IDs
         private static readonly int AnimLocomotion = Animator.StringToHash(ANIM_LOCOMOTION);
@@ -28,6 +36,15 @@ namespace Core.Boss
         private static readonly int AnimFlameAttack = Animator.StringToHash(ANIM_FLAME_ATTACK);
         private static readonly int AnimFireballShoot = Animator.StringToHash(ANIM_FIREBALL_SHOOT);
         private static readonly int AnimLegacyClawAttack = Animator.StringToHash(ANIM_LEGACY_CLAW_ATTACK);
+        private static readonly int AnimTakeOff = Animator.StringToHash(ANIM_TAKE_OFF);
+        private static readonly int AnimTakeOffAlt = Animator.StringToHash(ANIM_TAKE_OFF_ALT);
+        private static readonly int AnimFlyForward = Animator.StringToHash(ANIM_FLY_FORWARD);
+        private static readonly int AnimFlyForwardAlt = Animator.StringToHash(ANIM_FLY_FORWARD_ALT);
+        private static readonly int AnimFlyIdle = Animator.StringToHash(ANIM_FLY_IDLE);
+        private static readonly int AnimFlyIdleAlt = Animator.StringToHash(ANIM_FLY_IDLE_ALT);
+        private static readonly int AnimLand = Animator.StringToHash(ANIM_LAND);
+        private static readonly int AnimScream = Animator.StringToHash(ANIM_SCREAM);
+        private const float DefaultScreamDuration = 1.2f;
 
         private int _currentAnimState;
 
@@ -82,6 +99,44 @@ namespace Core.Boss
             CrossFade(AnimBasicAttack);
         }
 
+        public void PlayTakeOff()
+        {
+            if (TryCrossFade(AnimTakeOff)) return;
+            if (TryCrossFade(AnimTakeOffAlt)) return;
+            PlayIdle();
+        }
+
+        public void PlayFlyForward()
+        {
+            if (TryCrossFade(AnimFlyForward)) return;
+            if (TryCrossFade(AnimFlyForwardAlt)) return;
+            PlayMove();
+        }
+
+        public void PlayFlyIdle()
+        {
+            if (TryCrossFade(AnimFlyIdle)) return;
+            if (TryCrossFade(AnimFlyIdleAlt)) return;
+            PlayIdle();
+        }
+
+        public void PlayLand()
+        {
+            if (TryCrossFade(AnimLand)) return;
+            PlayIdle();
+        }
+
+        public float PlayScream()
+        {
+            if (!TryCrossFade(AnimScream))
+            {
+                PlayIdle();
+                return DefaultScreamDuration;
+            }
+
+            return GetClipLengthOrDefault(ANIM_SCREAM, DefaultScreamDuration);
+        }
+
         // Override Base Methods to use CrossFade with state tracking
         public override void TriggerHit()
         {
@@ -102,6 +157,31 @@ namespace Core.Boss
                 _currentAnimState = stateHash;
                 _animator.CrossFade(stateHash, duration);
             }
+        }
+
+        private bool TryCrossFade(int stateHash, float duration = 0.1f)
+        {
+            if (_animator == null) return false;
+            if (!_animator.HasState(0, stateHash)) return false;
+
+            CrossFade(stateHash, duration);
+            return true;
+        }
+
+        private float GetClipLengthOrDefault(string clipName, float fallback)
+        {
+            if (_animator == null || _animator.runtimeAnimatorController == null) return fallback;
+
+            AnimationClip[] clips = _animator.runtimeAnimatorController.animationClips;
+            for (int i = 0; i < clips.Length; i++)
+            {
+                AnimationClip clip = clips[i];
+                if (clip == null) continue;
+                if (!string.Equals(clip.name, clipName, System.StringComparison.OrdinalIgnoreCase)) continue;
+                return clip.length > 0f ? clip.length : fallback;
+            }
+
+            return fallback;
         }
 
         public void SetSearchingUI(bool active)

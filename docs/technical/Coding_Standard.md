@@ -14,6 +14,8 @@
 * **Collection Pre-allocation**: 물리 판정 결과나 객체 리스트를 담는 배열/리스트는 `Awake`에서 미리 최대 크기로 할당하여 재사용한다.
 * **Pooling Lifecycle Rule**: 투사체/이펙트는 `Object Pool`로 관리하며, 런타임 `Instantiate/Destroy`를 금지한다. 활성화 시 `Initialize`, 종료 시 반드시 `ReturnToPool` 경로로만 반납한다.
 * **Pooled VFX Event Rule**: 풀링 투사체 VFX는 이벤트 계약을 고정한다. 스폰 시 `create`, 피격 시 `hit`, 반납 시 `stop`을 사용하며, 피격 연출이 필요한 프리팹은 콜라이더를 비활성화한 뒤 `hitReturnDelay` 후 반납한다.
+* **AoE Telegraph Material Rule**: AoE 경고 표시 갱신 시 `Renderer.material` 접근으로 런타임 머티리얼 복제를 만들지 않는다. 반드시 `MaterialPropertyBlock`으로 Fill/Alpha를 제어한다.
+* **AoE Query Buffer Rule**: AoE 데미지 판정은 `Physics.OverlapSphereNonAlloc`을 사용하고, 충돌 버퍼(`Collider[]`)는 장판 컨트롤러 또는 패턴 컨텍스트에서 선할당 후 재사용한다.
 
 ## 2. Architecture: Input & Logic Separation
 
@@ -35,10 +37,23 @@
 * **Projectile Axis Separation**: 투사체 유도는 축을 분리한다. 수평 조향은 XZ 평면(`RotateTowards`)으로 처리하고, 수직 추적은 Y축 `MoveTowards`로 별도 처리한다.
 * **Projectile Vertical Follow Tuning**: Y축 추적 강도는 하드코딩하지 않고 인스펙터 직렬화 값(`verticalFollowSpeed`)으로 노출한다. `0`일 때는 발사 높이를 유지해야 한다.
 * **Hit Resolution Robustness**: 투사체 충돌 처리 시 `OnTriggerEnter`만 가정하지 않는다. `OnCollisionEnter` 경로를 함께 제공하고, 데미지 대상 탐색은 `GetComponent<IDamageable>()` 후 `GetComponentInParent<IDamageable>()` 순으로 폴백한다.
+* **AoE Ground Validation**: 장판 스폰 좌표는 지면 Raycast로 확정하고, 경기장 경계 밖 좌표는 생성 전에 보정(Clamp)하거나 스킵한다.
+* **AoE Tick Determinism**: 장판 틱 데미지는 프레임마다 즉시 호출하지 않고 누적 타이머(`tickInterval`) 기준으로 처리한다.
 
 
 
-## 5. Naming & Style Conventions
+## 5. Boss Pattern 4 (AoE) Rule Set
+
+* **Airborne Phase Contract**: AoE 패턴 중 공중 연출은 `takeOff -> FlyForward -> FlyIdle -> Land` 순서를 기본 계약으로 둔다.
+* **Animation Fallback Rule**: AoE 비행 상태가 Animator에 없으면 `Locomotion`/`Idle` 계열로 폴백하여 Null/멈춤 상태를 방지한다.
+* **Damage Ownership Rule**: 장판 데미지는 보스 Owner `InstanceID`를 포함해 자기 자신 피격을 방지하고, 필요 시 동일 틱 중복 타격 제한을 둔다.
+* **Shared Projectile Pool Rule**: AoE는 별도 투사체 풀을 만들지 않고, `ProjectileAttackPattern`과 동일한 `BossProjectilePool` 및 fire prefab을 재사용한다.
+* **Impact Timing Sync Rule**: 플레이어 피해가 시작되는 시점은 fire prefab 착지 시점과 동일해야 한다. 기본 동기화 규칙은 `telegraphDuration == projectile impactTime`.
+* **Editor-Tunable First**: `radius`, `telegraphDuration`, `activeDuration`, `tickInterval`, `damage`는 하드코딩하지 않고 직렬화 설정으로 노출한다.
+* **Predictive Spread Rule**: 장판 분포는 타겟 현재 위치만 쓰지 않고 진행 방향 예측을 적용한다. 최소 `headingLeadTime`, `maxHeadingLeadDistance`, `forwardSpreadRadius`, `sideSpreadRadius`, `headingBias`, `headingMinSpeed`를 인스펙터에서 조정 가능해야 한다.
+* **Fallback Disc Grounding Rule**: `AoECircleController`의 런타임 폴백 디스크 오프셋(`fallbackYOffset`) 기본값은 `0`을 유지해 바닥 밀착을 보장한다.
+
+## 6. Naming & Style Conventions
 
 * **Fields**: private 필드는 `_camelCase` 형식을 사용한다. (예: `_moveSpeed`)
 * **Properties**: public 프로퍼티는 `PascalCase`를 사용한다. (예: `CurrentState`)
