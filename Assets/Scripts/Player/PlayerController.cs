@@ -44,6 +44,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable
     public const string ANIM_STATE_ATTACK2 = "Attack2";
     public const string ANIM_STATE_ATTACK3 = "Attack3";
     public const string ANIM_STATE_JUMP = "Jump";
+    public const string ANIM_STATE_HIT = "Hit";
     public const string ANIM_STATE_DIE = "Die";
 
     // FSM (제네릭 StateMachine 사용)

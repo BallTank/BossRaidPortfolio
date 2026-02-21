@@ -2,6 +2,27 @@
 
 ## 📅 [2월 1주차] 목표: 플레이어 컨트롤러 및 상태 머신
 
+### **2026-02-21 (토: Player Animator 모션 복구 및 누락 가드 추가)**
+
+* **오늘 반영한 작업**
+* `PlayerAnimator.controller`에서 `Hit`, `Attack1`, `Attack2`, `Attack3`, `Die` 상태의 깨진 Motion GUID를 현재 프로젝트의 `CombatGirlsCharacterPack` 클립으로 재연결.
+* `MoveState`의 점프 전환은 게임 디자인 의도대로 다시 비활성 상태(주석 유지)로 복구.
+* `Assets/Editor/PlayerAnimatorGuard.cs`를 추가해 필수 상태/모션 누락을 자동 검증.
+  * 에디터 리로드 시 자동 점검.
+  * `PlayerAnimator.controller` 재임포트 시 자동 점검.
+  * `Tools/Validation/Validate Player Animator` 수동 점검 메뉴 제공.
+* `PlayerAnimatorGuard` 리팩터링:
+  * 모든 Animator Layer + 중첩 `AnimatorStateMachine`까지 재귀 순회해 필수 상태를 탐색하도록 개선.
+  * 필수 파라미터 계약(`Speed: Float`, `Hit: Trigger`) 검증 추가.
+  * 동일 상태명 중복 시 경고 로그를 출력해 구성 오류를 조기 감지.
+  * `PlayerAnimator.controller`의 이동 경로(`movedAssets`)까지 후처리 감지 범위 확장.
+  * `PlayerController.ANIM_STATE_HIT` 상수를 복구하고, 에디터 가드도 동일 상수를 참조하도록 정리.
+
+* **기술적 고려**
+* 상태 이름은 남아 있어도 Motion GUID가 유실되면 런타임에서 즉시 동작하지 않으므로, “상태 존재 여부 + 모션 바인딩 유효성”을 함께 검증해야 함.
+* 재발 방지를 위해 수동 점검에 의존하지 않고, 에디터 이벤트(로드/임포트) 기반 자동 가드를 기본 안전망으로 설정.
+* Animator 누락 문제는 Top-Level 상태만 검사하면 놓칠 수 있으므로, 서브 상태 머신까지 재귀적으로 검사해야 재발 방지 효과가 유지됨.
+
 ### **2026-02-20 (금: 애니메이션 패턴 전환 우선순위 정리)**
 
 * **오늘 반영한 작업**

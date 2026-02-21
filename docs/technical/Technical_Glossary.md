@@ -65,6 +65,10 @@
 * **Animator Controller**: Unity의 애니메이션 상태 머신. FSM과 연동하여 상태 전환 시 애니메이션을 재생함.
 * **CrossFade**: 현재 애니메이션에서 목표 애니메이션으로 부드럽게 블렌딩하는 Unity Animator 메서드. 끊김 없는 전환을 위해 사용.
 * **Blend Tree**: 하나의 파라미터(예: `Speed`)에 따라 여러 애니메이션을 자동으로 섞어 재생하는 구조. Idle↔Run 전환에 사용.
+* **Motion GUID Drift (모션 GUID 드리프트)**: Animator State 이름은 유지되지만, 참조 중인 AnimationClip GUID가 유실/변경되어 `Motion Missing`이 발생하는 상태.
+* **Animator Motion Rebinding (모션 재바인딩)**: 유실된 Motion 참조를 현재 프로젝트에 존재하는 FBX/Clip의 `guid + fileID`로 다시 연결해 상태를 복구하는 작업.
+* **PlayerAnimator Guard**: `Assets/Editor/PlayerAnimatorGuard.cs`가 필수 상태/모션, 필수 파라미터(`Speed` Float, `Hit` Trigger), Locomotion BlendTree 자식 모션을 자동 점검하는 안전 장치. 모든 Layer + 중첩 StateMachine 재귀 순회와 중복 상태명 경고를 포함하며, `Hit` 상태명은 `PlayerController.ANIM_STATE_HIT` 상수를 공용 참조한다.
+* **Animator Parameter Contract (애니메이터 파라미터 계약)**: 컨트롤러가 반드시 보유해야 하는 파라미터 이름/타입 약속. 현재 플레이어는 `Speed: Float`, `Hit: Trigger`를 계약으로 고정해 가드 스크립트로 검증한다.
 * **Boss Attack Priority**: `BossCombatState.Update()`는 공격 패턴 진입이 가능하면 `MoveTo`/`PlayMove`와 같은 추적 이동 호출보다 `AttackState` 전환을 우선 적용한다.
 * **Package Baseline Rollback (패키지 기준선 롤백)**: Unity 버전 복귀 시 `ProjectVersion`만 변경하면 패키지 그래프가 어긋날 수 있으므로, `manifest` 정규화와 `packages-lock` 재생성을 함께 수행해 의존성 해석 오류를 제거하는 복구 절차.
 * **Locomotion Visual Suppression (이동 시각 잠금)**: AoE 공중 패턴처럼 비행 애니메이션이 우선이어야 할 때 `MoveTo`/`StopMoving`가 `PlayMove`/`PlayIdle`를 강제하지 않도록 막아 Walk가 `TakeOff/Fly`를 덮어쓰지 못하게 하는 보호 계층.

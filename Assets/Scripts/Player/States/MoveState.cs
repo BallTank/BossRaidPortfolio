@@ -53,7 +53,7 @@ namespace Core.Player.States
                 return;
             }
 
-            // [DISABLED] Jump Transition - 애니메이션 미구현으로 비활성화
+            // [DISABLED] Jump Transition - 현재 게임 디자인에서 점프 비활성화 (입력 키는 F10으로 보존)
             // bool jumpPressed = input.HasFlag(InputFlag.Jump);
             // if (jumpPressed && !_wasJumpPressed && Controller.CharController.isGrounded)
             // {

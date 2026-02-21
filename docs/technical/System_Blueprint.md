@@ -354,11 +354,12 @@ classDiagram
 | --- | --- | --- |
 | **Movement Logic** | ✅ Done | `MoveState`로 로직 이관 완료. |
 | **Dash Logic** | ✅ Done | Cooldown 및 Edge-triggering 기능 포함 구현 완료. |
-| **Jump Logic** | ✅ Done | `JumpState` 구현 완료. 공중 이동/대시 지원. |
+| **Jump Logic** | ✅ Done | `JumpState` 구현 완료. 현재 게임 디자인 기준 점프 입력 전환은 비활성(주석/F10 유지) 상태이며 필요 시 재활성 가능. |
 | **Camera Logic** | ✅ Done | CameraRoot 분리 및 로컬 회전 구현 완료. |
 | **Attack Logic** | ✅ Done | `AttackState` 구현 완료. 콤보/캔슬/개별 데미지 지원. |
 | **Hit/Damage System** | ✅ Done | `IDamageable`, `DamageCaster`, `Health` 구현 완료. |
-| **Asset Integration** | ✅ Done | FSM-Animator 연동 코드 완료. Unity 에디터 설정 진행 중. |
+| **Asset Integration** | ✅ Done | `PlayerAnimator`의 `Hit/Attack1/2/3/Die` 상태 모션 재연결 완료(2026-02-21). |
+| **Animator Validation Guard** | ✅ Done | `Assets/Editor/PlayerAnimatorGuard.cs`로 필수 state/motion + 파라미터(`Speed` Float, `Hit` Trigger) 누락 자동 점검. 모든 Layer + 중첩 StateMachine 재귀 순회, Locomotion BlendTree 자식 모션 검증, 중복 상태명 경고, 로드/임포트/이동/메뉴 경로를 모두 지원하며 `Hit` 상태명은 `PlayerController.ANIM_STATE_HIT` 상수를 공용 참조한다. |
 
 ### 4.3. Boss System (The Dragon)
 | Component | Status | Note |
