@@ -183,6 +183,7 @@ MonoBehaviour:
   phaseTwoHealthThreshold: 0.5
   detectionRange: 37.8
   attackRange: 28.1
+  chaseReengageBuffer: 1
   searchDuration: 5
   obstacleMask:
     serializedVersion: 2
@@ -207,6 +208,8 @@ MonoBehaviour:
     homingStrength: 0.35
     homingDuration: 1.2
     verticalFollowSpeed: 4
+    postFireRecoveryDuration: 0.12
+    exitNormalizedTime: 0.9
   projectilePool: {fileID: 746045139}
   projectileSpawnPoint: {fileID: 652612857}
   aoeAttackSettings:
