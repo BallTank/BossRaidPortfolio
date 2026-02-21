@@ -1,4 +1,7 @@
 # Project overrides for BossRaidPortfolio
+# Commit message rule:
+# - summary와 description은 반드시 한국어로 작성한다.
+# - 커밋 전 summary/description을 사용자에게 먼저 확인받는다.
 model = "gpt-5.3-codex"
 model_reasoning_effort = "high"
 personality = "pragmatic"
