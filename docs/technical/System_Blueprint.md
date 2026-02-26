@@ -139,7 +139,10 @@ classDiagram
         <<MonoBehaviour>>
         +MoveSpeed float
         +DetectionRange float
-        +AttackRange float
+        +BasicAttackRange float
+        +LungeAttackRange float
+        +ProjectileAttackRange float
+        +AoEAttackRange float
         +ChaseReengageBuffer float
         +CanAttack bool
         +IsLocomotionVisualSuppressed bool
@@ -383,8 +386,9 @@ classDiagram
 * `moveDir`: **Character Body** 회전 및 이동용 (키보드 입력).
 * 캐릭터 몸통은 카메라가 바라보는 방향(`cameraRoot.forward`)을 기준으로 이동 벡터를 변환해야 한다.
 * **Boss Planar Distance Rule**: Boss의 감지/추적/공격 사거리 판정은 Y축을 제외한 수평(XZ) 거리 기준으로 계산한다.
+* **Boss Pattern Range Rule**: 보스 공격 사거리는 패턴별 인스펙터 값(`Basic`, `Lunge`, `Projectile`, `AoE`)으로 분리하며, 패턴 선택 시 현재 거리에서 유효한 패턴만 후보로 포함한다.
 * **Boss Detection Trigger Rule**: Idle/Searching에서 Combat 전환(스크림 인트로 진입)은 `IsTargetInDetectionRange()` 기준으로 즉시 수행한다. 현재 보스 감지는 장애물/시야선(LOS) 판정을 사용하지 않는다.
-* **Boss Chase Hysteresis**: `AttackRange` 단일 임계값 대신 `AttackRange + ChaseReengageBuffer` 재진입 구간을 사용해 경계 왕복 지터를 완화한다.
+* **Boss Chase Hysteresis**: 단일 임계값 대신 "현재 페이즈에서 활성화된 패턴 중 최대 사거리"(해제)와 `최대 사거리 + ChaseReengageBuffer`(재진입) 이중 임계값을 사용해 경계 왕복 지터를 완화한다.
 
 
 * **Optimization**:
@@ -432,7 +436,7 @@ classDiagram
 | **Boss Sensors** | ✅ Done | `IsTargetInDetectionRange`(XZ 거리 기반) 단일 규칙으로 Idle/Searching 전투 진입을 처리한다. 장애물 LOS 센서는 제거됨 |
 | **Boss Navigation** | ✅ Done | `MoveTo` (추적 이동) 및 `RotateTowards` (회전) 로직 + AoE 공중 연출 중 Locomotion 시각 잠금 가드 + `ChaseReengageBuffer` 기반 히스테리시스 추적 |
 | **Boss Visuals** | ✅ Done | 구조 분리 및 Dragon Asset(Animator/BlendTree) 통합 완료. `PlayFlyForward` 폴백을 비행 계열로 정리해 Walk 혼입 방지. |
-| **Boss Combat** | 🔃 progress | `Pattern 1`(Basic), `Pattern 2`(Lunge), `Pattern 3`(Projectile: Flame Attack + Homing + Vertical Follow + VFX create/hit + hitReturnDelay + postFireRecovery/exitNormalizedTime) 완료. 경계 지터 완화를 위한 추적 히스테리시스 및 Flame 종료 동기화 반영. `Pattern 4`(AoE) 진행 중. |
+| **Boss Combat** | 🔃 progress | `Pattern 1`(Basic), `Pattern 2`(Lunge), `Pattern 3`(Projectile: Flame Attack + Homing + Vertical Follow + VFX create/hit + hitReturnDelay + postFireRecovery/exitNormalizedTime) 완료. 패턴별 공격 사거리 분리(`Basic/Lunge/Projectile/AoE`) 및 거리 기반 패턴 후보 필터링, 최대 사거리 기반 추적 히스테리시스 반영. `Pattern 4`(AoE) 진행 중. |
 
 ### 4.4. User Interface (UI)
 | Component | Status | Note |

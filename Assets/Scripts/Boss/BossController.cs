@@ -40,7 +40,10 @@ namespace Core.Boss
             if (searchingMoveSpeed < 0) searchingMoveSpeed = 0f;
             phaseTwoHealthThreshold = Mathf.Clamp01(phaseTwoHealthThreshold);
             if (detectionRange < 0f) detectionRange = 0f;
-            if (attackRange < 0f) attackRange = 0f;
+            if (basicAttackRange < 0f) basicAttackRange = 0f;
+            if (lungeAttackRange < 0f) lungeAttackRange = 0f;
+            if (projectileAttackRange < 0f) projectileAttackRange = 0f;
+            if (aoeAttackRange < 0f) aoeAttackRange = 0f;
             if (chaseReengageBuffer < 0f) chaseReengageBuffer = 0f;
 
             if (projectileAttackSettings != null)
@@ -55,7 +58,14 @@ namespace Core.Boss
 
         [Header("감지 설정 (Detection Settings)")]
         [SerializeField] private float detectionRange = 10.0f;
-        [SerializeField] private float attackRange = 2.5f;
+
+        [Header("패턴별 공격 사거리 (Pattern Attack Ranges)")]
+        [FormerlySerializedAs("attackRange")]
+        [SerializeField] private float basicAttackRange = 2.5f;
+        [SerializeField] private float lungeAttackRange = 4.5f;
+        [SerializeField] private float projectileAttackRange = 6.0f;
+        [SerializeField] private float aoeAttackRange = 6.0f;
+
         [SerializeField, Tooltip("공격 사거리 경계 지터 완화를 위한 추적 재진입 여유 거리")]
         private float chaseReengageBuffer = 1.0f;
         [SerializeField] private float searchDuration = 5.0f;
@@ -132,7 +142,10 @@ namespace Core.Boss
         public float MoveSpeed => moveSpeed;
         public float SearchingMoveSpeed => searchingMoveSpeed;
         public float DetectionRange => detectionRange;
-        public float AttackRange => attackRange;
+        public float BasicAttackRange => basicAttackRange;
+        public float LungeAttackRange => lungeAttackRange;
+        public float ProjectileAttackRange => projectileAttackRange;
+        public float AoEAttackRange => aoeAttackRange;
         public float ChaseReengageBuffer => chaseReengageBuffer;
         public float SearchDuration => searchDuration;
         public int AttackDamage => attackDamage;
@@ -457,7 +470,16 @@ namespace Core.Boss
         private void OnDrawGizmosSelected()
         {
             Gizmos.color = Color.red;
-            Gizmos.DrawWireSphere(transform.position, attackRange);
+            Gizmos.DrawWireSphere(transform.position, basicAttackRange);
+
+            Gizmos.color = new Color(1f, 0.55f, 0f);
+            Gizmos.DrawWireSphere(transform.position, lungeAttackRange);
+
+            Gizmos.color = Color.cyan;
+            Gizmos.DrawWireSphere(transform.position, projectileAttackRange);
+
+            Gizmos.color = Color.magenta;
+            Gizmos.DrawWireSphere(transform.position, aoeAttackRange);
 
             Gizmos.color = Color.yellow;
             Gizmos.DrawWireSphere(transform.position, detectionRange);

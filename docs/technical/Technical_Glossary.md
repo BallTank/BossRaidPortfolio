@@ -46,8 +46,9 @@
 * **Priority Marker (우선순위 마커)**: 작업 목록의 중요도를 일관되게 표시하기 위한 표기 규칙. `🔴(1순위)`, `🟡(2순위)`, `🟢(3순위)` 순으로 관리한다.
 * **Task Tag (작업 태그)**: 작업 대상/영역을 괄호로 명시하는 표기 방식. `(플레이어)`, `(보스)`, `(플레이어, UI)`처럼 단일 또는 복수 도메인으로 표기한다.
 * **Planar Distance Gate (평면 거리 게이트)**: Boss의 상태 전환 거리 판정에서 높이(Y)를 제외하고 XZ 평면 거리만 사용해 점프/지형 높이 차로 인한 오판정을 줄이는 규칙.
+* **Pattern Attack Range (패턴별 공격 사거리)**: `BossController`가 공격 패턴마다 별도 사거리(`Basic`, `Lunge`, `Projectile`, `AoE`)를 가지는 규칙. 공격 패턴 선택 시 현재 거리에서 유효한 패턴만 후보로 포함한다.
 * **Range-Only Detection Trigger (거리 단일 감지 트리거)**: Idle/Searching에서 Combat(스크림 인트로) 진입을 감지 반경(`IsTargetInDetectionRange`)만으로 판정하는 규칙. 장애물/시야선(LOS) 여부와 무관하게 거리 조건만 충족하면 전투 전환이 발생한다.
-* **Chase Hysteresis (추적 히스테리시스)**: 단일 공격 사거리 임계값 대신 `AttackRange`(해제)와 `AttackRange + ChaseReengageBuffer`(재진입) 이중 임계값을 두어 Walk/Idle 경계 지터를 완화하는 기법.
+* **Chase Hysteresis (추적 히스테리시스)**: 단일 공격 사거리 임계값 대신 현재 페이즈에서 활성화된 패턴의 `최대 사거리`(해제)와 `최대 사거리 + ChaseReengageBuffer`(재진입) 이중 임계값을 두어 Walk/Idle 경계 지터를 완화하는 기법.
 * **Asset+Meta Pair Rule (에셋-메타 쌍 규칙)**: Unity 에셋은 파일만 커밋하면 참조가 보장되지 않는다. 참조 안정성을 위해 원본 에셋과 해당 `.meta`를 반드시 쌍으로 버전관리하는 규칙.
 * **Dependency Closure Tracking (의존성 폐쇄 추적)**: 특정 씬/프리팹이 참조하는 직접/간접 에셋을 그래프 형태로 확장해 누락 없이 추적 세트를 산출하는 방식.
 * **GUID Orphan Reference (GUID 고아 참조)**: YAML에 남아 있는 GUID가 로컬/레포 어디에도 존재하지 않아 `Missing`으로 해석되는 참조 상태.

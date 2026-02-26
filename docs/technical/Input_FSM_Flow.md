@@ -159,7 +159,7 @@ public override void Update(PlayerInputPacket input) {
 ---
 
 ## 7. Boss Combat Pipeline (Projectile Pattern)
-보스는 Combat 상태에서 활성화된 패턴(Basic/Lunge/Projectile/AoE) 중 하나를 균등 랜덤으로 선택합니다.
+보스는 Combat 상태에서 현재 페이즈와 플레이어 평면 거리(XZ)를 기준으로 실행 가능한 패턴 후보만 추려 선택합니다. 후보가 2개면 직전 패턴을 피해 교차 선택합니다.
 
 ```mermaid
 sequenceDiagram
@@ -171,8 +171,9 @@ sequenceDiagram
     participant Proj as BossProjectile
     participant Target as IDamageable
 
-    Combat->>Combat: 활성 토글 수 계산
-    Combat->>Combat: Random.Range로 패턴 선택
+    Combat->>Combat: 현재 페이즈 공격 창(Phase1/Phase2) 확인
+    Combat->>Combat: 평면 거리 기준 유효 후보 필터링
+    Combat->>Combat: 후보 2개면 직전 패턴 회피(교차 선택)
     Combat->>Attack: SetPattern(Projectile)
     Attack->>Pattern: Enter()
     Pattern->>Visual: PlayProjectileAttack() (Flame Attack 우선)
@@ -201,7 +202,7 @@ sequenceDiagram
 - 피격 판정은 `OnTriggerEnter` + `OnCollisionEnter`를 모두 처리하며, 필요 시 `GetComponentInParent<IDamageable>()`로 부모 컴포넌트까지 탐색합니다.
 - VFX 프리팹 사용 시 충돌 즉시 반납하지 않고 `hit` 이벤트 재생 후 `hitReturnDelay`가 끝나면 풀로 반납합니다.
 - Projectile 패턴 종료는 단순 `volleyCount`가 아니라 `postFireRecoveryDuration` + `exitNormalizedTime` 조건을 함께 만족해야 하므로 Flame 공격 직후 조기 Locomotion 복귀를 줄입니다.
-- `BossCombatState`의 추적/공격 거리 판정은 평면(XZ) 거리와 `AttackRange + ChaseReengageBuffer` 히스테리시스를 사용해 경계 지터를 완화합니다.
+- `BossCombatState`의 추적/공격 거리 판정은 평면(XZ) 거리와 `현재 페이즈 활성 패턴의 최대 사거리`(해제), `최대 사거리 + ChaseReengageBuffer`(재진입) 히스테리시스를 사용해 경계 지터를 완화합니다.
 
 ---
 
@@ -249,7 +250,7 @@ sequenceDiagram
 ```
 
 - AoE 장판은 `Telegraph -> Active -> End` 3단계 수명주기로 분리합니다.
-- AoE는 타겟이 공격 사거리 밖이어도 시작할 수 있으며, `FlyForward`에서 추적 후 `castRange` 이내에 들어오면 `FlyIdle` 캐스팅으로 전환합니다.
+- AoE는 `BossCombatState`에서 현재 거리(`AoEAttackRange`) 조건을 만족할 때만 선택되며, 진입 후 `FlyForward`에서 추적해 `castRange` 이내에 들어오면 `FlyIdle` 캐스팅으로 전환합니다.
 - AoE 발사체는 별도 풀을 만들지 않고 기존 `BossProjectilePool`의 fire prefab을 재사용합니다.
 - 장판 생성점은 타겟의 진행 방향을 예측해 전방 편향으로 분포시킵니다 (`headingLeadTime`, `maxHeadingLeadDistance`, `forwardSpreadRadius`, `sideSpreadRadius`, `headingBias`, `headingMinSpeed`).
 - 공격 판정 시작 시점은 fire prefab 착지 시점과 동일해야 하며, 기본 규칙은 `telegraphDuration == projectile impactTime`입니다.

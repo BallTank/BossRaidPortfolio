@@ -44,7 +44,8 @@ namespace Core.Boss
 
             // 공격 종료 직후 경계 지터를 줄이기 위해 재진입 버퍼를 기준으로 추적 래치를 초기화한다.
             float planarDistance = Controller.GetPlanarDistanceToTarget();
-            _isChasingTarget = planarDistance > Controller.AttackRange + Controller.ChaseReengageBuffer;
+            float chaseReleaseRange = GetMaxAttackRangeForCurrentPhase();
+            _isChasingTarget = planarDistance > chaseReleaseRange + Controller.ChaseReengageBuffer;
         }
 
         public override void Update()
@@ -76,7 +77,7 @@ namespace Core.Boss
             if (_isChasingTarget)
             {
                 // 공격 발동 조건이 이미 충족되면 이동 전환보다 패턴 전환을 우선한다.
-                if (Controller.CanAttack && Controller.IsPhaseTwoAttackWindow && TryStartAttackState())
+                if (Controller.CanAttack && TryStartAttackState(planarDistance))
                 {
                     return;
                 }
@@ -101,7 +102,7 @@ namespace Core.Boss
             Controller.RotateTowards(Controller.Target.position);
 
             // 공격 쿨타임 확인 후 공격 전환
-            if (Controller.CanAttack && TryStartAttackState())
+            if (Controller.CanAttack && TryStartAttackState(planarDistance))
             {
                 return;
             }
@@ -109,13 +110,13 @@ namespace Core.Boss
 
         private void UpdateChaseLatch(float planarDistance)
         {
-            float attackRange = Controller.AttackRange;
-            float chaseReengageRange = attackRange + Controller.ChaseReengageBuffer;
+            float chaseReleaseRange = GetMaxAttackRangeForCurrentPhase();
+            float chaseReengageRange = chaseReleaseRange + Controller.ChaseReengageBuffer;
 
             if (_isChasingTarget)
             {
                 // 추적 중에는 공격 사거리 안으로 충분히 들어왔을 때만 추적을 해제한다.
-                if (planarDistance <= attackRange)
+                if (planarDistance <= chaseReleaseRange)
                 {
                     _isChasingTarget = false;
                 }
@@ -129,9 +130,9 @@ namespace Core.Boss
             }
         }
 
-        private bool TryStartAttackState()
+        private bool TryStartAttackState(float planarDistance)
         {
-            IBossAttackPattern selectedPattern = SelectPatternByPhase();
+            IBossAttackPattern selectedPattern = SelectPatternByPhase(planarDistance);
             if (selectedPattern == null)
             {
                 return false;
@@ -144,35 +145,87 @@ namespace Core.Boss
 
         public override void Exit() { }
 
-        private IBossAttackPattern SelectPatternByPhase()
+        private IBossAttackPattern SelectPatternByPhase(float planarDistance)
         {
             if (Controller.IsPhaseOneAttackWindow)
             {
-                return PickPhaseOnePattern();
+                return PickPhaseOnePattern(planarDistance);
             }
 
             if (Controller.IsPhaseTwoAttackWindow)
             {
-                return PickPhaseTwoPattern();
+                return PickPhaseTwoPattern(planarDistance);
             }
 
             return null;
         }
 
-        private IBossAttackPattern PickPhaseOnePattern()
+        private IBossAttackPattern PickPhaseOnePattern(float planarDistance)
         {
+            IBossAttackPattern basic = Controller.EnableBasicAttack &&
+                                       planarDistance <= Controller.BasicAttackRange
+                ? Controller.BasicAttackPattern
+                : null;
+
+            IBossAttackPattern lunge = Controller.EnableLungeAttack &&
+                                       planarDistance <= Controller.LungeAttackRange
+                ? Controller.LungeAttackPattern
+                : null;
+
             return PickFromTwo(
-                Controller.EnableBasicAttack ? Controller.BasicAttackPattern : null,
-                Controller.EnableLungeAttack ? Controller.LungeAttackPattern : null,
+                basic,
+                lunge,
                 ref _lastPhaseOnePattern);
         }
 
-        private IBossAttackPattern PickPhaseTwoPattern()
+        private IBossAttackPattern PickPhaseTwoPattern(float planarDistance)
         {
+            IBossAttackPattern projectile = Controller.EnableProjectileAttack &&
+                                            planarDistance <= Controller.ProjectileAttackRange
+                ? Controller.ProjectileAttackPattern
+                : null;
+
+            IBossAttackPattern aoe = Controller.EnableAoEAttack &&
+                                     planarDistance <= Controller.AoEAttackRange
+                ? Controller.AoEAttackPattern
+                : null;
+
             return PickFromTwo(
-                Controller.EnableProjectileAttack ? Controller.ProjectileAttackPattern : null,
-                Controller.EnableAoEAttack ? Controller.AoEAttackPattern : null,
+                projectile,
+                aoe,
                 ref _lastPhaseTwoPattern);
+        }
+
+        private float GetMaxAttackRangeForCurrentPhase()
+        {
+            float maxRange = 0f;
+
+            if (Controller.CurrentPhase == BossController.BossPhase.Phase1)
+            {
+                if (Controller.EnableBasicAttack)
+                {
+                    maxRange = Mathf.Max(maxRange, Controller.BasicAttackRange);
+                }
+
+                if (Controller.EnableLungeAttack)
+                {
+                    maxRange = Mathf.Max(maxRange, Controller.LungeAttackRange);
+                }
+
+                return maxRange;
+            }
+
+            if (Controller.EnableProjectileAttack)
+            {
+                maxRange = Mathf.Max(maxRange, Controller.ProjectileAttackRange);
+            }
+
+            if (Controller.EnableAoEAttack)
+            {
+                maxRange = Mathf.Max(maxRange, Controller.AoEAttackRange);
+            }
+
+            return maxRange;
         }
 
         private static IBossAttackPattern PickFromTwo(

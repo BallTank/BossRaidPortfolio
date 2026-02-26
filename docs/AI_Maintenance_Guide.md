@@ -13,7 +13,7 @@
 | **System_Blueprint.md** | 클래스 구조 변경, 새로운 시스템 도입 시 | Mermaid 다이어그램 수정 및 `Implementation Status` 표 업데이트 |
 | **Input_FSM_Flow.md** | 입력/상태머신 흐름 변경 시 | 데이터 흐름도 및 코드 예시 업데이트 |
 | **Coding_Standard.md** | 새로운 최적화 기법이나 코딩 패턴 도입 시 | `Zero-GC`나 `Network` 관련 신규 규칙 추가 |
-| **Technical_Glossary.txt** | 새로운 고유 명사나 기술 용어 사용 시 | 용어의 정의와 프로젝트 내 사용 맥락 추가 |
+| **Technical_Glossary.md** | 새로운 고유 명사나 기술 용어 사용 시 | 용어의 정의와 프로젝트 내 사용 맥락 추가 |
 | **Progress_Log.md** | 작업 완료 직후 (매일 또는 매 기능 단위) | `✅ 오늘 완료한 작업` 및 `🧠 기술적 고민` 섹션 작성, 버그/폴리싱 체크리스트는 우선순위/태그 표기 규칙 준수 |
 | **Animation Documentation** | 애니메이션 관련 수정 시 | 다음 문서들 참고 및 업데이트: <br> - `Animator_Setup_Guide.md` (설정 가이드) <br> - `Animation_Implementation_Log.md` (구현 로그) |
 

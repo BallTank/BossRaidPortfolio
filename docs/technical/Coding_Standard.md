@@ -37,7 +37,7 @@
 * **Projectile Axis Separation**: 투사체 유도는 축을 분리한다. 수평 조향은 XZ 평면(`RotateTowards`)으로 처리하고, 수직 추적은 Y축 `MoveTowards`로 별도 처리한다.
 * **Projectile Vertical Follow Tuning**: Y축 추적 강도는 하드코딩하지 않고 인스펙터 직렬화 값(`verticalFollowSpeed`)으로 노출한다. `0`일 때는 발사 높이를 유지해야 한다.
 * **Boss Distance Metric Rule**: Boss의 감지/추적/공격 거리 비교는 `Vector3.Distance` 대신 Y축을 제거한 평면 거리(XZ)를 기준으로 처리한다.
-* **Boss Chase Hysteresis Rule**: 공격 사거리 경계에서 `Move`/`Idle` 왕복이 발생하지 않도록 `AttackRange`와 `AttackRange + chaseReengageBuffer` 이중 임계값을 사용한다.
+* **Boss Chase Hysteresis Rule**: 공격 사거리 경계에서 `Move`/`Idle` 왕복이 발생하지 않도록, 현재 페이즈에서 활성화된 패턴의 `최대 사거리`(해제)와 `최대 사거리 + chaseReengageBuffer`(재진입) 이중 임계값을 사용한다.
 * **Hit Resolution Robustness**: 투사체 충돌 처리 시 `OnTriggerEnter`만 가정하지 않는다. `OnCollisionEnter` 경로를 함께 제공하고, 데미지 대상 탐색은 `GetComponent<IDamageable>()` 후 `GetComponentInParent<IDamageable>()` 순으로 폴백한다.
 * **AoE Ground Validation**: 장판 스폰 좌표는 지면 Raycast로 확정하고, 경기장 경계 밖 좌표는 생성 전에 보정(Clamp)하거나 스킵한다.
 * **AoE Tick Determinism**: 장판 틱 데미지는 프레임마다 즉시 호출하지 않고 누적 타이머(`tickInterval`) 기준으로 처리한다.
