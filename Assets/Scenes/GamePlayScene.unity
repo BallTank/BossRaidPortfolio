@@ -185,9 +185,6 @@ MonoBehaviour:
   attackRange: 28.1
   chaseReengageBuffer: 1
   searchDuration: 5
-  obstacleMask:
-    serializedVersion: 2
-    m_Bits: 256
   attackDamage: 2
   attackDuration: 1
   attackCooldown: 4
@@ -2098,7 +2095,7 @@ Transform:
   m_GameObject: {fileID: 1585844231}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -3.71, y: 1, z: -16.42}
+  m_LocalPosition: {x: -3.71, y: 1, z: -35.18}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -2197,7 +2194,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 29f8d572df6abc242b243fcd31b4d868, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _maxHealth: 1
+  _maxHealth: 100
   _currentHealth: 0
   _isInvincible: 0
 --- !u!1 &1593175282
