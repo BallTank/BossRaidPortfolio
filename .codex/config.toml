@@ -2,6 +2,11 @@
 # Commit message rule:
 # - summary와 description은 반드시 한국어로 작성한다.
 # - 커밋 전 summary/description을 사용자에게 먼저 확인받는다.
+# - 프로젝트 파일 수정 또는 추가 전 사용자에게 먼저 확인받는다.
+# File reference rule:
+# - 코드 라인/파일 안내는 VS Code에서 바로 열리는 로컬 경로 형식으로 작성한다.
+# - file+.vscode-resource.vscode-cdn.net 웹뷰 URL 형식은 사용하지 않는다.
+# - 예시: [BossController.cs](/d:/Unity-projects/BossRaidPortfolio/Assets/Scripts/Boss/BossController.cs:120)
 model = "gpt-5.3-codex"
 model_reasoning_effort = "high"
 personality = "pragmatic"
