@@ -110,6 +110,14 @@ namespace Core.Combat
                 _ownerInstanceID = owner.GetInstanceID();
         }
 
+        /// <summary>
+        /// 공격 판정 반경을 외부에서 동기화할 때 사용한다.
+        /// </summary>
+        public void SetRadius(float radius)
+        {
+            _radius = Mathf.Max(0f, radius);
+        }
+
         private void FixedUpdate()
         {
             if (!_isCasting) return;

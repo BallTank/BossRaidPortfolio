@@ -176,6 +176,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   playerTransform: {fileID: 1585844235}
   animator: {fileID: 1487502255}
+  basicAttackRangeOrigin: {fileID: 1470039690}
   moveSpeed: 3.5
   searchingMoveSpeed: 2
   rotationSpeed: 5

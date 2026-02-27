@@ -32,7 +32,6 @@ namespace Core.Boss
 
     public class BossCombatState : BossBaseState
     {
-        private IBossAttackPattern _lastPhaseOnePattern;
         private IBossAttackPattern _lastPhaseTwoPattern;
         private bool _isChasingTarget;
 
@@ -162,20 +161,23 @@ namespace Core.Boss
 
         private IBossAttackPattern PickPhaseOnePattern(float planarDistance)
         {
-            IBossAttackPattern basic = Controller.EnableBasicAttack &&
-                                       planarDistance <= Controller.BasicAttackRange
-                ? Controller.BasicAttackPattern
-                : null;
+            float basicDistance = Controller.GetPlanarDistanceFromBasicAttackOriginToTarget();
+            bool canBasic = Controller.EnableBasicAttack &&
+                            basicDistance <= Controller.BasicAttackRange;
+            if (canBasic)
+            {
+                // Lunge 범위까지 함께 충족해도 Phase1에서는 Basic을 우선한다.
+                return Controller.BasicAttackPattern;
+            }
 
-            IBossAttackPattern lunge = Controller.EnableLungeAttack &&
-                                       planarDistance <= Controller.LungeAttackRange
-                ? Controller.LungeAttackPattern
-                : null;
+            bool canLunge = Controller.EnableLungeAttack &&
+                            planarDistance <= Controller.LungeAttackRange;
+            if (canLunge)
+            {
+                return Controller.LungeAttackPattern;
+            }
 
-            return PickFromTwo(
-                basic,
-                lunge,
-                ref _lastPhaseOnePattern);
+            return null;
         }
 
         private IBossAttackPattern PickPhaseTwoPattern(float planarDistance)

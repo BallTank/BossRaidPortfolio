@@ -21,6 +21,8 @@ namespace Core.Boss
         [Header("참조 (References)")]
         [SerializeField] private Transform playerTransform;
         [SerializeField] private BossVisual animator;
+        [SerializeField, Tooltip("Basic 공격 사거리 기준점 (미할당 시 Boss Root 사용)")]
+        private Transform basicAttackRangeOrigin;
 
         [Header("스탯 (Stats)")]
         [SerializeField] private float moveSpeed = 3.5f; // 애니메이션 Walk 임계값과 동기화
@@ -29,32 +31,6 @@ namespace Core.Boss
 
         [Header("페이즈 설정 (Phase Settings)")]
         [SerializeField, Range(0.05f, 1f)] private float phaseTwoHealthThreshold = 0.5f;
-
-        /// <summary>
-        /// Unity 에디터에서 스크립트가 로드되거나 인스펙터의 값이 변경될 때 호출되어 데이터의 유효성을 검사합니다.
-        /// </summary>
-        private void OnValidate()
-        {
-            // 이동 속도는 음수가 되지 않도록 보정
-            if (moveSpeed < 0) moveSpeed = 0f;
-            if (searchingMoveSpeed < 0) searchingMoveSpeed = 0f;
-            phaseTwoHealthThreshold = Mathf.Clamp01(phaseTwoHealthThreshold);
-            if (detectionRange < 0f) detectionRange = 0f;
-            if (basicAttackRange < 0f) basicAttackRange = 0f;
-            if (lungeAttackRange < 0f) lungeAttackRange = 0f;
-            if (projectileAttackRange < 0f) projectileAttackRange = 0f;
-            if (aoeAttackRange < 0f) aoeAttackRange = 0f;
-            if (chaseReengageBuffer < 0f) chaseReengageBuffer = 0f;
-
-            if (projectileAttackSettings != null)
-            {
-                if (projectileAttackSettings.volleyCount < 1) projectileAttackSettings.volleyCount = 1;
-                if (projectileAttackSettings.volleyInterval < 0f) projectileAttackSettings.volleyInterval = 0f;
-                if (projectileAttackSettings.postFireRecoveryDuration < 0f) projectileAttackSettings.postFireRecoveryDuration = 0f;
-                projectileAttackSettings.exitNormalizedTime =
-                    Mathf.Clamp(projectileAttackSettings.exitNormalizedTime, 0.5f, 1.2f);
-            }
-        }
 
         [Header("감지 설정 (Detection Settings)")]
         [SerializeField] private float detectionRange = 10.0f;
@@ -102,6 +78,10 @@ namespace Core.Boss
         [SerializeField] private bool enableLungeAttack = true;
         [SerializeField] private bool enableProjectileAttack = true;
         [SerializeField] private bool enableAoEAttack = true;
+        [SerializeField, Tooltip("Lunge 루트 모션 디버그 로그 출력 여부")]
+        private bool enableLungeRootMotionDebugLog = false;
+        [SerializeField, Range(0.01f, 0.5f), Tooltip("Lunge 루트 모션 디버그 로그 출력 간격(초)")]
+        private float lungeRootMotionDebugLogInterval = 0.05f;
         [SerializeField] private bool showPhaseDebugLabel = true;
 
         // FSM (제네릭 StateMachine 사용)
@@ -135,6 +115,39 @@ namespace Core.Boss
         private bool _phaseIntroPlaying;
         private float _phaseIntroEndTime;
         private bool _suppressLocomotionVisual;
+        private float _nextLungeRootMotionDebugLogTime;
+        private Vector3 _lungeTravelDirection = Vector3.forward;
+        private bool _isLungeTravelDirectionLocked;
+        private const float LungeRootMotionMinStep = 0.0001f;
+
+        /// <summary>
+        /// Unity 에디터에서 스크립트가 로드되거나 인스펙터의 값이 변경될 때 호출되어 데이터의 유효성을 검사합니다.
+        /// </summary>
+        private void OnValidate()
+        {
+            // 이동 속도는 음수가 되지 않도록 보정
+            if (moveSpeed < 0) moveSpeed = 0f;
+            if (searchingMoveSpeed < 0) searchingMoveSpeed = 0f;
+            phaseTwoHealthThreshold = Mathf.Clamp01(phaseTwoHealthThreshold);
+            if (detectionRange < 0f) detectionRange = 0f;
+            if (basicAttackRange < 0f) basicAttackRange = 0f;
+            if (lungeAttackRange < 0f) lungeAttackRange = 0f;
+            if (projectileAttackRange < 0f) projectileAttackRange = 0f;
+            if (aoeAttackRange < 0f) aoeAttackRange = 0f;
+            if (chaseReengageBuffer < 0f) chaseReengageBuffer = 0f;
+            if (lungeRootMotionDebugLogInterval < 0.01f) lungeRootMotionDebugLogInterval = 0.01f;
+
+            SyncBasicAttackRangeToHeadDamageCaster();
+
+            if (projectileAttackSettings != null)
+            {
+                if (projectileAttackSettings.volleyCount < 1) projectileAttackSettings.volleyCount = 1;
+                if (projectileAttackSettings.volleyInterval < 0f) projectileAttackSettings.volleyInterval = 0f;
+                if (projectileAttackSettings.postFireRecoveryDuration < 0f) projectileAttackSettings.postFireRecoveryDuration = 0f;
+                projectileAttackSettings.exitNormalizedTime =
+                    Mathf.Clamp(projectileAttackSettings.exitNormalizedTime, 0.5f, 1.2f);
+            }
+        }
 
         // Public Properties for States
         public Transform Target => playerTransform;
@@ -159,6 +172,8 @@ namespace Core.Boss
         public bool EnableLungeAttack => enableLungeAttack;
         public bool EnableProjectileAttack => enableProjectileAttack;
         public bool EnableAoEAttack => enableAoEAttack;
+        public bool EnableLungeRootMotionDebugLog => enableLungeRootMotionDebugLog;
+        public float LungeRootMotionDebugLogInterval => Mathf.Max(0.01f, lungeRootMotionDebugLogInterval);
         public BossProjectilePool ProjectilePool => projectilePool;
         public Transform ProjectileSpawnPoint => projectileSpawnPoint;
         public BossPhase CurrentPhase => _currentPhase;
@@ -219,6 +234,7 @@ namespace Core.Boss
             if (_headDamageCaster != null) _headDamageCaster.SetOwner(gameObject);
             if (_lungeDamageCaster != null) _lungeDamageCaster.SetOwner(gameObject);
 
+            SyncBasicAttackRangeToHeadDamageCaster();
             _stateMachine.ChangeState(IdleState);
         }
 
@@ -342,6 +358,21 @@ namespace Core.Boss
         }
 
         /// <summary>
+        /// Basic 공격 사거리 판정을 위한 수평(XZ) 거리 계산.
+        /// 기준점은 basicAttackRangeOrigin을 우선 사용하고, 미할당 시 Boss Root를 사용한다.
+        /// </summary>
+        public float GetPlanarDistanceFromBasicAttackOriginToTarget()
+        {
+            if (playerTransform == null) return float.PositiveInfinity;
+
+            Vector3 origin = basicAttackRangeOrigin != null
+                ? basicAttackRangeOrigin.position
+                : transform.position;
+
+            return GetPlanarDistance(origin, playerTransform.position);
+        }
+
+        /// <summary>
         /// 타겟이 감지 반경 안에 있는지 수평(XZ) 거리 기준으로 판정한다.
         /// </summary>
         public bool IsTargetInDetectionRange()
@@ -403,6 +434,48 @@ namespace Core.Boss
         }
 
         /// <summary>
+        /// 타겟을 향해 즉시 회전한다. (공격 시작 프레임 정렬용)
+        /// </summary>
+        public void RotateTowardsImmediate(Vector3 targetPosition)
+        {
+            Vector3 direction = targetPosition - transform.position;
+            direction.y = 0f;
+            if (!enableRotation || direction.sqrMagnitude <= 0.000001f) return;
+            transform.rotation = Quaternion.LookRotation(direction.normalized);
+        }
+
+        /// <summary>
+        /// Lunge 시작 시 이동 방향을 고정한다.
+        /// </summary>
+        public void BeginLungeTravelDirectionLock(Vector3 targetPosition)
+        {
+            Vector3 direction = targetPosition - transform.position;
+            direction.y = 0f;
+            if (direction.sqrMagnitude <= 0.000001f)
+            {
+                direction = transform.forward;
+                direction.y = 0f;
+            }
+
+            if (direction.sqrMagnitude <= 0.000001f)
+            {
+                _isLungeTravelDirectionLocked = false;
+                return;
+            }
+
+            _lungeTravelDirection = direction.normalized;
+            _isLungeTravelDirectionLocked = true;
+        }
+
+        /// <summary>
+        /// Lunge 고정 이동 방향을 해제한다.
+        /// </summary>
+        public void EndLungeTravelDirectionLock()
+        {
+            _isLungeTravelDirectionLocked = false;
+        }
+
+        /// <summary>
         /// 애니메이션 변경 없이 물리 이동만 수행합니다.
         /// 공격 패턴 등 자체 애니메이션이 있는 상태에서 사용합니다.
         /// </summary>
@@ -413,6 +486,48 @@ namespace Core.Boss
             {
                 _characterController.Move(direction.normalized * speed * Time.deltaTime);
             }
+        }
+
+        /// <summary>
+        /// Lunge 루트 모션 델타를 보스 루트(CharacterController)에 적용한다.
+        /// </summary>
+        public void ApplyLungeRootMotion(Vector3 deltaPosition)
+        {
+            if (_characterController == null) return;
+
+            deltaPosition.y = 0f;
+            float deltaMagnitude = deltaPosition.magnitude;
+            if (deltaMagnitude <= LungeRootMotionMinStep) return;
+
+            if (_isLungeTravelDirectionLocked)
+            {
+                _characterController.Move(_lungeTravelDirection * deltaMagnitude);
+                return;
+            }
+
+            _characterController.Move(deltaPosition);
+        }
+
+        /// <summary>
+        /// Lunge 루트 모션 디버그 로그의 샘플링 타이머를 초기화한다.
+        /// </summary>
+        public void ResetLungeRootMotionDebugLogWindow()
+        {
+            _nextLungeRootMotionDebugLogTime = 0f;
+        }
+
+        /// <summary>
+        /// Lunge 루트 모션 디버그 로그 출력 시점인지 판정한다.
+        /// </summary>
+        public bool ShouldEmitLungeRootMotionDebugLog()
+        {
+            if (!enableLungeRootMotionDebugLog) return false;
+
+            float interval = Mathf.Max(0.01f, lungeRootMotionDebugLogInterval);
+            if (Time.time < _nextLungeRootMotionDebugLogTime) return false;
+
+            _nextLungeRootMotionDebugLogTime = Time.time + interval;
+            return true;
         }
 
         public void StopMoving()
@@ -444,6 +559,15 @@ namespace Core.Boss
             _nextAttackTime = Time.time + attackCooldown;
         }
 
+        /// <summary>
+        /// Basic 공격 사거리와 Head DamageCaster 반경을 동일하게 유지한다.
+        /// </summary>
+        private void SyncBasicAttackRangeToHeadDamageCaster()
+        {
+            if (_headDamageCaster == null) return;
+            _headDamageCaster.SetRadius(basicAttackRange);
+        }
+
         #endregion
 
         [Header("Physics Settings")]
@@ -470,7 +594,10 @@ namespace Core.Boss
         private void OnDrawGizmosSelected()
         {
             Gizmos.color = Color.red;
-            Gizmos.DrawWireSphere(transform.position, basicAttackRange);
+            Vector3 basicOrigin = basicAttackRangeOrigin != null
+                ? basicAttackRangeOrigin.position
+                : transform.position;
+            Gizmos.DrawWireSphere(basicOrigin, basicAttackRange);
 
             Gizmos.color = new Color(1f, 0.55f, 0f);
             Gizmos.DrawWireSphere(transform.position, lungeAttackRange);
@@ -492,14 +619,6 @@ namespace Core.Boss
         {
             [Tooltip("기본 공격력 대비 배수")]
             public float damageMultiplier = 1.5f;
-            [Tooltip("도약 속도")]
-            public float rushSpeed = 10.0f;
-            [Tooltip("애니메이션 진행률 기준 도약 구간 (0~1). 0.3 = 전체 애니메이션의 30% 시점까지 도약")]
-            [Range(0f, 1f)]
-            public float rushPhaseRatio = 0.3f;
-            [Tooltip("애니메이션 종료 시점 (0~1). 0.5 = 도약 동작만 재생하고 복귀 모션 생략")]
-            [Range(0.1f, 1f)]
-            public float exitPhaseRatio = 0.5f;
         }
 
         [System.Serializable]
