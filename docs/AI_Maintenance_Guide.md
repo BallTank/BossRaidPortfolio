@@ -53,6 +53,8 @@
 2. **무엇을 수정했는가**
 3. **왜 그렇게 판단했는가**
 
+장기 백로그(마일스톤/버그/폴리싱)는 `docs/roadmap/Milestone_Backlog.md`에서 관리한다.
+
 ## 5. Agent Roles
 
 | 역할 | 목적 | 필수 체크 |
@@ -72,3 +74,4 @@
 * 주석 및 문서 텍스트는 한국어를 사용한다.
 * `docs/` 문서는 UTF-8(UTF-8 with BOM 허용)으로 유지한다.
 * 클래스 다이어그램/시각화 규칙은 Chapter 03을 따른다.
+* 파일 경로 링크는 VS Code 로컬 경로 형식을 사용하고, 웹뷰 URL(`file+.vscode-resource.vscode-cdn.net`)은 사용하지 않는다.

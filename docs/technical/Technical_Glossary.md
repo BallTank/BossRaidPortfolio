@@ -52,6 +52,8 @@
 * **Checklist Update (체크리스트 업데이트)**: Progress_Log에서 완료/진행/보류 작업을 체크박스로 관리해 현재 상태를 빠르게 파악하도록 하는 기록 블록.
 * **Context Note (맥락노트)**: 어떤 판단으로 해당 구현을 선택했는지, 어떤 대안을 제외했는지 기록하는 의사결정 메모 블록.
 * **Quality Report Triple (품질 보고 3항목)**: 작업 완료 후 `무엇을 발견했는가 / 무엇을 수정했는가 / 왜 그렇게 판단했는가`를 고정 포맷으로 남기는 보고 규칙.
+* **Milestone Backlog (마일스톤 백로그)**: 장기 작업 목록(마일스톤, 버그, 폴리싱)을 별도 문서(`docs/roadmap/Milestone_Backlog.md`)에서 단일 책임으로 관리하는 방식.
+* **Local Path Link Rule (로컬 경로 링크 규칙)**: 문서/리포트의 파일 링크는 VS Code에서 바로 열리는 로컬 경로 형식으로 작성하고, `file+.vscode-resource.vscode-cdn.net` 웹뷰 URL은 사용하지 않는 규칙.
 * **Planar Distance Gate (평면 거리 게이트)**: Boss의 상태 전환 거리 판정에서 높이(Y)를 제외하고 XZ 평면 거리만 사용해 점프/지형 높이 차로 인한 오판정을 줄이는 규칙.
 * **Pattern Attack Range (패턴별 공격 사거리)**: `BossController`가 공격 패턴마다 별도 사거리(`Basic`, `Lunge`, `Projectile`, `AoE`)를 가지는 규칙. 공격 패턴 선택 시 현재 거리에서 유효한 패턴만 후보로 포함한다.
 * **Range-Only Detection Trigger (거리 단일 감지 트리거)**: Idle/Searching에서 Combat(스크림 인트로) 진입을 감지 반경(`IsTargetInDetectionRange`)만으로 판정하는 규칙. 장애물/시야선(LOS) 여부와 무관하게 거리 조건만 충족하면 전투 전환이 발생한다.
