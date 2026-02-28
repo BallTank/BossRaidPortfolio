@@ -81,6 +81,7 @@
 - [x] 🔴**(보스, attack1) Basic 사거리-판정 반경 동기화**: `basicAttackRange`와 `HeadDamageCaster` 반경(`radius`)을 자동 동기화.
 - [ ] 🔴**(보스) attack2 도약 회귀 수정**: 도약을 하면 도약 전 위치로 돌아오지 않고 도약한 곳으로 고정.
 - [ ] 🔴**(보스) attack2 플레이어 위에 서는 것 수정**: 도약을 하기 전 걸어 올 때 플레이어의 머리 위로 올라온다. 수정
+- [ ] 🔴**(리포지토리) 보스 모델 공유 누락 수정**: `.gitignore`의 `Assets/FourEvilDragonsPBR/` 규칙을 조정해 `DragonUsurper/Red.prefab` 및 `.meta`를 추적 가능하게 전환.
 - [ ] 🟢**(플레이어, UI)**: 3번째 공격 UI가 1초 느리게 나온다. 바로 바로 나오는 UI로 수정.
 - [ ] 🟢**(플레이어)**: PlayerController 인스펙터에서 HUD 켜고 끄는 체크박스 기능 만들기, HUD위치 Top center로 변환.
 
