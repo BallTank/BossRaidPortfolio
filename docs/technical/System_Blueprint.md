@@ -426,7 +426,7 @@ classDiagram
 | **Physics System** | ✅ Done | `NonAlloc` 물리 판정(OverlapSphere) 및 최적화 완료. |
 | **Object Pooling** | ✅ Done | `BossProjectilePool` 기반 투사체 재사용(Prewarm/Max/Expand) 구현 완료. |
 | **Package Baseline** | ✅ Done | Unity 2022.3 기준으로 package manifest 정리 및 lock 재생성 경로 복구 (`URP/VFX 14.0.12`, `TMP 추가`, Unity 6 전용 의존성 제거). |
-| **External Asset Distribution Policy** | ✅ Done | free tier 저장소 정책상 대용량 서드파티 에셋(`CombatGirlsCharacterPack`, `FourEvilDragonsPBR`, `UNI VFX`)은 Git에서 제외하고 팀원이 동일 버전을 수동 임포트한다. 레포에는 코드/설정/문서와 경량 참조 데이터만 유지한다. |
+| **External Asset Distribution Policy** | ✅ Done | 런타임 실사용 에셋만 Git/LFS로 선별 추적한다. 기준은 GUID 의존성 폐쇄(씬/프리팹/설정의 직접+간접 참조)이며, `Assets/TextMesh Pro` 루트와 미사용 서드파티 리소스는 제외한다. Unity 참조 안정성을 위해 에셋과 `.meta`를 쌍으로 버전관리한다. |
 
 ### 4.2. Player System
 | Component | Status | Note |
