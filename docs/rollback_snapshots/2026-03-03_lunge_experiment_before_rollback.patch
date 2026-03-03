@@ -1,0 +1,287 @@
+﻿diff --git a/Assets/Scripts/Boss/Attacks/LungeAttackPattern.cs b/Assets/Scripts/Boss/Attacks/LungeAttackPattern.cs
+index 390c9bc..937c748 100644
+--- a/Assets/Scripts/Boss/Attacks/LungeAttackPattern.cs
++++ b/Assets/Scripts/Boss/Attacks/LungeAttackPattern.cs
+@@ -12,9 +12,11 @@ namespace Core.Boss.Attacks
+         private readonly BossController.LungeAttackSettings _settings;
+         private const float FixedHitboxOffPhaseRatio = 0.8f;
+         private const float FixedExitPhaseRatio = 1.0f;
++        private const float FixedDirectionRetargetPhaseRatio = 0.2f;
+         private Vector3 _lungeStartPosition;
+         private bool _hitboxDisabled;
+         private bool _lungeStateObserved;
++        private bool _retargetDirectionApplied;
+ 
+         public LungeAttackPattern(BossController.LungeAttackSettings settings)
+         {
+@@ -28,6 +30,7 @@ namespace Core.Boss.Attacks
+             _lungeStartPosition = controller.transform.position;
+             _hitboxDisabled = false;
+             _lungeStateObserved = false;
++            _retargetDirectionApplied = false;
+ 
+             // 타겟 방향으로 즉시 회전
+             if (controller.Target != null)
+@@ -49,7 +52,9 @@ namespace Core.Boss.Attacks
+             if (controller.EnableLungeRootMotionDebugLog)
+             {
+                 Vector3 pos = controller.transform.position;
+-                Debug.Log($"[LungeDebug][Enter] pos=({pos.x:F3},{pos.y:F3},{pos.z:F3})");
++                Debug.Log(
++                    $"[LungeDebug][Enter] pos=({pos.x:F3},{pos.y:F3},{pos.z:F3}) " +
++                    $"{controller.BuildLungeSpatialProbeText("Enter", 0f)}");
+             }
+ 
+             // DamageCaster 활성화 (기본 공격력 × damageMultiplier)
+@@ -83,6 +88,24 @@ namespace Core.Boss.Attacks
+             _lungeStateObserved = true;
+             float progress = stateInfo.normalizedTime;
+ 
++            // 도약 초반 1회만 타겟 방향을 재잠금해, 진입 직전 이동으로 인한 방향 오차를 줄인다.
++            if (!_retargetDirectionApplied && progress >= FixedDirectionRetargetPhaseRatio)
++            {
++                if (controller.Target != null)
++                {
++                    controller.RotateTowardsImmediate(controller.Target.position);
++                }
++
++                _retargetDirectionApplied = true;
++
++                if (controller.EnableLungeRootMotionDebugLog)
++                {
++                    Debug.Log(
++                        $"[LungeDebug][Retarget] " +
++                        $"{controller.BuildLungeSpatialProbeText("Retarget", progress)}");
++                }
++            }
++
+             // 판정 종료 시점(0.8)과 상태 종료 시점(클립 끝)을 분리한다.
+             if (!_hitboxDisabled && progress >= FixedHitboxOffPhaseRatio)
+             {
+@@ -110,7 +133,8 @@ namespace Core.Boss.Attacks
+                 Vector3 delta = endPos - _lungeStartPosition;
+                 Debug.Log(
+                     $"[LungeDebug][Exit] pos=({endPos.x:F3},{endPos.y:F3},{endPos.z:F3}) " +
+-                    $"deltaXZ=({delta.x:F3},{delta.z:F3})");
++                    $"deltaXZ=({delta.x:F3},{delta.z:F3}) " +
++                    $"{controller.BuildLungeSpatialProbeText("Exit", FixedExitPhaseRatio)}");
+             }
+         }
+     }
+diff --git a/Assets/Scripts/Boss/BossController.cs b/Assets/Scripts/Boss/BossController.cs
+index c5afe99..a1a65ca 100644
+--- a/Assets/Scripts/Boss/BossController.cs
++++ b/Assets/Scripts/Boss/BossController.cs
+@@ -118,6 +118,7 @@ namespace Core.Boss
+         private float _nextLungeRootMotionDebugLogTime;
+         private Vector3 _lungeTravelDirection = Vector3.forward;
+         private bool _isLungeTravelDirectionLocked;
++        private bool _isLungeRootMotionActive;
+         private const float LungeRootMotionMinStep = 0.0001f;
+ 
+         /// <summary>
+@@ -240,7 +241,11 @@ namespace Core.Boss
+ 
+         private void Update()
+         {
+-            ApplyGravity();
++            if (!_isLungeRootMotionActive)
++            {
++                ApplyGravity();
++            }
++
+             UpdatePhaseFlow();
+ 
+             // Controller에서 직접 Update 호출
+@@ -465,6 +470,15 @@ namespace Core.Boss
+ 
+             _lungeTravelDirection = direction.normalized;
+             _isLungeTravelDirectionLocked = true;
++
++            if (enableLungeRootMotionDebugLog)
++            {
++                Debug.Log(
++                    $"[LungeDebug][DirectionLock] " +
++                    $"target={FormatProbeVector(targetPosition)} " +
++                    $"lockedDir={FormatProbeVector(_lungeTravelDirection)} " +
++                    $"{BuildLungeSpatialProbeText("DirectionLock", -1f)}");
++            }
+         }
+ 
+         /// <summary>
+@@ -475,6 +489,11 @@ namespace Core.Boss
+             _isLungeTravelDirectionLocked = false;
+         }
+ 
++        public void SetLungeRootMotionActive(bool active)
++        {
++            _isLungeRootMotionActive = active;
++        }
++
+         /// <summary>
+         /// 애니메이션 변경 없이 물리 이동만 수행합니다.
+         /// 공격 패턴 등 자체 애니메이션이 있는 상태에서 사용합니다.
+@@ -496,14 +515,7 @@ namespace Core.Boss
+             if (_characterController == null) return;
+ 
+             deltaPosition.y = 0f;
+-            float deltaMagnitude = deltaPosition.magnitude;
+-            if (deltaMagnitude <= LungeRootMotionMinStep) return;
+-
+-            if (_isLungeTravelDirectionLocked)
+-            {
+-                _characterController.Move(_lungeTravelDirection * deltaMagnitude);
+-                return;
+-            }
++            if (deltaPosition.sqrMagnitude <= LungeRootMotionMinStep * LungeRootMotionMinStep) return;
+ 
+             _characterController.Move(deltaPosition);
+         }
+@@ -530,6 +542,113 @@ namespace Core.Boss
+             return true;
+         }
+ 
++        /// <summary>
++        /// Lunge 디버깅용 좌표 스냅샷 문자열을 생성한다.
++        /// player/boss/visual/red 좌표와 상대 벡터를 한 줄로 출력한다.
++        /// </summary>
++        public string BuildLungeSpatialProbeText(string phaseTag, float normalizedTime)
++        {
++            Vector3 bossPos = transform.position;
++
++            bool hasPlayer = playerTransform != null;
++            Vector3 playerPos = hasPlayer ? playerTransform.position : Vector3.zero;
++
++            Transform visualTransform = animator != null ? animator.transform : null;
++            bool hasVisual = visualTransform != null;
++            Vector3 visualPos = hasVisual ? visualTransform.position : Vector3.zero;
++
++            Transform redTransform = ResolveLungeRedTransform(visualTransform, out string redPath);
++            bool hasRed = redTransform != null;
++            Vector3 redPos = hasRed ? redTransform.position : Vector3.zero;
++
++            Vector3 playerMinusBoss = hasPlayer ? playerPos - bossPos : Vector3.zero;
++            Vector3 playerMinusRed = hasPlayer && hasRed ? playerPos - redPos : Vector3.zero;
++            Vector3 bossMinusRed = hasRed ? bossPos - redPos : Vector3.zero;
++            Vector3 visualInBoss = hasVisual ? transform.InverseTransformPoint(visualPos) : Vector3.zero;
++            Vector3 redInBoss = hasRed ? transform.InverseTransformPoint(redPos) : Vector3.zero;
++
++            string normalizedTimeText = normalizedTime >= 0f ? normalizedTime.ToString("F3") : "NA";
++
++            return
++                $"probe(phase={phaseTag},nTime={normalizedTimeText}, " +
++                $"player={FormatProbeVectorOrMissing(hasPlayer, playerPos)}, " +
++                $"boss={FormatProbeVector(bossPos)}, " +
++                $"visual={FormatProbeVectorOrMissing(hasVisual, visualPos)}, " +
++                $"red={FormatProbeVectorOrMissing(hasRed, redPos)}, " +
++                $"player-boss={FormatProbeVectorOrMissing(hasPlayer, playerMinusBoss)}, " +
++                $"player-red={FormatProbeVectorOrMissing(hasPlayer && hasRed, playerMinusRed)}, " +
++                $"boss-red={FormatProbeVectorOrMissing(hasRed, bossMinusRed)}, " +
++                $"visualInBoss={FormatProbeVectorOrMissing(hasVisual, visualInBoss)}, " +
++                $"redInBoss={FormatProbeVectorOrMissing(hasRed, redInBoss)}, " +
++                $"redPath={redPath})";
++        }
++
++        private Transform ResolveLungeRedTransform(Transform visualTransform, out string redPath)
++        {
++            redPath = "Missing";
++
++            if (visualTransform != null)
++            {
++                Transform visualRed = visualTransform.Find("Red");
++                if (visualRed != null)
++                {
++                    redPath = BuildTransformPath(visualRed);
++                    return visualRed;
++                }
++
++                Transform nestedVisualRed = visualTransform.Find("Visual/Red");
++                if (nestedVisualRed != null)
++                {
++                    redPath = BuildTransformPath(nestedVisualRed);
++                    return nestedVisualRed;
++                }
++
++                Transform[] descendants = visualTransform.GetComponentsInChildren<Transform>(true);
++                for (int i = 0; i < descendants.Length; i++)
++                {
++                    Transform candidate = descendants[i];
++                    if (candidate == null || candidate.name != "Red") continue;
++
++                    redPath = BuildTransformPath(candidate);
++                    return candidate;
++                }
++            }
++
++            Transform bossVisualRed = transform.Find("Visual/Red");
++            if (bossVisualRed != null)
++            {
++                redPath = BuildTransformPath(bossVisualRed);
++                return bossVisualRed;
++            }
++
++            return null;
++        }
++
++        private static string BuildTransformPath(Transform target)
++        {
++            if (target == null) return "Missing";
++
++            string path = target.name;
++            Transform current = target.parent;
++            while (current != null)
++            {
++                path = current.name + "/" + path;
++                current = current.parent;
++            }
++
++            return path;
++        }
++
++        private static string FormatProbeVector(Vector3 value)
++        {
++            return $"({value.x:F3},{value.y:F3},{value.z:F3})";
++        }
++
++        private static string FormatProbeVectorOrMissing(bool hasValue, Vector3 value)
++        {
++            return hasValue ? FormatProbeVector(value) : "Missing";
++        }
++
+         public void StopMoving()
+         {
+             if (animator)
+diff --git a/Assets/Scripts/Boss/BossVisual.cs b/Assets/Scripts/Boss/BossVisual.cs
+index cce118d..dbf5522 100644
+--- a/Assets/Scripts/Boss/BossVisual.cs
++++ b/Assets/Scripts/Boss/BossVisual.cs
+@@ -263,9 +263,11 @@ namespace Core.Boss
+             if (enabled)
+             {
+                 CacheVisualLocalPose();
++                _owner?.SetLungeRootMotionActive(true);
+             }
+             else
+             {
++                _owner?.SetLungeRootMotionActive(false);
+                 RestoreVisualLocalPose();
+             }
+ 
+@@ -299,6 +301,7 @@ namespace Core.Boss
+             float animatorDeltaXZMag = new Vector2(animatorDeltaPosition.x, animatorDeltaPosition.z).magnitude;
+             float appliedDeltaXZMag = new Vector2(appliedDeltaPosition.x, appliedDeltaPosition.z).magnitude;
+             Vector3 localOffset = transform.localPosition - _cachedLocalPosition;
++            string spatialProbeText = _owner.BuildLungeSpatialProbeText("RootMotion", stateInfo.normalizedTime);
+ 
+             Debug.Log(
+                 $"[LungeDebug][RootMotion] " +
+@@ -311,7 +314,8 @@ namespace Core.Boss
+                 $"animDeltaXZMag={animatorDeltaXZMag:F3} " +
+                 $"appliedDeltaXZMag={appliedDeltaXZMag:F3} " +
+                 $"visualLocalOffset=({localOffset.x:F3},{localOffset.y:F3},{localOffset.z:F3}) " +
+-                $"bossPos=({bossPos.x:F3},{bossPos.y:F3},{bossPos.z:F3})");
++                $"bossPos=({bossPos.x:F3},{bossPos.y:F3},{bossPos.z:F3}) " +
++                $"{spatialProbeText}");
+         }
+ 
+         private Vector3 ResolveAppliedDeltaPosition(Vector3 animatorDeltaPosition, out bool usedVisualFallback)
