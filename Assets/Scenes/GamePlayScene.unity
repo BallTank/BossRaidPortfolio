@@ -177,16 +177,17 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   playerTransform: {fileID: 1585844235}
   animator: {fileID: 1487502255}
+  damageBlinkEffect: {fileID: 1487502256}
   basicAttackRangeOrigin: {fileID: 1470039690}
   moveSpeed: 3.5
   searchingMoveSpeed: 2
   rotationSpeed: 5
   phaseTwoHealthThreshold: 0.5
-  detectionRange: 53.6
-  basicAttackRange: 6.49
-  lungeAttackRange: 33.9
-  projectileAttackRange: 41.5
-  aoeAttackRange: 49
+  detectionRange: 46.3
+  basicAttackRange: 2.7
+  lungeAttackRange: 26.8
+  projectileAttackRange: 33.32
+  aoeAttackRange: 39.87
   chaseReengageBuffer: 1
   searchDuration: 5
   attackDamage: 2
@@ -198,39 +199,39 @@ MonoBehaviour:
     damageMultiplier: 1.5
   projectileAttackSettings:
     telegraphDuration: 0.3
-    damage: 12
-    speed: 12
-    lifetime: 3
-    volleyCount: 5
-    volleyInterval: 0.08
-    homingStrength: 0.35
+    damage: 7
+    speed: 15
+    lifetime: 4
+    volleyCount: 7
+    volleyInterval: 0.8
+    homingStrength: 0.636
     homingDuration: 1.2
-    verticalFollowSpeed: 4
+    verticalFollowSpeed: 0.5
     postFireRecoveryDuration: 0.12
     exitNormalizedTime: 0.9
   projectilePool: {fileID: 746045139}
-  projectileSpawnPoint: {fileID: 652612857}
+  projectileSpawnPoint: {fileID: 0}
   aoeAttackSettings:
     circlePrefab: {fileID: 2956448141412348129, guid: 945a009e6db779544a49cb6e1ad583db, type: 3}
     circleRoot: {fileID: 0}
-    takeOffDuration: 0.35
-    flyForwardDuration: 1.4
-    flyForwardSpeed: 6
-    castRange: 15.49
-    landDuration: 0.4
-    spawnInterval: 0.1
+    takeOffDuration: 0.6
+    flyForwardDuration: 2.8
+    flyForwardSpeed: 8
+    castRange: 24
+    landDuration: 0.8
+    spawnInterval: 0.7
     impactSyncTime: 0
     damage: 10
-    telegraphDuration: 0.9
-    activeDuration: 0.9
+    telegraphDuration: 0.5
+    activeDuration: 0.3
     tickInterval: 0.25
     targetMask:
       serializedVersion: 2
       m_Bits: 128
-    circleCount: 8
+    circleCount: 12
     maxCircleInstances: 12
-    radius: 2.5
-    spawnSpreadRadius: 4.5
+    radius: 3.4
+    spawnSpreadRadius: 9
     headingLeadTime: 0.45
     maxHeadingLeadDistance: 8
     forwardSpreadRadius: 6
@@ -250,9 +251,10 @@ MonoBehaviour:
   enableLungeAttack: 1
   enableProjectileAttack: 1
   enableAoEAttack: 1
+  ignorePlayerCollision: 1
   enableLungeRootMotionDebugLog: 1
-  lungeRootMotionDebugLogInterval: 0.05
-  showPhaseDebugLabel: 1
+  lungeRootMotionDebugLogInterval: 0.01
+  showPhaseDebugLabel: 0
 --- !u!143 &242866945
 CharacterController:
   m_ObjectHideFlags: 0
@@ -482,12 +484,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e63d09e61f26b4b4db8c3a27731f4051, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _radius: 6.49
+  _radius: 2.7
   _targetLayer:
     serializedVersion: 2
     m_Bits: 128
   _maxTargets: 10
   _castCenter: {fileID: 1470039690}
+  _bossAttackHitType: 0
   _showGizmos: 1
   _gizmoColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!1 &499507000
@@ -554,111 +557,6 @@ Transform:
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &526901778
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 526901782}
-  - component: {fileID: 526901781}
-  - component: {fileID: 526901780}
-  - component: {fileID: 526901779}
-  m_Layer: 8
-  m_Name: Wall
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!65 &526901779
-BoxCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 526901778}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Size: {x: 1, y: 1, z: 1}
-  m_Center: {x: 0, y: 0, z: 0}
---- !u!23 &526901780
-MeshRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 526901778}
-  m_Enabled: 1
-  m_CastShadows: 1
-  m_ReceiveShadows: 1
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 2
-  m_RayTraceProcedural: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 2100000, guid: d6cdbbc30f4993947ab8c20522be4893, type: 2}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 0
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 3
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: 0
-  m_AdditionalVertexStreams: {fileID: 0}
---- !u!33 &526901781
-MeshFilter:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 526901778}
-  m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
---- !u!4 &526901782
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 526901778}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 14.63, y: 2.66, z: 35.14}
-  m_LocalScale: {x: 18.37, y: 7.78, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
@@ -894,6 +792,7 @@ MonoBehaviour:
     m_Bits: 64
   _maxTargets: 10
   _castCenter: {fileID: 762737812}
+  _bossAttackHitType: 0
   _showGizmos: 1
   _gizmoColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!4 &768751870 stripped
@@ -1390,6 +1289,7 @@ MonoBehaviour:
     m_Bits: 128
   _maxTargets: 10
   _castCenter: {fileID: 1165209285}
+  _bossAttackHitType: 0
   _showGizmos: 1
   _gizmoColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!1 &1197243531
@@ -1780,6 +1680,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1487502254}
   - component: {fileID: 1487502255}
+  - component: {fileID: 1487502256}
   m_Layer: 6
   m_Name: Visual
   m_TagString: Untagged
@@ -1820,6 +1721,24 @@ MonoBehaviour:
   _flashColor: {r: 1, g: 1, b: 1, a: 1}
   _flashDuration: 0.1
   _questionMarkUI: {fileID: 0}
+--- !u!114 &1487502256
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1487502253}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c2fd97d32d574f048e8dc218ea6a5c88, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  blinkShader: {fileID: 4800000, guid: d81a5a7d8b8d4c6a96219519caa63d0f, type: 3}
+  defaultBlinkFrequency: 0.2
+  singleBlinkDuration: 0.08
+  includeInactiveChildren: 1
+  excludeVfxRenderers: 1
+  targetRenderers: []
 --- !u!1 &1557072642
 GameObject:
   m_ObjectHideFlags: 0
@@ -1985,6 +1904,7 @@ GameObject:
   - component: {fileID: 1583953026}
   - component: {fileID: 1583953027}
   - component: {fileID: 1583953028}
+  - component: {fileID: 1583953029}
   m_Layer: 0
   m_Name: Visual
   m_TagString: Untagged
@@ -2045,6 +1965,24 @@ MonoBehaviour:
   _renderers: []
   _flashColor: {r: 1, g: 1, b: 1, a: 1}
   _flashDuration: 1
+--- !u!114 &1583953029
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1583953025}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c2fd97d32d574f048e8dc218ea6a5c88, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  blinkShader: {fileID: 4800000, guid: d81a5a7d8b8d4c6a96219519caa63d0f, type: 3}
+  defaultBlinkFrequency: 0.2
+  singleBlinkDuration: 0.08
+  includeInactiveChildren: 1
+  excludeVfxRenderers: 1
+  targetRenderers: []
 --- !u!1 &1585844231
 GameObject:
   m_ObjectHideFlags: 0
@@ -2135,6 +2073,7 @@ MonoBehaviour:
   rotationSpeed: 10
   cameraRoot: {fileID: 2135559825}
   playerVisual: {fileID: 1583953028}
+  blinkWhiteEffect: {fileID: 0}
   dashDuration: 0.4
   dashSpeedMultiplier: 3
   dashCooldown: 1
@@ -2151,10 +2090,13 @@ MonoBehaviour:
     cancelStartTime: 0.3
   - damage: 30
     duration: 1
-    comboInputWindow: 0
+    comboInputWindow: 1
     cancelStartTime: 0.3
   _damageCaster: {fileID: 762737816}
-  invincibilityDuration: 1
+  stunDuration: 0.5
+  postStunInvulDuration: 1
+  pushbackDuration: 0.7
+  projectileCountTimer: 0.5
   _combatHUD: {fileID: 1850339021}
   _bossHealthForHUD: {fileID: 242866946}
   _playerDisplayName: Player
@@ -4978,7 +4920,6 @@ SceneRoots:
   - {fileID: 1585844235}
   - {fileID: 242866943}
   - {fileID: 311313670}
-  - {fileID: 526901782}
   - {fileID: 1732215028}
   - {fileID: 499507003}
   - {fileID: 2014981566}

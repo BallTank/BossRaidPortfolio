@@ -2,6 +2,7 @@
 using Core.Boss.Attacks;
 using Core.Boss.Projectiles;
 using Core.Combat;
+using Core.Common;
 using Core.Common.Patterns;
 using UnityEngine;
 using UnityEngine.Serialization;
@@ -21,6 +22,7 @@ namespace Core.Boss
         [Header("참조 (References)")]
         [SerializeField] private Transform playerTransform;
         [SerializeField] private BossVisual animator;
+        [SerializeField] private BlinkWhiteEffect damageBlinkEffect;
         [SerializeField, Tooltip("Basic 공격 사거리 기준점 (미할당 시 Boss Root 사용)")]
         private Transform basicAttackRangeOrigin;
 
@@ -78,6 +80,8 @@ namespace Core.Boss
         [SerializeField] private bool enableLungeAttack = true;
         [SerializeField] private bool enableProjectileAttack = true;
         [SerializeField] private bool enableAoEAttack = true;
+        [SerializeField, Tooltip("보스 CharacterController와 플레이어 콜라이더 충돌을 무시한다.")]
+        private bool ignorePlayerCollision = true;
         [SerializeField, Tooltip("Lunge 루트 모션 디버그 로그 출력 여부")]
         private bool enableLungeRootMotionDebugLog = false;
         [SerializeField, Range(0.01f, 0.5f), Tooltip("Lunge 루트 모션 디버그 로그 출력 간격(초)")]
@@ -118,6 +122,8 @@ namespace Core.Boss
         private float _nextLungeRootMotionDebugLogTime;
         private Vector3 _lungeTravelDirection = Vector3.forward;
         private bool _isLungeTravelDirectionLocked;
+        private bool _hasAppliedPlayerCollisionIgnore;
+        private int _ignoredPlayerRootInstanceId;
         private const float LungeRootMotionMinStep = 0.0001f;
 
         /// <summary>
@@ -186,6 +192,7 @@ namespace Core.Boss
         {
             _characterController = GetComponent<CharacterController>();
             _health = GetComponent<Health>();
+            ResolveDamageBlinkEffect();
             if (projectileAttackSettings == null) projectileAttackSettings = new ProjectileAttackSettings();
             if (lungeAttackSettings == null) lungeAttackSettings = new LungeAttackSettings();
             if (aoeAttackSettings == null) aoeAttackSettings = new AoEAttackSettings();
@@ -196,6 +203,8 @@ namespace Core.Boss
                 GameObject player = GameObject.FindGameObjectWithTag("Player");
                 if (player != null) playerTransform = player.transform;
             }
+
+            TryApplyPlayerCollisionIgnore();
 
             // FSM 초기화 (제네릭 StateMachine)
             _stateMachine = new StateMachine<BossBaseState>();
@@ -231,15 +240,27 @@ namespace Core.Boss
         private void Start()
         {
             // DamageCaster에 Owner 설정 (자해 방지)
-            if (_headDamageCaster != null) _headDamageCaster.SetOwner(gameObject);
-            if (_lungeDamageCaster != null) _lungeDamageCaster.SetOwner(gameObject);
+            if (_headDamageCaster != null)
+            {
+                _headDamageCaster.SetOwner(gameObject);
+                _headDamageCaster.SetBossAttackHitType(BossAttackHitType.Attack1);
+            }
+
+            if (_lungeDamageCaster != null)
+            {
+                _lungeDamageCaster.SetOwner(gameObject);
+                _lungeDamageCaster.SetBossAttackHitType(BossAttackHitType.Attack2);
+            }
 
             SyncBasicAttackRangeToHeadDamageCaster();
+            TryApplyPlayerCollisionIgnore();
+            damageBlinkEffect?.StopBlink();
             _stateMachine.ChangeState(IdleState);
         }
 
         private void Update()
         {
+            TryApplyPlayerCollisionIgnore();
             ApplyGravity();
             UpdatePhaseFlow();
 
@@ -252,13 +273,52 @@ namespace Core.Boss
             // 이미 죽었으면 반응 안 함
             if (_health.IsDead) return;
 
-            // FSM을 통해 Hit 상태로 전환 (강제 인터럽트)
+            // 피격 시각 효과는 상태와 무관하게 항상 재생한다.
+            damageBlinkEffect?.PlaySingleBlink();
+
+            // 공격 준비/실행 중에는 피격 모션을 무시한다.
+            if (ShouldIgnoreHitMotion()) return;
+
+            // FSM을 통해 Hit 상태로 전환
             _stateMachine.ChangeState(HitState);
         }
 
         private void HandleDeath()
         {
+            damageBlinkEffect?.StopBlink();
             _stateMachine.ChangeState(DeadState);
+        }
+
+        private bool ShouldIgnoreHitMotion()
+        {
+            if (_stateMachine == null) return false;
+
+            BossBaseState currentState = _stateMachine.CurrentState;
+            if (currentState == null) return false;
+
+            if (currentState == AttackState) return true;
+            if (_phaseIntroPlaying) return true;
+
+            return false;
+        }
+
+        private void ResolveDamageBlinkEffect()
+        {
+            if (damageBlinkEffect != null) return;
+
+            if (animator != null)
+            {
+                damageBlinkEffect = animator.GetComponent<BlinkWhiteEffect>();
+                if (damageBlinkEffect == null)
+                {
+                    damageBlinkEffect = animator.GetComponentInChildren<BlinkWhiteEffect>(true);
+                }
+            }
+
+            if (damageBlinkEffect == null)
+            {
+                damageBlinkEffect = GetComponent<BlinkWhiteEffect>();
+            }
         }
 
         #region Phase Methods
@@ -566,6 +626,29 @@ namespace Core.Boss
         {
             if (_headDamageCaster == null) return;
             _headDamageCaster.SetRadius(basicAttackRange);
+        }
+
+        private void TryApplyPlayerCollisionIgnore()
+        {
+            if (!ignorePlayerCollision) return;
+            if (_characterController == null) return;
+            if (playerTransform == null) return;
+
+            int playerId = playerTransform.gameObject.GetInstanceID();
+            if (_hasAppliedPlayerCollisionIgnore && _ignoredPlayerRootInstanceId == playerId) return;
+
+            Collider[] playerColliders = playerTransform.GetComponentsInChildren<Collider>(true);
+            bool applied = false;
+            for (int i = 0; i < playerColliders.Length; i++)
+            {
+                Collider playerCollider = playerColliders[i];
+                if (playerCollider == null) continue;
+                Physics.IgnoreCollision(_characterController, playerCollider, true);
+                applied = true;
+            }
+
+            _hasAppliedPlayerCollisionIgnore = applied;
+            _ignoredPlayerRootInstanceId = playerId;
         }
 
         #endregion

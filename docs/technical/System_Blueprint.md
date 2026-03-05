@@ -34,11 +34,18 @@ classDiagram
         <<Interface>>
         +TakeDamage(int)
     }
+    class IBossAttackHitReceiver {
+        <<Interface>>
+        +ReceiveBossAttackHit(BossAttackHitData) BossAttackHitResolution
+    }
 
     %% Data
     class PlayerInputPacket { <<Struct>> }
     class AttackComboData { <<Struct>> }
     class InputFlag { <<Enumeration>> }
+    class BossAttackHitData { <<Struct>> }
+    class BossAttackHitType { <<Enumeration>> }
+    class BossAttackHitResolution { <<Enumeration>> }
 
     %% Core Components
     class PlayerController {
@@ -51,6 +58,7 @@ classDiagram
         +JumpState JumpState
         +AttackState AttackState
         +HitState HitState
+        +StunState StunState
         +DeadState DeadState
         +PlayerVisual Visual
         +Update()
@@ -69,6 +77,12 @@ classDiagram
 
     class LocalInputProvider { +GetInput() }
     class PlayerVisual { +Animator Animator }
+    class BlinkWhiteEffect {
+        +PlayBlink(float)
+        +PlaySingleBlink()
+        +SetBlink(bool)
+        +StopBlink()
+    }
     class CombatHUDController {
         +Initialize(Health, Health)
         +SetPlayerName(string)
@@ -94,16 +108,19 @@ classDiagram
     class JumpState { +Update() }
     class AttackState { +Update() }
     class HitState { +Update() }
+    class StunState { +Update() }
     class DeadState { +Update() }
 
     %% Relationships
     LocalInputProvider ..|> IInputProvider : implements
     PlayerController ..|> IDashContext : implements
     PlayerController ..|> IAttackable : implements
+    PlayerController ..|> IBossAttackHitReceiver : implements
     Health ..|> IDamageable : implements
 
     PlayerController --> IInputProvider : uses
     PlayerController --> PlayerVisual : controls
+    PlayerController --> BlinkWhiteEffect : triggers (post-stun blink)
     PlayerController --> DamageCaster : controls/subscribes
     PlayerController --> CombatHUDController : updates
     PlayerController --> Health : owns
@@ -114,9 +131,11 @@ classDiagram
     JumpState --|> PlayerBaseState : extends
     AttackState --|> PlayerBaseState : extends
     HitState --|> PlayerBaseState : extends
+    StunState --|> PlayerBaseState : extends
     DeadState --|> PlayerBaseState : extends
 
     DamageCaster ..> IDamageable : depends
+    DamageCaster ..> IBossAttackHitReceiver : depends (Boss attack metadata)
     LocalInputProvider o-- PlayerInputPacket : creates
 ```
 
@@ -191,6 +210,7 @@ classDiagram
         +TriggerDie()
         +SetSearchingUI(bool)
     }
+    class BlinkWhiteEffect { +PlaySingleBlink() +StopBlink() }
 
     class BossHitBox {
         <<MonoBehaviour>>
@@ -211,6 +231,7 @@ classDiagram
 
     %% Relationships
     BossController --> BossVisual : Controls
+    BossController --> BlinkWhiteEffect : triggers (damage blink)
     BossController --> Health : Uses
     BossController --> DamageCaster : Controls
 
@@ -408,6 +429,8 @@ classDiagram
 * **Attack2 Recovery Priority Rule**: Attack2 개선에서 디버그 계층(인스펙터/기즈모/로그)을 추가했음에도 핵심 증상(타겟 근접 도약 실패, 원위치 당김)이 유지되면, 추가 튜닝을 누적하지 않고 마지막 안정 커밋 기준으로 이동 경로를 먼저 회귀한다.
 * **Boss Detection Trigger Rule**: Idle/Searching에서 Combat 전환(스크림 인트로 진입)은 `IsTargetInDetectionRange()` 기준으로 즉시 수행한다. 현재 보스 감지는 장애물/시야선(LOS) 판정을 사용하지 않는다.
 * **Boss Chase Hysteresis**: 단일 임계값 대신 "현재 페이즈에서 활성화된 패턴 중 최대 사거리"(해제)와 `최대 사거리 + ChaseReengageBuffer`(재진입) 이중 임계값을 사용해 경계 왕복 지터를 완화한다.
+* **Player Stun Hit Classification Rule**: 플레이어 피격은 `BossAttackHitType` 메타데이터로 분기한다. `Attack1`은 일반 피격(데미지+Hit), `Attack2`는 스턴 전용(무데미지), `Attack3/Attack4 Projectile`은 `Projectile Count Timer` 내 1타 일반 피격/2타 스턴으로 처리한다.
+* **Player Stun Invulnerability Rule**: 스턴 중 + 스턴 종료 후 `postStunInvulDuration` 동안 플레이어는 무적이며, 이 구간에는 추가 스턴 재트리거를 허용하지 않는다. 후속 무적 시각 피드백은 `BlinkWhiteEffect` 컴포넌트가 담당하며, `_BlinkWhite` 파라미터를 통해 흰색 점멸을 출력한다(`_BlinkWhite=1` 구간은 조명 영향 무시).
 
 
 * **Optimization**:
@@ -445,7 +468,7 @@ classDiagram
 | **Jump Logic** | ✅ Done | `JumpState` 구현 완료. 현재 게임 디자인 기준 점프 입력 전환은 비활성(주석/F10 유지) 상태이며 필요 시 재활성 가능. |
 | **Camera Logic** | ✅ Done | CameraRoot 분리 및 로컬 회전 구현 완료. |
 | **Attack Logic** | ✅ Done | `AttackState` 구현 완료. 콤보/캔슬/개별 데미지 지원. 상태 전환 시 `AttackState.Exit()`에서 히트박스를 강제 종료해 잔존 판정을 방지하며, `DamageCaster`는 0 데미지 윈도우를 무시한다. |
-| **Hit/Damage System** | ✅ Done | `IDamageable`, `DamageCaster`, `Health` 구현 완료. |
+| **Hit/Damage System** | ✅ Done | `IDamageable`, `DamageCaster`, `Health` + `IBossAttackHitReceiver` 기반 보스 공격 메타데이터 라우팅 구현 완료. 플레이어는 `StunState`/`Projectile Count Timer`/후속 무적 규칙을 사용하고, 보스는 공격 준비/실행 중 피격 모션을 무시한다. 플레이어/보스의 점멸은 공용 `BlinkWhiteEffect` 컴포넌트(`Assets/Scripts/Common/Visual/BlinkWhiteEffect.cs`)가 담당하며 `_BlinkWhite` 셰이더(`Assets/Shaders/BlinkWhiteLit.shader`)를 `MaterialPropertyBlock`으로 제어한다. |
 | **Asset Integration** | ✅ Done | `PlayerAnimator`의 `Hit/Attack1/2/3/Die` 상태 모션 재연결 완료(2026-02-21). |
 | **Environment Fix Guard (환경 오류 복구)** | ✅ Done | `Assets/Editor/PlayerAnimatorGuard.cs`로 환경 변경 시 발생하는 Animator 참조 오류를 자동 복구/검증한다. 필수 state/motion + 파라미터(`Speed` Float, `Hit` Trigger) 누락 점검, 모든 Layer + 중첩 StateMachine 재귀 순회, Locomotion BlendTree 자식 모션 검증, 중복 상태명 경고, 로드/임포트/이동/메뉴 경로를 지원하며 `Hit` 상태명은 `PlayerController.ANIM_STATE_HIT` 상수를 공용 참조한다. 추가로 `Attack1/2/3` 클립의 `OnHitStart/OnHitEnd` 이벤트 자동 보정 및 누락/순서 검증, `Tools/Validation/Fix Player Attack Events` 메뉴를 포함한다. |
 

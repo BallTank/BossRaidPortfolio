@@ -96,6 +96,15 @@
 * **Input Buffer (선입력)**: 애니메이션 종료 직전에 입력된 명령을 저장해두었다가, 동작 가능 시점에 즉시 실행하여 조작감을 향상시키는 시스템.
 * **Animation Cancel (모션 캔슬)**: 현재 진행 중인 동작(특히 후딜레이)을 중단하고 대시 등의 긴급 회피 동작으로 즉시 전환하는 기법.
 * **IDamageable**: 대상을 특정하지 않고 데미지 명령(`TakeDamage`)만 내릴 수 있게 해주는 추상화 인터페이스.
+* **IBossAttackHitReceiver**: 보스 공격의 종류/힘 방향 메타데이터(`BossAttackHitData`)를 수신해, 대상(현재는 플레이어)이 피격 반응(일반 피격/스턴/무시)을 직접 판정하도록 하는 인터페이스.
+* **BossAttackHitType**: 보스 공격 분류 열거형. `Attack1`, `Attack2`, `Attack3Projectile`, `Attack4Projectile`로 피격 처리 규칙을 분기한다.
+* **Projectile Count Timer**: 플레이어가 투사체 피격 누적을 판정하는 짧은 타이머 창. 타이머 내 1타는 일반 피격, 2타 이상은 스턴으로 승격한다.
+* **StunState**: 플레이어 스턴 전용 상태. 입력 기반 행동(이동/공격/스킬/점프/상호작용/회전)을 차단하고, 피격 방향 기반 푸시백과 스턴 타이머를 처리한다.
+* **Post-Stun Invulnerability**: 스턴 종료 후 적용되는 후속 무적 구간. 데미지/재스턴을 차단하며, `BlinkWhiteEffect`가 점멸 표현(기본 주기 0.2s)을 담당한다.
+* **BlinkWhite Shader Parameter (`_BlinkWhite`)**: 플레이어 후속 무적 점멸 표현을 위한 전용 셰이더 파라미터. `0`은 원본 색, `1`은 흰색으로 해석하고 `lerp(originalBaseColor, white, _BlinkWhite)` 규칙으로 최종 출력색을 만든다. 현재 구현에서 `1` 구간은 조명 영향을 무시한 순수 white 출력이다.
+* **BlinkWhiteEffect**: 플레이어/보스에 부착 가능한 점멸 전용 컴포넌트(`Assets/Scripts/Common/Visual/BlinkWhiteEffect.cs`). `_BlinkWhite` 셰이더 파라미터를 `MaterialPropertyBlock`으로 제어하며, `PlayBlink`, `PlaySingleBlink`, `SetBlink`, `StopBlink` API를 제공한다.
+* **Runtime Blink Material Swap**: 렌더러의 원본 머티리얼에 `_BlinkWhite`가 없을 때, 런타임에서 Blink 셰이더(`Assets/Shaders/BlinkWhiteLit.shader`)를 사용하는 복제 머티리얼 세트를 준비/활성화하는 절차. 효과 종료 시 원본 머티리얼로 복구한다.
+* **Boss Hit Motion Suppression**: 보스가 공격 준비/실행 상태일 때 피격 모션(`BossHitState`) 전환을 무시하는 규칙. 이때도 `BlinkWhiteEffect` 기반 피격 점멸은 정상 재생된다.
 * **Attack Window Result Event**: 공격 판정 시작(`EnableHitbox`)부터 종료(`DisableHitbox`)까지 누적된 결과를 1회 발행하는 이벤트. 현재 `DamageCaster.OnAttackWindowResolved(bool isHit, int totalDamage)`로 구현되어 HUD 피드백에 사용된다.
 * **Fixed Damage Feedback (고정형 데미지 피드백)**: 월드 위치를 추적하지 않고 HUD의 고정 앵커에서 `HIT + 피해량`만 표시하는 피드백 방식. 현재는 적중 시 확대 후 짧은 페이드 아웃으로 마무리한다.
 * **Ghost Hitbox Guard (잔존 히트박스 가드)**: 상태 전환/초기화 시 `ForceDisableHitbox()`와 `AttackState.Exit()`를 통해 공격 판정이 남지 않도록 강제 정리하는 보호 규칙.
@@ -103,7 +112,7 @@
 * **Animation Event Bridge**: 애니메이터의 타임라인 이벤트를 코드 로직(`PlayerController` 등)으로 연결해주는 중계 클래스.
 * **IBossAttackPattern**: 보스 공격 패턴 인터페이스 (Strategy Pattern 적용). `Enter`/`Update`/`Exit` 메서드를 정의하여 `BossAttackState`가 구체 패턴을 몰라도 실행할 수 있게 함.
 * **BasicAttackPattern**: `IBossAttackPattern`의 기본 구현체. 보스의 근접 공격(애니메이션 재생 + DamageCaster 활성화 + 타이머 기반 종료)을 측술화.
-* **Invincibility Frame (무적 시간)**: 피격 후 일정 시간 동안 추가 데미지를 받지 않는 보호 기간. `Health.SetInvincible(true/false)`와 코루틴으로 관리.
+* **Invincibility Frame (무적 시간)**: 특정 구간 동안 추가 데미지를 차단하는 보호 기간. 현재 플레이어는 `stunned` 또는 `post-stun invulnerability` 상태에서 `Health.SetInvincible(true/false)`로 제어한다.
 * **Bone-Synced Hitbox (본 동기화 피격 판정)**: `DamageCaster._castCenter`를 스켈레톤의 Bone 자식 Transform으로 설정하여, 애니메이션에 따라 히트박스 위치가 자동으로 동기화되는 기법. 코드 수정 없이 물리 판정과 애니메이션을 연동할 수 있음.
 * **Partial Animation (부분 애니메이션)**: 애니메이션 클립 전체를 재생하지 않고, 특정 구간(예: 도약 부분)만 재생한 후 강제로 종료(`exitPhaseRatio`)하여 동작의 템포를 조절하는 기법. 복귀 모션 등을 생략하여 타격감을 높일 때 사용됨.
 * **Lunge Hitbox/Exit Split Timing (도약 판정/상태 종료 분리 타이밍)**: Lunge 패턴에서 `rushPhaseRatio` 전진 구간 분기를 제거하고, 히트박스 종료 시점(`normalizedTime 0.8`)과 상태 종료 시점(`normalizedTime 1.0`)을 분리해 운영하는 방식. 이동은 루트모션 릴레이가 담당한다.
