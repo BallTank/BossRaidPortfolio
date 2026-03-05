@@ -1,4 +1,5 @@
 ﻿using Core.Boss.Projectiles;
+using Core.Combat;
 using UnityEngine;
 
 namespace Core.Boss.Attacks
@@ -116,7 +117,8 @@ namespace Core.Boss.Attacks
                 controller.Target,
                 _settings.homingStrength,
                 _settings.homingDuration,
-                _settings.verticalFollowSpeed);
+                _settings.verticalFollowSpeed,
+                BossAttackHitType.Attack3Projectile);
         }
 
         private float GetSpreadAngle(int shotIndex)

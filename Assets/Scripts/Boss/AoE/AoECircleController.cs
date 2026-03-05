@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using Core.Interfaces;
+using Core.Combat;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -59,6 +60,7 @@ namespace Core.Boss.AoE
         private float _tickInterval;
         private int _damage;
         private int _ownerInstanceID;
+        private BossAttackHitType _bossAttackHitType = BossAttackHitType.Attack4Projectile;
         private float _phaseTimer;
         private float _tickTimer;
 
@@ -132,7 +134,8 @@ namespace Core.Boss.AoE
             float tickInterval,
             int damage,
             int ownerInstanceID,
-            LayerMask damageMask)
+            LayerMask damageMask,
+            BossAttackHitType bossAttackHitType)
         {
             transform.position = centerPosition;
 
@@ -143,6 +146,7 @@ namespace Core.Boss.AoE
             _damage = Mathf.Max(0, damage);
             _ownerInstanceID = ownerInstanceID;
             targetMask = damageMask;
+            _bossAttackHitType = bossAttackHitType;
 
             _phaseTimer = 0f;
             _tickTimer = _tickInterval;
@@ -203,6 +207,29 @@ namespace Core.Boss.AoE
                 if (targetId == 0) continue;
                 if (_ownerInstanceID != 0 && targetId == _ownerInstanceID) continue;
                 if (!_hitTargetIds.Add(targetId)) continue;
+
+                if (_bossAttackHitType != BossAttackHitType.Unknown)
+                {
+                    IBossAttackHitReceiver bossHitReceiver = col.GetComponent<IBossAttackHitReceiver>();
+                    if (bossHitReceiver == null)
+                    {
+                        bossHitReceiver = col.GetComponentInParent<IBossAttackHitReceiver>();
+                    }
+
+                    if (bossHitReceiver != null)
+                    {
+                        Vector3 forceDirection = col.transform.position - transform.position;
+                        forceDirection.y = 0f;
+                        if (forceDirection.sqrMagnitude <= 0.0001f)
+                        {
+                            forceDirection = transform.forward;
+                        }
+
+                        bossHitReceiver.ReceiveBossAttackHit(
+                            new BossAttackHitData(_damage, _bossAttackHitType, forceDirection));
+                        continue;
+                    }
+                }
 
                 damageable.TakeDamage(_damage);
             }

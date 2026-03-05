@@ -1,4 +1,5 @@
 ﻿using Core.Interfaces;
+using Core.Combat;
 using UnityEngine;
 using UnityEngine.VFX;
 
@@ -40,6 +41,7 @@ namespace Core.Boss.Projectiles
         private float _impactDuration;
         private float _impactElapsed;
         private bool _impactTriggered;
+        private BossAttackHitType _bossAttackHitType = BossAttackHitType.Attack3Projectile;
 
         private void Awake()
         {
@@ -66,7 +68,8 @@ namespace Core.Boss.Projectiles
             Transform target,
             float homingStrength,
             float homingDuration,
-            float verticalFollowSpeed)
+            float verticalFollowSpeed,
+            BossAttackHitType bossAttackHitType)
         {
             // 발사 시점 데이터 주입
             direction.y = 0f;
@@ -97,6 +100,7 @@ namespace Core.Boss.Projectiles
             _impactElapsed = 0f;
             _impactDuration = 0f;
             _impactTriggered = false;
+            _bossAttackHitType = bossAttackHitType;
 
             if (_projectileCollider != null)
             {
@@ -124,6 +128,7 @@ namespace Core.Boss.Projectiles
             _impactDuration = Mathf.Max(0.01f, impactTime);
             _impactElapsed = 0f;
             _impactTriggered = false;
+            _bossAttackHitType = BossAttackHitType.Unknown;
 
             _pendingReturnTimer = -1f;
             _isReturned = false;
@@ -263,6 +268,29 @@ namespace Core.Boss.Projectiles
             if (!_isActive || other == null) return;
             if (_mode != ProjectileMode.Combat) return;
             if (!IsLayerAllowed(other)) return;
+
+            if (_bossAttackHitType != BossAttackHitType.Unknown)
+            {
+                IBossAttackHitReceiver bossHitReceiver = other.GetComponent<IBossAttackHitReceiver>();
+                if (bossHitReceiver == null)
+                {
+                    bossHitReceiver = other.GetComponentInParent<IBossAttackHitReceiver>();
+                }
+
+                if (bossHitReceiver != null)
+                {
+                    Vector3 forceDirection = _moveDirection;
+                    if (forceDirection.sqrMagnitude <= 0.0001f)
+                    {
+                        forceDirection = transform.forward;
+                    }
+
+                    bossHitReceiver.ReceiveBossAttackHit(
+                        new BossAttackHitData(_damage, _bossAttackHitType, forceDirection));
+                    EnterHitPhase();
+                    return;
+                }
+            }
 
             IDamageable damageable = other.GetComponent<IDamageable>();
             if (damageable == null)

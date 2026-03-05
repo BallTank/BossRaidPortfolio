@@ -23,6 +23,7 @@ namespace Core.Combat
         [SerializeField] private LayerMask _targetLayer;
         [SerializeField] private int _maxTargets = 10;
         [SerializeField] private Transform _castCenter; // 판정 중심점 (입력 안하면 자신의 위치)
+        [SerializeField] private BossAttackHitType _bossAttackHitType = BossAttackHitType.Unknown;
 
         [Header("Debug")]
         [SerializeField] private bool _showGizmos = true;
@@ -118,6 +119,11 @@ namespace Core.Combat
             _radius = Mathf.Max(0f, radius);
         }
 
+        public void SetBossAttackHitType(BossAttackHitType hitType)
+        {
+            _bossAttackHitType = hitType;
+        }
+
         private void FixedUpdate()
         {
             if (!_isCasting) return;
@@ -141,6 +147,11 @@ namespace Core.Combat
 
                 // IDamageable 인터페이스 확인
                 IDamageable target = col.GetComponent<IDamageable>();
+                if (target == null)
+                {
+                    target = col.GetComponentInParent<IDamageable>();
+                }
+
                 if (target != null)
                 {
                     // 중복 타격 방지 로직 개선:
@@ -164,8 +175,43 @@ namespace Core.Combat
                     // Owner(자신)인 경우 공격 판정 제외
                     if (_ownerInstanceID != 0 && realTargetID == _ownerInstanceID) continue;
 
-                    target.TakeDamage(_damagePayload);
-                    _attackWindowTotalDamage += _damagePayload;
+                    bool handledByBossReceiver = false;
+                    bool didDamage = false;
+                    if (_bossAttackHitType != BossAttackHitType.Unknown)
+                    {
+                        IBossAttackHitReceiver bossHitReceiver = col.GetComponent<IBossAttackHitReceiver>();
+                        if (bossHitReceiver == null)
+                        {
+                            bossHitReceiver = col.GetComponentInParent<IBossAttackHitReceiver>();
+                        }
+
+                        if (bossHitReceiver != null)
+                        {
+                            handledByBossReceiver = true;
+
+                            Vector3 forceDirection = col.transform.position - _castCenter.position;
+                            forceDirection.y = 0f;
+                            if (forceDirection.sqrMagnitude <= 0.0001f)
+                            {
+                                forceDirection = transform.forward;
+                            }
+
+                            BossAttackHitResolution resolution = bossHitReceiver.ReceiveBossAttackHit(
+                                new BossAttackHitData(_damagePayload, _bossAttackHitType, forceDirection));
+                            didDamage = resolution == BossAttackHitResolution.Damaged;
+                        }
+                    }
+
+                    if (!handledByBossReceiver)
+                    {
+                        target.TakeDamage(_damagePayload);
+                        didDamage = true;
+                    }
+
+                    if (didDamage)
+                    {
+                        _attackWindowTotalDamage += _damagePayload;
+                    }
                     _hitTargets.Add(realTargetID); // 실제 대상 ID 등록
 
                     // 디버그 로그 (필요시 주석 해제)

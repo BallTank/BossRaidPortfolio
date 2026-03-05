@@ -1,25 +1,26 @@
-﻿using System.Collections;
-using Core.Combat;
+﻿using Core.Combat;
+using Core.Common;
 using Core.Common.Interfaces;
 using Core.Common.Patterns;
 using Core.Player;
 using Core.Player.States;
 using Core.UI;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 [RequireComponent(typeof(CharacterController))]
-public class PlayerController : MonoBehaviour, IDashContext, IAttackable
+public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossAttackHitReceiver
 {
     [Header("Movement Settings")]
     [SerializeField] private float moveSpeed = 6.0f;
     [SerializeField] private float rotationSpeed = 10.0f;
-    // [SerializeField] private float gravity = -9.81f; // Removed in favor of Physics.gravity.y
 
     [Header("Camera")]
     [SerializeField] private Transform cameraRoot;
 
     [Header("Visual")]
     [SerializeField] private PlayerVisual playerVisual;
+    [SerializeField] private BlinkWhiteEffect blinkWhiteEffect;
 
     [Header("Dash Settings")]
     [SerializeField] private float dashDuration = 0.2f;
@@ -31,11 +32,15 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable
     [SerializeField] private float airControl = 0.5f;
 
     [Header("Attack Settings")]
-    [SerializeField] private Core.Player.AttackComboData[] attackCombos;
-    [SerializeField] private Core.Combat.DamageCaster _damageCaster;
+    [SerializeField] private AttackComboData[] attackCombos;
+    [SerializeField] private DamageCaster _damageCaster;
 
-    [Header("Combat Settings")]
-    [SerializeField] private float invincibilityDuration = 1.0f;
+    [Header("Stun Settings")]
+    [SerializeField] private float stunDuration = 0.5f;
+    [FormerlySerializedAs("invincibilityDuration")]
+    [SerializeField] private float postStunInvulDuration = 2.0f;
+    [SerializeField] private float pushbackDuration = 0.7f;
+    [SerializeField] private float projectileCountTimer = 0.5f;
 
     [Header("HUD Settings")]
     [SerializeField] private CombatHUDController _combatHUD;
@@ -52,6 +57,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable
     public const string ANIM_STATE_ATTACK3 = "Attack3";
     public const string ANIM_STATE_JUMP = "Jump";
     public const string ANIM_STATE_HIT = "Hit";
+    public const string ANIM_STATE_STUN = "Stun";
     public const string ANIM_STATE_DIE = "Die";
 
     // FSM (제네릭 StateMachine 사용)
@@ -61,6 +67,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable
     public JumpState JumpState { get; private set; }
     public AttackState AttackState { get; private set; }
     public HitState HitState { get; private set; }
+    public StunState StunState { get; private set; }
     public DeadState DeadState { get; private set; }
 
     // Components
@@ -69,10 +76,18 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable
     private CharacterController _characterController;
     private float _nextDashTime;
 
+    // Stun / Invul Runtime
+    private bool _isStunned;
+    private bool _isPostStunInvulnerable;
+    private float _postStunInvulTimer;
+    private int _projectileHitCount;
+    private float _projectileCountTimerLeft;
+    private bool _suppressDamageTakenReaction;
+
     // Public Properties for States
     public float MoveSpeed => moveSpeed;
     public float RotationSpeed => rotationSpeed;
-    public float Gravity => Physics.gravity.y; // 전역 중력 설정 사용 (Uses global Physics.gravity.y)
+    public float Gravity => Physics.gravity.y;
     public Transform CameraRoot => cameraRoot;
     public IInputProvider InputProvider => _inputProvider;
     public PlayerVisual Visual => playerVisual;
@@ -90,14 +105,30 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable
     public float AirControl => airControl;
 
     // Attack Properties
-    public Core.Player.AttackComboData[] AttackCombos => attackCombos;
+    public AttackComboData[] AttackCombos => attackCombos;
     public float CurrentAttackDamage { get; set; }
+
+    private void OnValidate()
+    {
+        if (moveSpeed < 0f) moveSpeed = 0f;
+        if (rotationSpeed < 0f) rotationSpeed = 0f;
+        if (dashDuration < 0f) dashDuration = 0f;
+        if (dashSpeedMultiplier < 0f) dashSpeedMultiplier = 0f;
+        if (dashCooldown < 0f) dashCooldown = 0f;
+        if (jumpForce < 0f) jumpForce = 0f;
+        if (airControl < 0f) airControl = 0f;
+        if (stunDuration < 0f) stunDuration = 0f;
+        if (postStunInvulDuration < 0f) postStunInvulDuration = 0f;
+        if (pushbackDuration < 0f) pushbackDuration = 0f;
+        if (projectileCountTimer < 0f) projectileCountTimer = 0f;
+    }
 
     private void Awake()
     {
         _characterController = GetComponent<CharacterController>();
         _inputProvider = GetComponent<IInputProvider>();
         _health = GetComponent<Health>();
+        ResolveBlinkEffect();
 
         if (_health != null)
         {
@@ -119,6 +150,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable
         JumpState = new JumpState(this);
         AttackState = new AttackState(this);
         HitState = new HitState(this);
+        StunState = new StunState(this);
         DeadState = new DeadState(this);
     }
 
@@ -140,17 +172,24 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable
     {
         _stateMachine.ChangeState(MoveState);
         _damageCaster?.ForceDisableHitbox();
+        blinkWhiteEffect?.StopBlink();
+        UpdateHealthInvincibilityByState();
         InitializeCombatHUD();
     }
 
     private void Update()
     {
+        UpdateProjectileHitCountTimer();
+        UpdatePostStunInvulnerability();
+
         if (_inputProvider == null) return;
 
         PlayerInputPacket input = _inputProvider.GetInput();
-        cameraRoot.rotation = Quaternion.Euler(input.lookPitch, input.lookYaw, 0f);
+        if (cameraRoot != null)
+        {
+            cameraRoot.rotation = Quaternion.Euler(input.lookPitch, input.lookYaw, 0f);
+        }
 
-        // Controller에서 직접 Update 호출
         _stateMachine.CurrentState?.Update(input);
     }
 
@@ -172,29 +211,207 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable
 
     private void HandleDamage(int damage)
     {
-        if (_health.IsDead) return;
-
-        // 무적 처리 (스턴 상태 중복 방지 및 후속타 무시)
-        StartCoroutine(InvincibilityRoutine());
+        if (_health == null || _health.IsDead) return;
+        if (_suppressDamageTakenReaction) return;
+        if (_isStunned || _isPostStunInvulnerable) return;
 
         _stateMachine.ChangeState(HitState);
     }
 
-    private IEnumerator InvincibilityRoutine()
+    private void HandleDeath()
     {
-        if (_health != null)
+        _isStunned = false;
+        _isPostStunInvulnerable = false;
+        _postStunInvulTimer = 0f;
+        ResetProjectileHitCounter();
+
+        blinkWhiteEffect?.StopBlink();
+        UpdateHealthInvincibilityByState();
+        _stateMachine.ChangeState(DeadState);
+    }
+
+    public BossAttackHitResolution ReceiveBossAttackHit(in BossAttackHitData hitData)
+    {
+        if (_health == null || _health.IsDead)
         {
-            _health.SetInvincible(true);
-            yield return new WaitForSeconds(invincibilityDuration);
-            _health.SetInvincible(false);
+            return BossAttackHitResolution.Ignored;
+        }
+
+        if (_isStunned || _isPostStunInvulnerable)
+        {
+            return BossAttackHitResolution.Ignored;
+        }
+
+        switch (hitData.HitType)
+        {
+            case BossAttackHitType.Attack1:
+                return ApplyNormalDamageAndHitReaction(hitData.Damage)
+                    ? BossAttackHitResolution.Damaged
+                    : BossAttackHitResolution.Ignored;
+
+            case BossAttackHitType.Attack2:
+                BeginStun(hitData.ForceDirection);
+                return BossAttackHitResolution.StunOnly;
+
+            case BossAttackHitType.Attack3Projectile:
+            case BossAttackHitType.Attack4Projectile:
+                return HandleProjectileHit(hitData);
+        }
+
+        return ApplyNormalDamageAndHitReaction(hitData.Damage)
+            ? BossAttackHitResolution.Damaged
+            : BossAttackHitResolution.Ignored;
+    }
+
+    public void HandleStunFinished()
+    {
+        if (!_isStunned) return;
+
+        _isStunned = false;
+        _stateMachine.ChangeState(MoveState);
+        StartPostStunInvulnerability();
+    }
+
+    private BossAttackHitResolution HandleProjectileHit(in BossAttackHitData hitData)
+    {
+        if (_projectileCountTimerLeft <= 0f)
+        {
+            _projectileHitCount = 1;
+            _projectileCountTimerLeft = projectileCountTimer;
+
+            return ApplyNormalDamageAndHitReaction(hitData.Damage)
+                ? BossAttackHitResolution.Damaged
+                : BossAttackHitResolution.Ignored;
+        }
+
+        _projectileHitCount += 1;
+        if (_projectileHitCount >= 2)
+        {
+            BeginStun(hitData.ForceDirection);
+            ResetProjectileHitCounter();
+            return BossAttackHitResolution.StunOnly;
+        }
+
+        return BossAttackHitResolution.Ignored;
+    }
+
+    private bool ApplyNormalDamageAndHitReaction(int damage)
+    {
+        if (_health == null || _health.IsDead) return false;
+        if (damage <= 0) return false;
+
+        int previousHp = _health.CurrentHealth;
+        _suppressDamageTakenReaction = true;
+        _health.TakeDamage(damage);
+        _suppressDamageTakenReaction = false;
+
+        bool didDamage = _health.CurrentHealth < previousHp;
+        if (didDamage && !_health.IsDead)
+        {
+            _stateMachine.ChangeState(HitState);
+        }
+
+        return didDamage;
+    }
+
+    private void BeginStun(Vector3 forceDirection)
+    {
+        _isStunned = true;
+        _isPostStunInvulnerable = false;
+        _postStunInvulTimer = 0f;
+        blinkWhiteEffect?.StopBlink();
+        UpdateHealthInvincibilityByState();
+        ResetProjectileHitCounter();
+
+        OnHitEnd();
+
+        Vector3 planarForceDirection = forceDirection;
+        planarForceDirection.y = 0f;
+        if (planarForceDirection.sqrMagnitude <= 0.0001f)
+        {
+            planarForceDirection = -transform.forward;
+        }
+
+        float configuredPushbackDuration = Mathf.Max(0f, pushbackDuration);
+        float dashSpeed = moveSpeed * dashSpeedMultiplier;
+        float pushDistance = dashSpeed * configuredPushbackDuration;
+
+        StunState.Configure(
+            stunDuration,
+            planarForceDirection,
+            pushDistance,
+            configuredPushbackDuration);
+        _stateMachine.ChangeState(StunState);
+    }
+
+    private void StartPostStunInvulnerability()
+    {
+        _isPostStunInvulnerable = true;
+        _postStunInvulTimer = postStunInvulDuration;
+        blinkWhiteEffect?.PlayBlink(postStunInvulDuration);
+        UpdateHealthInvincibilityByState();
+    }
+
+    private void EndPostStunInvulnerability()
+    {
+        _isPostStunInvulnerable = false;
+        _postStunInvulTimer = 0f;
+        blinkWhiteEffect?.StopBlink();
+        UpdateHealthInvincibilityByState();
+    }
+
+    private void UpdatePostStunInvulnerability()
+    {
+        if (!_isPostStunInvulnerable) return;
+
+        _postStunInvulTimer -= Time.deltaTime;
+
+        if (_postStunInvulTimer <= 0f)
+        {
+            EndPostStunInvulnerability();
         }
     }
 
-    private void HandleDeath()
+    private void ResolveBlinkEffect()
     {
-        // 진행 중인 코루틴 정리 (InvincibilityRoutine 등)
-        StopAllCoroutines();
-        _stateMachine.ChangeState(DeadState);
+        if (blinkWhiteEffect != null) return;
+
+        if (playerVisual != null)
+        {
+            blinkWhiteEffect = playerVisual.GetComponent<BlinkWhiteEffect>();
+            if (blinkWhiteEffect == null)
+            {
+                blinkWhiteEffect = playerVisual.GetComponentInChildren<BlinkWhiteEffect>(true);
+            }
+        }
+
+        if (blinkWhiteEffect == null)
+        {
+            blinkWhiteEffect = GetComponent<BlinkWhiteEffect>();
+        }
+    }
+
+    private void UpdateProjectileHitCountTimer()
+    {
+        if (_projectileCountTimerLeft <= 0f) return;
+
+        _projectileCountTimerLeft -= Time.deltaTime;
+        if (_projectileCountTimerLeft <= 0f)
+        {
+            ResetProjectileHitCounter();
+        }
+    }
+
+    private void UpdateHealthInvincibilityByState()
+    {
+        if (_health == null) return;
+        _health.SetInvincible(_isStunned || _isPostStunInvulnerable);
+    }
+
+    private void ResetProjectileHitCounter()
+    {
+        _projectileHitCount = 0;
+        _projectileCountTimerLeft = 0f;
     }
 
     private void HandleAttackWindowResolved(bool isHit, int totalDamage)

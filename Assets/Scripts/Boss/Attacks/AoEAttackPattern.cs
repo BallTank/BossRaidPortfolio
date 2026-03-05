@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using Core.Boss.AoE;
 using Core.Boss.Projectiles;
+using Core.Combat;
 using UnityEngine;
 
 namespace Core.Boss.Attacks
@@ -189,7 +190,8 @@ namespace Core.Boss.Attacks
                 _settings.tickInterval,
                 _settings.damage,
                 controller.gameObject.GetInstanceID(),
-                _settings.targetMask);
+                _settings.targetMask,
+                BossAttackHitType.Attack4Projectile);
             _activeCircles.Add(circle);
 
             SpawnImpactProjectile(controller, impactPoint);
