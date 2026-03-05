@@ -52,12 +52,18 @@ namespace Core.Common
             if (_renderers == null || _renderers.Length == 0) yield break;
 
             // Flash
-            foreach (var r in _renderers) r.material.color = _flashColor;
+            foreach (Renderer renderer in _renderers)
+            {
+                renderer.material.color = _flashColor;
+            }
 
             yield return new WaitForSeconds(_flashDuration);
 
             // Restore (Assuming White/Default is the target state)
-            foreach (var r in _renderers) r.material.color = Color.white;
+            foreach (Renderer renderer in _renderers)
+            {
+                renderer.material.color = Color.white;
+            }
         }
     }
 }

@@ -71,4 +71,43 @@
 * **Mojibake Diff Rule**: 커밋 전 `git diff`에서 `�`, `??`, `ì`, `ì´` 등 깨짐 패턴을 발견하면 커밋을 중단하고 원인을 분리 진단한다.
 * **Recovery Rule**: 이미 깨진 문자열은 인코딩 변환만으로 복원하지 않는다. 정상본(이전 커밋/백업) 기준으로 수동 복구한다.
 * **Critical Docs Rule**: `Input_FSM_Flow.md`, `System_Blueprint.md`, `Progress_Log/README.md`는 편집 전 우선 점검 문서로 취급한다.
+* **Korean Integrity Validation Rule**: `docs/` 파일을 수정한 작업은 완료 전 한글 깨짐 검증을 필수로 수행한다. 최소 검증 항목은 `U+FFFD(�) 없음`, `Mojibake 패턴 없음`, `UTF-8 인코딩 유지` 3가지다.
+* **Korean Integrity Validation Command (PowerShell)**: 아래 명령으로 대상 문서를 검사하고, 실패 시 커밋/완료 보고를 중단한다.
+
+```powershell
+# Usage:
+#   $files = @("docs/Progress_Log/2026-03-05.md", "docs/technical/System_Blueprint.md")
+$files = @()
+$errorCount = 0
+
+foreach ($f in $files) {
+    if (-not (Test-Path $f)) {
+        Write-Host "[FAIL] Missing file: $f"
+        $errorCount++
+        continue
+    }
+
+    $text = Get-Content -Path $f -Raw
+    $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $f))
+    $hasUtf8Bom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+
+    $hasReplacementChar = $text.Contains([char]0xFFFD)
+    $hasMojibakePattern = $text -match '�|\?\?|ì|ì´|留|泥|媛|됰갚'
+
+    if ($hasReplacementChar -or $hasMojibakePattern) {
+        Write-Host "[FAIL] Korean text broken: $f"
+        $errorCount++
+    } else {
+        Write-Host "[PASS] Korean text ok: $f"
+    }
+
+    if (-not $hasUtf8Bom) {
+        Write-Host "[WARN] UTF-8 BOM not found: $f (UTF-8 no BOM is still acceptable by project rule)"
+    }
+}
+
+if ($errorCount -gt 0) {
+    throw "Korean integrity validation failed: $errorCount file(s)"
+}
+```
 
