@@ -707,8 +707,9 @@ namespace Core.Boss
         [System.Serializable]
         public class ProjectileAttackSettings
         {
-            [Tooltip("예고 시간(초)")]
-            public float telegraphDuration = 0.3f;
+            [FormerlySerializedAs("telegraphDuration")]
+            [Tooltip("경고 시간(초)")]
+            public float warningDuration = 0.3f;
             [Tooltip("투사체 데미지")]
             public int damage = 12;
             [Tooltip("투사체 속도")]
@@ -755,13 +756,12 @@ namespace Core.Boss
             public float landDuration = 0.4f;
             [Tooltip("장판 생성 간격")]
             public float spawnInterval = 0.1f;
-            [Tooltip("fire 착지/장판 발동 동기화 시간. 0 이하면 telegraphDuration 사용")]
-            public float impactSyncTime = 0f;
 
             [Header("AoE Damage")]
             public int damage = 10;
-            [Tooltip("텔레그래프 시간 (impactSyncTime 미설정 시 사용)")]
-            public float telegraphDuration = 0.9f;
+            [FormerlySerializedAs("telegraphDuration")]
+            [Tooltip("경고 시간 (fire 착지/장판 발동 동기화 시간)")]
+            public float warningDuration = 0.9f;
             [Tooltip("장판 활성 유지 시간")]
             public float activeDuration = 0.9f;
             [Tooltip("틱 데미지 간격")]

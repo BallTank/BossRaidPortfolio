@@ -6,7 +6,7 @@ namespace Core.Boss.Attacks
 {
     /// <summary>
     /// 보스 투사체 공격 패턴.
-    /// telegraph -> 3연발(좌/중앙/우) -> 종료 순서로 동작한다.
+    /// warning -> 3연발(좌/중앙/우) -> 종료 순서로 동작한다.
     /// </summary>
     public class ProjectileAttackPattern : IBossAttackPattern
     {
@@ -16,7 +16,7 @@ namespace Core.Boss.Attacks
 
         private readonly BossController.ProjectileAttackSettings _settings;
 
-        private float _telegraphTimer;
+        private float _warningTimer;
         private float _volleyTimer;
         private float _postFireRecoveryTimer;
         private int _shotsFired;
@@ -38,7 +38,7 @@ namespace Core.Boss.Attacks
 
             controller.Visual?.PlayProjectileAttack();
 
-            _telegraphTimer = _settings.telegraphDuration;
+            _warningTimer = _settings.warningDuration;
             _volleyTimer = 0f;
             _postFireRecoveryTimer = Mathf.Max(0f, _settings.postFireRecoveryDuration);
             _shotsFired = 0;
@@ -47,11 +47,11 @@ namespace Core.Boss.Attacks
 
         public bool Update(BossController controller)
         {
-            // 1) 예고(telegraph) 구간
+            // 1) 경고(warning) 구간
             if (!_isFiringPhase)
             {
-                _telegraphTimer -= Time.deltaTime;
-                if (_telegraphTimer > 0f) return false;
+                _warningTimer -= Time.deltaTime;
+                if (_warningTimer > 0f) return false;
                 _isFiringPhase = true;
                 _volleyTimer = 0f;
             }

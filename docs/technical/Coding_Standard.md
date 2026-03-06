@@ -111,3 +111,16 @@ if ($errorCount -gt 0) {
 }
 ```
 
+## 8. Traceability Standard (Code Reading)
+
+* **6-Line Trace Card Rule**: 버그 분석/로직 설명 시, 전체 파일 요약 전에 아래 6줄 카드를 먼저 작성한다.
+1. `Trigger`
+2. `Entry`
+3. `Gate`
+4. `Core Check`
+5. `Effect`
+6. `Result`
+* **Trace Line Format**: 각 줄은 `[S#] Action | Condition | File:line | Key value` 형식을 사용한다.
+* **Single-Behavior Scope Rule**: 한 카드에는 동작 1개만 포함한다 (예: Attack4 AoE hit).
+* **Value-First Debug Rule**: 카드 작성 후에는 라인 추가 요약보다 런타임 값(`radius`, `timer`, `mask`, `resolution`) 확인을 우선한다.
+

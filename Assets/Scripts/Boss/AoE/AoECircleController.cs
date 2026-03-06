@@ -3,23 +3,27 @@ using Core.Interfaces;
 using Core.Combat;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Serialization;
 
 namespace Core.Boss.AoE
 {
     /// <summary>
-    /// Manages one AoE circle lifecycle: telegraph -> active -> end.
+    /// Manages one AoE circle lifecycle: warning -> active -> end.
     /// Includes a runtime fallback disc so circles remain visible even if the assigned renderer is not compatible.
     /// </summary>
     public class AoECircleController : MonoBehaviour
     {
         [Header("Visual")]
-        [SerializeField] private Renderer telegraphRenderer;
+        [FormerlySerializedAs("telegraphRenderer")]
+        [SerializeField] private Renderer warningRenderer;
         [SerializeField] private Transform radiusVisualRoot;
         [SerializeField] private float radiusToScaleMultiplier = 2f;
+        [SerializeField] private float fallbackRadiusToScaleMultiplier = 1.2f;
         [SerializeField] private string fillPropertyName = "_Fill01";
         [SerializeField] private string colorPropertyName = "_BaseColor";
         [SerializeField] private string alternateColorPropertyName = "_Color";
-        [SerializeField] private Color telegraphColor = new Color(1f, 0f, 0f, 0.25f);
+        [FormerlySerializedAs("telegraphColor")]
+        [SerializeField] private Color warningColor = new Color(1f, 0f, 0f, 0.25f);
         [SerializeField] private Color activeColor = new Color(1f, 0f, 0f, 0.6f);
 
         [Header("Fallback Visual")]
@@ -55,14 +59,12 @@ namespace Core.Boss.AoE
         private bool _isRunning;
         private bool _isActivePhase;
         private float _radius;
-        private float _telegraphDuration;
+        private float _warningDuration;
         private float _activeDuration;
-        private float _tickInterval;
         private int _damage;
         private int _ownerInstanceID;
         private BossAttackHitType _bossAttackHitType = BossAttackHitType.Attack4Projectile;
         private float _phaseTimer;
-        private float _tickTimer;
 
         public bool IsRunning => _isRunning;
 
@@ -75,9 +77,9 @@ namespace Core.Boss.AoE
             _colorPropertyId = Shader.PropertyToID(colorPropertyName);
             _alternateColorPropertyId = Shader.PropertyToID(alternateColorPropertyName);
 
-            if (telegraphRenderer == null)
+            if (warningRenderer == null)
             {
-                telegraphRenderer = GetComponentInChildren<Renderer>(true);
+                warningRenderer = GetComponentInChildren<Renderer>(true);
             }
 
             if (forceRuntimeFallbackVisual || !TryConfigureRendererCapabilities())
@@ -88,7 +90,7 @@ namespace Core.Boss.AoE
 
             if (radiusVisualRoot == null)
             {
-                radiusVisualRoot = telegraphRenderer != null ? telegraphRenderer.transform : transform;
+                radiusVisualRoot = warningRenderer != null ? warningRenderer.transform : transform;
             }
 
             _baseVisualScaleY = Mathf.Max(0.001f, radiusVisualRoot.localScale.y);
@@ -101,10 +103,10 @@ namespace Core.Boss.AoE
             if (!_isActivePhase)
             {
                 _phaseTimer += Time.deltaTime;
-                float fill = _telegraphDuration > 0f ? Mathf.Clamp01(_phaseTimer / _telegraphDuration) : 1f;
-                ApplyVisual(fill, telegraphColor);
+                float fill = _warningDuration > 0f ? Mathf.Clamp01(_phaseTimer / _warningDuration) : 1f;
+                ApplyVisual(fill, warningColor);
 
-                if (_phaseTimer >= _telegraphDuration)
+                if (_phaseTimer >= _warningDuration)
                 {
                     EnterActivePhase();
                 }
@@ -112,13 +114,7 @@ namespace Core.Boss.AoE
             }
 
             _phaseTimer += Time.deltaTime;
-            _tickTimer -= Time.deltaTime;
-
-            while (_tickTimer <= 0f)
-            {
-                DealDamageTick();
-                _tickTimer += _tickInterval;
-            }
+            DealDamageDuringActivePhase();
 
             if (_phaseTimer >= _activeDuration)
             {
@@ -126,12 +122,11 @@ namespace Core.Boss.AoE
             }
         }
 
-        public void StartTelegraph(
+        public void StartWarning(
             Vector3 centerPosition,
             float radius,
-            float telegraphDuration,
+            float warningDuration,
             float activeDuration,
-            float tickInterval,
             int damage,
             int ownerInstanceID,
             LayerMask damageMask,
@@ -140,21 +135,20 @@ namespace Core.Boss.AoE
             transform.position = centerPosition;
 
             _radius = Mathf.Max(0.1f, radius);
-            _telegraphDuration = Mathf.Max(0f, telegraphDuration);
+            _warningDuration = Mathf.Max(0f, warningDuration);
             _activeDuration = Mathf.Max(0f, activeDuration);
-            _tickInterval = Mathf.Max(0.01f, tickInterval);
             _damage = Mathf.Max(0, damage);
             _ownerInstanceID = ownerInstanceID;
             targetMask = damageMask;
             _bossAttackHitType = bossAttackHitType;
 
             _phaseTimer = 0f;
-            _tickTimer = _tickInterval;
             _isActivePhase = false;
             _isRunning = true;
+            _hitTargetIds.Clear();
 
             ApplyRadiusScale();
-            ApplyVisual(0f, telegraphColor);
+            ApplyVisual(0f, warningColor);
 
             if (!gameObject.activeSelf)
             {
@@ -171,23 +165,21 @@ namespace Core.Boss.AoE
         {
             _isActivePhase = true;
             _phaseTimer = 0f;
-            _tickTimer = 0f;
             ApplyVisual(1f, activeColor);
+            DealDamageDuringActivePhase();
         }
 
         private void End()
         {
             _isRunning = false;
             _isActivePhase = false;
-            ApplyVisual(0f, telegraphColor);
+            ApplyVisual(0f, warningColor);
             gameObject.SetActive(false);
         }
 
-        private void DealDamageTick()
+        private void DealDamageDuringActivePhase()
         {
             if (_damage <= 0) return;
-
-            _hitTargetIds.Clear();
 
             int hitCount = Physics.OverlapSphereNonAlloc(transform.position, _radius, _hitResults, targetMask);
             for (int i = 0; i < hitCount; i++)
@@ -206,7 +198,7 @@ namespace Core.Boss.AoE
                 int targetId = ExtractTargetInstanceId(damageable, col);
                 if (targetId == 0) continue;
                 if (_ownerInstanceID != 0 && targetId == _ownerInstanceID) continue;
-                if (!_hitTargetIds.Add(targetId)) continue;
+                if (_hitTargetIds.Contains(targetId)) continue;
 
                 if (_bossAttackHitType != BossAttackHitType.Unknown)
                 {
@@ -225,13 +217,18 @@ namespace Core.Boss.AoE
                             forceDirection = transform.forward;
                         }
 
-                        bossHitReceiver.ReceiveBossAttackHit(
+                        BossAttackHitResolution resolution = bossHitReceiver.ReceiveBossAttackHit(
                             new BossAttackHitData(_damage, _bossAttackHitType, forceDirection));
+                        if (resolution != BossAttackHitResolution.Ignored)
+                        {
+                            _hitTargetIds.Add(targetId);
+                        }
                         continue;
                     }
                 }
 
                 damageable.TakeDamage(_damage);
+                _hitTargetIds.Add(targetId);
             }
         }
 
@@ -240,20 +237,20 @@ namespace Core.Boss.AoE
             if (radiusVisualRoot == null) return;
 
             Vector3 scale = radiusVisualRoot.localScale;
-            float diameterScale = _radius * radiusToScaleMultiplier;
-            scale.x = diameterScale;
-            scale.z = diameterScale;
+            float visualScale = _radius * ResolveRadiusScaleMultiplier();
+            scale.x = visualScale;
+            scale.z = visualScale;
             scale.y = _baseVisualScaleY;
             radiusVisualRoot.localScale = scale;
         }
 
         private void ApplyVisual(float fill01, Color color)
         {
-            if (telegraphRenderer == null) return;
+            if (warningRenderer == null) return;
 
             float clampedFill = Mathf.Clamp01(fill01);
 
-            telegraphRenderer.GetPropertyBlock(_propertyBlock);
+            warningRenderer.GetPropertyBlock(_propertyBlock);
             if (_supportsFillProperty)
             {
                 _propertyBlock.SetFloat(_fillPropertyId, clampedFill);
@@ -263,7 +260,7 @@ namespace Core.Boss.AoE
                 _propertyBlock.SetColor(_colorPropertyId, color);
                 _propertyBlock.SetColor(_alternateColorPropertyId, color);
             }
-            telegraphRenderer.SetPropertyBlock(_propertyBlock);
+            warningRenderer.SetPropertyBlock(_propertyBlock);
 
             if (_runtimeFallbackMaterial != null)
             {
@@ -272,13 +269,24 @@ namespace Core.Boss.AoE
 
             if (_useScaleFillFallback && radiusVisualRoot != null)
             {
-                float diameterScale = Mathf.Max(0.001f, _radius * radiusToScaleMultiplier * clampedFill);
+                float visualScale = Mathf.Max(0.001f, _radius * ResolveRadiusScaleMultiplier() * clampedFill);
                 Vector3 scale = radiusVisualRoot.localScale;
-                scale.x = diameterScale;
-                scale.z = diameterScale;
+                scale.x = visualScale;
+                scale.z = visualScale;
                 scale.y = _baseVisualScaleY;
                 radiusVisualRoot.localScale = scale;
             }
+        }
+
+        private float ResolveRadiusScaleMultiplier()
+        {
+            if (_runtimeFallbackRenderer != null &&
+                radiusVisualRoot == _runtimeFallbackRenderer.transform)
+            {
+                return Mathf.Max(0.001f, fallbackRadiusToScaleMultiplier);
+            }
+
+            return Mathf.Max(0.001f, radiusToScaleMultiplier);
         }
 
         private bool TryConfigureRendererCapabilities()
@@ -287,10 +295,10 @@ namespace Core.Boss.AoE
             _supportsColorProperty = false;
             _useScaleFillFallback = false;
 
-            if (telegraphRenderer == null) return false;
-            if (telegraphRenderer.GetType().Name.Contains("VFX")) return false;
+            if (warningRenderer == null) return false;
+            if (warningRenderer.GetType().Name.Contains("VFX")) return false;
 
-            Material sharedMaterial = telegraphRenderer.sharedMaterial;
+            Material sharedMaterial = warningRenderer.sharedMaterial;
             if (sharedMaterial == null) return false;
 
             _supportsFillProperty = sharedMaterial.HasProperty(_fillPropertyId);
@@ -303,7 +311,7 @@ namespace Core.Boss.AoE
         {
             if (_runtimeFallbackRenderer != null)
             {
-                telegraphRenderer = _runtimeFallbackRenderer;
+                warningRenderer = _runtimeFallbackRenderer;
                 radiusVisualRoot = _runtimeFallbackRenderer.transform;
                 return;
             }
@@ -327,7 +335,7 @@ namespace Core.Boss.AoE
             meshRenderer.reflectionProbeUsage = ReflectionProbeUsage.Off;
 
             _runtimeFallbackRenderer = meshRenderer;
-            telegraphRenderer = meshRenderer;
+            warningRenderer = meshRenderer;
             radiusVisualRoot = visual.transform;
             _useScaleFillFallback = true;
         }
@@ -341,7 +349,7 @@ namespace Core.Boss.AoE
 
             Material material = new Material(shader);
             material.renderQueue = (int)RenderQueue.Transparent;
-            ApplyFallbackMaterialColor(material, telegraphColor);
+            ApplyFallbackMaterialColor(material, warningColor);
 
             if (material.HasProperty("_Surface")) material.SetFloat("_Surface", 1f);
             if (material.HasProperty("_ZWrite")) material.SetFloat("_ZWrite", 0f);

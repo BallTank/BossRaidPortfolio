@@ -198,7 +198,7 @@ MonoBehaviour:
   lungeAttackSettings:
     damageMultiplier: 1.5
   projectileAttackSettings:
-    telegraphDuration: 0.3
+    warningDuration: 0.3
     damage: 7
     speed: 15
     lifetime: 4
@@ -206,9 +206,9 @@ MonoBehaviour:
     volleyInterval: 0.8
     homingStrength: 0.636
     homingDuration: 1.2
-    verticalFollowSpeed: 0.5
-    postFireRecoveryDuration: 0.12
-    exitNormalizedTime: 0.9
+    verticalFollowSpeed: 0.25
+    postFireRecoveryDuration: 0.5
+    exitNormalizedTime: 1
   projectilePool: {fileID: 746045139}
   projectileSpawnPoint: {fileID: 0}
   aoeAttackSettings:
@@ -220,9 +220,8 @@ MonoBehaviour:
     castRange: 24
     landDuration: 0.8
     spawnInterval: 0.7
-    impactSyncTime: 0
     damage: 10
-    telegraphDuration: 0.5
+    warningDuration: 1.2
     activeDuration: 0.3
     tickInterval: 0.25
     targetMask:
@@ -247,9 +246,9 @@ MonoBehaviour:
     fallbackProjectileHeight: 6
   enableChase: 1
   enableRotation: 1
-  enableBasicAttack: 1
-  enableLungeAttack: 1
-  enableProjectileAttack: 1
+  enableBasicAttack: 0
+  enableLungeAttack: 0
+  enableProjectileAttack: 0
   enableAoEAttack: 1
   ignorePlayerCollision: 1
   enableLungeRootMotionDebugLog: 1
@@ -293,7 +292,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 29f8d572df6abc242b243fcd31b4d868, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _maxHealth: 300
+  _maxHealth: 50
   _currentHealth: 0
   _isInvincible: 0
 --- !u!1 &311313666
@@ -2094,9 +2093,9 @@ MonoBehaviour:
     cancelStartTime: 0.3
   _damageCaster: {fileID: 762737816}
   stunDuration: 0.5
-  postStunInvulDuration: 1
-  pushbackDuration: 0.7
-  projectileCountTimer: 0.5
+  postStunInvulDuration: 2
+  pushbackDuration: 0.2
+  projectileCountTimer: 1.25
   _combatHUD: {fileID: 1850339021}
   _bossHealthForHUD: {fileID: 242866946}
   _playerDisplayName: Player

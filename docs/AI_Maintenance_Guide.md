@@ -97,3 +97,23 @@
 * 링크 타겟은 Windows 백슬래시 경로(`d:\...`) 대신 슬래시 절대경로(`/d:/...`)를 사용하고, 라인 점프는 `:라인`을 링크 텍스트가 아니라 링크 타겟 내부에 포함한다.
 * 에이전트 응답의 기본 파일 참조 표기는 하이퍼링크 대신 `Assets/...:라인` plain text 형식을 우선 사용한다.
 
+## 8. Code Reading Rule (6-Line Trace Card)
+
+코드 이해/버그 분석 요청에서는 전체 파일 정독보다 `6-Line Trace Card`를 우선 작성한다.
+
+### 8.1. Card Format (고정 6줄)
+1. `Trigger`: 무엇이 시작점인가
+2. `Entry`: 첫 호출 함수는 무엇인가
+3. `Gate`: 상태/타이머/조건 게이트는 무엇인가
+4. `Core Check`: 실제 물리/수학 판정은 무엇인가
+5. `Effect`: 데미지/상태 변경 호출은 무엇인가
+6. `Result`: 플레이어 체감 결과(HP, 스턴, 무시)는 무엇인가
+
+각 줄은 아래 형식을 사용한다.
+`[S#] Action | Condition | File:line | Key value`
+
+### 8.2. Writing Policy
+* 로직 설명은 쉬운 영어로 작성한다.
+* 한 카드에서 다루는 동작은 1개만 선택한다 (예: Attack4 AoE hit).
+* 카드 작성 후 필요한 줄만 상세 디버깅한다 (breakpoint/watch value).
+

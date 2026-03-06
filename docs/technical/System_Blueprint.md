@@ -300,7 +300,7 @@ classDiagram
 
     class ProjectileAttackPattern {
         -ProjectileAttackSettings _settings
-        -float _telegraphTimer
+        -float _warningTimer
         -float _volleyTimer
         -float _postFireRecoveryTimer
         -int _shotsFired
@@ -431,6 +431,9 @@ classDiagram
 * **Boss Chase Hysteresis**: 단일 임계값 대신 "현재 페이즈에서 활성화된 패턴 중 최대 사거리"(해제)와 `최대 사거리 + ChaseReengageBuffer`(재진입) 이중 임계값을 사용해 경계 왕복 지터를 완화한다.
 * **Player Stun Hit Classification Rule**: 플레이어 피격은 `BossAttackHitType` 메타데이터로 분기한다. `Attack1`은 일반 피격(데미지+Hit), `Attack2`는 스턴 전용(무데미지), `Attack3/Attack4 Projectile`은 `Projectile Count Timer` 내 1타 일반 피격/2타 스턴으로 처리한다.
 * **Player Stun Invulnerability Rule**: 스턴 중 + 스턴 종료 후 `postStunInvulDuration` 동안 플레이어는 무적이며, 이 구간에는 추가 스턴 재트리거를 허용하지 않는다. 후속 무적 시각 피드백은 `BlinkWhiteEffect` 컴포넌트가 담당하며, `_BlinkWhite` 파라미터를 통해 흰색 점멸을 출력한다(`_BlinkWhite=1` 구간은 조명 영향 무시).
+* **Attack4 Warning Single-Source Rule**: Pattern 4 AoE의 시간 동기화 기준은 `warningDuration` 단일 값이다. circle warning 종료(fully red 시작)와 fire projectile impact marker 시간은 같은 `warningDuration`을 사용해야 한다.
+* **Attack4 Fully-Red One-Hit Rule**: Pattern 4 AoE circle은 warning 종료(fully red) 이후 active window 동안 반경 판정을 수행한다. 각 circle은 같은 target에게 최대 1회만 타격하며, fully red 구간에 늦게 진입한 target도 1회 타격 대상이 된다. `BossAttackHitResolution.Ignored`(invul) 결과는 소비 처리하지 않는다.
+* **Attack4 Visual Warning Bias Rule**: AoE runtime fallback 디스크는 UX 경고 강화를 위해 시각 반경을 데미지 반경보다 약간 크게 표시할 수 있다. 현재 기본값은 `fallbackRadiusToScaleMultiplier = 1.2`이며, 의도는 "데미지보다 넓게 경고"다.
 
 
 * **Optimization**:
@@ -479,7 +482,7 @@ classDiagram
 | **Boss Sensors** | ✅ Done | `IsTargetInDetectionRange`(XZ 거리 기반) 단일 규칙으로 Idle/Searching 전투 진입을 처리한다. 장애물 LOS 센서는 제거됨 |
 | **Boss Navigation** | ✅ Done | `MoveTo` (추적 이동) 및 `RotateTowards` (회전) 로직 + AoE 공중 연출 중 Locomotion 시각 잠금 가드 + `ChaseReengageBuffer` 기반 히스테리시스 추적 |
 | **Boss Visuals** | ✅ Done | 구조 분리 및 Dragon Asset(Animator/BlendTree) 통합 완료. `PlayFlyForward` 폴백을 비행 계열로 정리해 Walk 혼입 방지. |
-| **Boss Combat** | 🔃 progress | `Pattern 1`(Basic), `Pattern 2`(Lunge), `Pattern 3`(Projectile: Flame Attack + Homing + Vertical Follow + VFX create/hit + hitReturnDelay + postFireRecovery/exitNormalizedTime) 완료. 패턴별 공격 사거리 분리(`Basic/Lunge/Projectile/AoE`) 및 거리 기반 패턴 후보 필터링, 최대 사거리 기반 추적 히스테리시스 반영. Basic 사거리 기준점은 `basicAttackRangeOrigin`(기본 씬: `HeadDamageCasterPlace`)으로 분리되었고, `basicAttackRange`-`HeadDamageCaster.radius` 동기화로 판정 반경을 일치시켰다. Lunge는 루트모션 브리지(`OnAnimatorMove -> ApplyLungeRootMotion`) + 시작 방향 고정 경로를 사용한다. 2026-03-04 기준으로 실험 9 이동량 분포 보정(`midBoost/lateReduce` 구간 배수)과 `scale` 로그 추적이 추가되었으며, 판정/종료 타이밍은 고정 비율(`0.8/1.0`)을 유지한다. Phase1에서는 Basic/Lunge 동시 충족 시 Basic 우선 규칙을 적용한다. `Pattern 4`(AoE)는 진행 중이다. |
+| **Boss Combat** | 🔃 progress | `Pattern 1`(Basic), `Pattern 2`(Lunge), `Pattern 3`(Projectile: Flame Attack + Homing + Vertical Follow + VFX create/hit + hitReturnDelay + postFireRecovery/exitNormalizedTime) 완료. 패턴별 공격 사거리 분리(`Basic/Lunge/Projectile/AoE`) 및 거리 기반 패턴 후보 필터링, 최대 사거리 기반 추적 히스테리시스 반영. Basic 사거리 기준점은 `basicAttackRangeOrigin`(기본 씬: `HeadDamageCasterPlace`)으로 분리되었고, `basicAttackRange`-`HeadDamageCaster.radius` 동기화로 판정 반경을 일치시켰다. Lunge는 루트모션 브리지(`OnAnimatorMove -> ApplyLungeRootMotion`) + 시작 방향 고정 경로를 사용한다. 2026-03-04 기준으로 실험 9 이동량 분포 보정(`midBoost/lateReduce` 구간 배수)과 `scale` 로그 추적이 추가되었으며, 판정/종료 타이밍은 고정 비율(`0.8/1.0`)을 유지한다. Phase1에서는 Basic/Lunge 동시 충족 시 Basic 우선 규칙을 적용한다. `Pattern 4`(AoE)는 fully red active window 반경 판정 + circle당 target 1회 타격 규칙으로 진행 중이다(늦게 진입한 target 포함, invul ignore는 소비하지 않음). |
 | **Attack2 PreLaunch Ground Lock** | 🔃 progress | `LungeAttackPattern` 구간 분기(`Windup/PreLaunch/Launch/Airborne/Land`) 및 `BossController` ground lock/stepOffset 제어, 마커 큐 누적/소비(`PreLaunchStart/Launch/Land`) + `normalizedTime` 폴백까지 코드 반영 완료. `launch/land` 정규화 시점은 `0.98` 상한으로 강제해 종료 전 Launch 미진입 구성을 차단하고, Relay의 `AnimEventSynth`로 이벤트 누락 시 동일 마커를 합성한다. 루트모션 적용은 Animator `deltaPosition` 기반 단일 추종을 유지한다. `[Attack2Landing]` 로그는 `MarkerPathWarn`, `GroundSnapMiss`, `GroundSnapSkipMaxDistance`, `RootMotionMove/RootMotionRelayProbe`, `SpatialProbe(player/boss/visual/red 좌표)`를 포함해 실패 원인/좌표 경로를 추적한다. Unity 실플레이 회귀 검증(머리 탑승/발 꺼짐/착지 정렬)은 남아 있다. |
 | **Attack2 Inspector & Gizmo UX** | ⚠ review | 인스펙터/기즈모 가시성 개선은 완료됐지만, 핵심 이동 증상(플레이어 근접 도약 실패, 원위치 당김)은 해결하지 못했다. 다음 단계에서 이동 로직을 마지막 안정 커밋 기준으로 회귀한 뒤 필요 최소 UI/디버그만 재적용한다. |
 | **Attack2 Repro Harness (Test Scene)** | ✅ Done | `GamePlayScene_TestResult` 로드 시 `BossAttack2ReproHarness`를 자동 생성해 플레이어를 보스 전방 재현 위치로 고정한다. 수동 착지지점 배치 없이 Attack2 위로 올라감 회귀를 반복 재현할 수 있다. |

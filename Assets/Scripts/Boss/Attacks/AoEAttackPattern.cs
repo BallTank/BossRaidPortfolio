@@ -29,7 +29,7 @@ namespace Core.Boss.Attacks
         private float _phaseTimer;
         private float _spawnTimer;
         private int _spawnedCount;
-        private float _impactSyncTime;
+        private float _warningDuration;
         private Vector3 _lastTargetPosition;
         private bool _hasLastTargetPosition;
 
@@ -60,10 +60,7 @@ namespace Core.Boss.Attacks
             }
             UpdateTargetPositionHistory(controller);
 
-            _impactSyncTime = _settings.impactSyncTime > 0f
-                ? _settings.impactSyncTime
-                : _settings.telegraphDuration;
-            _impactSyncTime = Mathf.Max(0.05f, _impactSyncTime);
+            _warningDuration = Mathf.Max(0.05f, _settings.warningDuration);
 
             _spawnedCount = 0;
             _spawnTimer = 0f;
@@ -182,12 +179,11 @@ namespace Core.Boss.Attacks
             AoECircleController circle = AcquireCircle();
             if (circle == null) return;
 
-            circle.StartTelegraph(
+            circle.StartWarning(
                 impactPoint,
                 _settings.radius,
-                _impactSyncTime,
+                _warningDuration,
                 _settings.activeDuration,
-                _settings.tickInterval,
                 _settings.damage,
                 controller.gameObject.GetInstanceID(),
                 _settings.targetMask,
@@ -237,7 +233,7 @@ namespace Core.Boss.Attacks
             projectile.InitializeImpactMarker(
                 startPos,
                 impactPoint,
-                _impactSyncTime,
+                _warningDuration,
                 controller.gameObject.GetInstanceID());
         }
 

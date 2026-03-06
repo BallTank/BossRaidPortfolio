@@ -57,6 +57,9 @@
 * **Progress Log Reference File (진행 로그 기준 파일)**: 문서 동기화의 근거로 선택한 일자 로그 파일. 형식은 `docs/Progress_Log/YYYY-MM-DD.md`를 사용한다.
 * **Progress Log Tracker Pass (진행 로그 추적 패스)**: `System_Blueprint`/`Technical_Glossary`를 갱신할 때 `Progress_Log`의 항목(`오늘 반영한 작업`, `체크리스트 업데이트`, `맥락노트`, `기술적 고려`)을 근거로 매핑 검증하는 절차.
 * **Sync Trace Note (동기화 추적 메모)**: 완료 보고에 남기는 근거 문장. 권장 형식은 `참조 로그: docs/Progress_Log/YYYY-MM-DD.md`.
+* **6-Line Trace Card (6줄 추적 카드)**: 코드 읽기/버그 분석 시 동작 1개를 `Trigger -> Entry -> Gate -> Core Check -> Effect -> Result` 6단계로 고정 기록하는 규칙.
+* **Trace Line Format (추적 라인 형식)**: 카드 각 줄을 `[S#] Action | Condition | File:line | Key value` 형태로 쓰는 기록 포맷.
+* **Single-Behavior Scope (단일 동작 범위)**: 한 Trace Card에 서로 다른 기능을 섞지 않고, 하나의 동작(예: Attack4 AoE hit)만 다루는 원칙.
 * **Field-First Member Layout (필드 우선 멤버 배치)**: 클래스 가독성과 유지보수를 위해 직렬화/런타임 필드를 먼저 선언하고, `OnValidate` 등 메서드는 필드 선언 이후에 배치하는 구성 규칙.
 * **Planar Distance Gate (평면 거리 게이트)**: Boss의 상태 전환 거리 판정에서 높이(Y)를 제외하고 XZ 평면 거리만 사용해 점프/지형 높이 차로 인한 오판정을 줄이는 규칙.
 * **Pattern Attack Range (패턴별 공격 사거리)**: `BossController`가 공격 패턴마다 별도 사거리(`Basic`, `Lunge`, `Projectile`, `AoE`)를 가지는 규칙. 공격 패턴 선택 시 현재 거리에서 유효한 패턴만 후보로 포함한다.
@@ -98,6 +101,12 @@
 * **IDamageable**: 대상을 특정하지 않고 데미지 명령(`TakeDamage`)만 내릴 수 있게 해주는 추상화 인터페이스.
 * **IBossAttackHitReceiver**: 보스 공격의 종류/힘 방향 메타데이터(`BossAttackHitData`)를 수신해, 대상(현재는 플레이어)이 피격 반응(일반 피격/스턴/무시)을 직접 판정하도록 하는 인터페이스.
 * **BossAttackHitType**: 보스 공격 분류 열거형. `Attack1`, `Attack2`, `Attack3Projectile`, `Attack4Projectile`로 피격 처리 규칙을 분기한다.
+* **Warning Phase (경고 구간)**: 공격이 실제로 적용되기 전, 원/이펙트로 위험 구역을 보여주는 준비 구간. 현재 코드에서는 `warningDuration`으로 시간을 설정한다.
+* **Warning Single Source Sync**: Attack4에서 경고 종료와 fire 착지 타이밍을 각각 따로 설정하지 않고, `warningDuration` 하나로 동시에 제어하는 규칙.
+* **Attack4 Fully-Red Active Window**: AoE circle이 warning을 끝내고 fully red가 된 뒤 유지되는 판정 구간. 이 구간에서 반경 내 대상에게만 피해를 적용한다.
+* **Fallback Radius Scale Multiplier**: AoE runtime fallback 디스크 반경 스케일 배수. 현재 기본값 `1.2`는 물리 데미지 반경보다 경고 시각을 약간 크게 보여 UX 불공정 체감을 줄이기 위한 보수적 설정이다.
+* **Circle One-Hit Registry (`HashSet<int>`)**: AoE circle 단위로 이미 타격한 대상 ID를 기억하는 집합. 같은 circle에서 같은 대상은 1회만 맞도록 보장한다.
+* **Invul Ignore Non-Consume**: `ReceiveBossAttackHit` 결과가 `Ignored`일 때 그 시도를 hit consumed로 확정하지 않는 규칙. invul이 끝나면 active window 안에서 1회 피격 기회를 다시 평가한다.
 * **Projectile Count Timer**: 플레이어가 투사체 피격 누적을 판정하는 짧은 타이머 창. 타이머 내 1타는 일반 피격, 2타 이상은 스턴으로 승격한다.
 * **StunState**: 플레이어 스턴 전용 상태. 입력 기반 행동(이동/공격/스킬/점프/상호작용/회전)을 차단하고, 피격 방향 기반 푸시백과 스턴 타이머를 처리한다.
 * **Post-Stun Invulnerability**: 스턴 종료 후 적용되는 후속 무적 구간. 데미지/재스턴을 차단하며, `BlinkWhiteEffect`가 점멸 표현(기본 주기 0.2s)을 담당한다.

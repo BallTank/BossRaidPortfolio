@@ -274,14 +274,17 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
     private BossAttackHitResolution HandleProjectileHit(in BossAttackHitData hitData)
     {
+        bool didDamage = ApplyNormalDamageAndHitReaction(hitData.Damage);
+        if (!didDamage)
+        {
+            return BossAttackHitResolution.Ignored;
+        }
+
         if (_projectileCountTimerLeft <= 0f)
         {
             _projectileHitCount = 1;
             _projectileCountTimerLeft = projectileCountTimer;
-
-            return ApplyNormalDamageAndHitReaction(hitData.Damage)
-                ? BossAttackHitResolution.Damaged
-                : BossAttackHitResolution.Ignored;
+            return BossAttackHitResolution.Damaged;
         }
 
         _projectileHitCount += 1;
@@ -289,10 +292,10 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         {
             BeginStun(hitData.ForceDirection);
             ResetProjectileHitCounter();
-            return BossAttackHitResolution.StunOnly;
+            return BossAttackHitResolution.Damaged;
         }
 
-        return BossAttackHitResolution.Ignored;
+        return BossAttackHitResolution.Damaged;
     }
 
     private bool ApplyNormalDamageAndHitReaction(int damage)
