@@ -78,8 +78,24 @@ crashlytics-build.properties
 .vscode/
 .gemini/
 
-/[Aa]ssets/CombatGirlsCharacterPack/
+/[Aa]ssets/CombatGirlsCharacterPack/*
+!/Assets/CombatGirlsCharacterPack/School_Katana_Girl/
+!/Assets/CombatGirlsCharacterPack/School_Katana_Girl.meta
+!/Assets/CombatGirlsCharacterPack/UI_&_environmental/
+!/Assets/CombatGirlsCharacterPack/UI_&_environmental.meta
 /[Aa]ssets/CombatGirlsCharacterPack.meta
+/Assets/CombatGirlsCharacterPack/School_Katana_Girl/*
+!/Assets/CombatGirlsCharacterPack/School_Katana_Girl/Animations/
+!/Assets/CombatGirlsCharacterPack/School_Katana_Girl/Animations/**
+!/Assets/CombatGirlsCharacterPack/School_Katana_Girl/Materials/
+!/Assets/CombatGirlsCharacterPack/School_Katana_Girl/Materials/**
+!/Assets/CombatGirlsCharacterPack/School_Katana_Girl/Models/
+!/Assets/CombatGirlsCharacterPack/School_Katana_Girl/Models/**
+!/Assets/CombatGirlsCharacterPack/School_Katana_Girl/Texture/
+!/Assets/CombatGirlsCharacterPack/School_Katana_Girl/Texture/**
+/Assets/CombatGirlsCharacterPack/UI_&_environmental/*
+!/Assets/CombatGirlsCharacterPack/UI_&_environmental/TextMesh Pro/
+!/Assets/CombatGirlsCharacterPack/UI_&_environmental/TextMesh Pro/**
 /[Aa]ssets/FourEvilDragonsPBR/*
 !/Assets/FourEvilDragonsPBR/Prefab/
 /[Aa]ssets/FourEvilDragonsPBR/Prefab/*
@@ -100,7 +116,6 @@ crashlytics-build.properties
 /[Aa]ssets/[Ff]ree [Ff]ire [Vv][Ff][Xx] [Uu][Rr][Pp]/
 /[Aa]ssets/[Ff]ree [Ff]ire [Vv][Ff][Xx] [Uu][Rr][Pp].meta
 
-# TextMesh Pro Essentials auto-generated local assets
 /[Aa]ssets/TextMesh Pro/
 /[Aa]ssets/TextMesh Pro.meta
 
