@@ -133,7 +133,7 @@
                 {
                     "name": "",
                     "id": "3da02e24-4509-4f34-877f-ef3a31df4cb7",
-                    "path": "<Keyboard>/leftShift",
+                    "path": "<Keyboard>/space",
                     "interactions": "",
                     "processors": "",
                     "groups": "",
@@ -144,7 +144,7 @@
                 {
                     "name": "",
                     "id": "7dcb7527-35c8-4bcd-97c6-be0f0910a421",
-                    "path": "<Keyboard>/space",
+                    "path": "<Keyboard>/f10",
                     "interactions": "",
                     "processors": "",
                     "groups": "",

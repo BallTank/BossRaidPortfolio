@@ -9,6 +9,7 @@ namespace Core.Player.States
         private float _verticalVelocity;
         private bool _wasDashPressed;
         private bool _wasJumpPressed;
+        private bool _wasAttackPressed;
 
         public MoveState(PlayerController controller) : base(controller) { }
 
@@ -27,6 +28,7 @@ namespace Core.Player.States
             }
             _wasDashPressed = false;
             _wasJumpPressed = false;
+            _wasAttackPressed = false;
 
             // Animation: Locomotion Blend Tree (Speed = 0 for Idle)
             if (Controller.Animator != null)
@@ -47,13 +49,15 @@ namespace Core.Player.States
                 Controller.Animator.SetFloat(PlayerController.ANIM_PARAM_SPEED, input.moveDir.magnitude);
 
             // Attack Transition (지면/공중 모두 가능)
-            if (input.HasFlag(InputFlag.Attack))
+            bool attackPressed = input.HasFlag(InputFlag.Attack);
+            if (attackPressed && !_wasAttackPressed)
             {
                 Controller.StateMachine.ChangeState(Controller.AttackState);
                 return;
             }
+            _wasAttackPressed = attackPressed;
 
-            // [DISABLED] Jump Transition - 애니메이션 미구현으로 비활성화
+            // [DISABLED] Jump Transition - 현재 게임 디자인에서 점프 비활성화 (입력 키는 F10으로 보존)
             // bool jumpPressed = input.HasFlag(InputFlag.Jump);
             // if (jumpPressed && !_wasJumpPressed && Controller.CharController.isGrounded)
             // {

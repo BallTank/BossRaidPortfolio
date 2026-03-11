@@ -1,7 +1,7 @@
-# Boss AI 알고리즘 설계: 패턴 1 (추적 및 감지)
+# Boss AI 알고리즘 설계
 
 ## 1. 개요 (Overview)
-본 문서는 보스 몬스터의 추적(Tracking) 및 전투 개시(Combat Engagement) 로직에 대한 기술 설계서입니다. 플레이어와의 거리, 시야(Line of Sight), 그리고 피격 이벤트에 따라 **대기(Idle), 전투(Combat), 수색(Searching)** 상태를 유기적으로 전환하는 **유한 상태 머신(FSM)** 구조를 채택하였습니다.
+본 문서는 보스 몬스터의 전체 AI 설계서입니다. 추적(Tracking), 전투 개시(Combat Engagement), 공격 패턴(Attack Patterns), 피격 구조(Hit Structure) 등 보스와 관련된 모든 기술 설계를 포함합니다. 플레이어와의 거리, 시야(Line of Sight), 그리고 피격 이벤트에 따라 **대기(Idle), 전투(Combat), 수색(Searching)** 상태를 유기적으로 전환하는 **유한 상태 머신(FSM)** 구조를 채택하였습니다.
 
 ## 2. 핵심 속성 (Core Properties)
 
@@ -14,37 +14,33 @@
 
 ## 3. 상태 머신 흐름도 (State Machine Flow)
 ```mermaid
-stateDiagram-v2
-    [*] --> Idle
+flowchart TD
+    Start(( )) --> Idle
 
-    state Idle {
-        [*] --> Waiting
-        Waiting --> Detect: 거리 < 10m
-        Detect --> Combat: 시야 확보됨 (Raycast)
-    }
+    subgraph Idle
+        Waiting -->|"거리 < 10m"| Detect
+        Detect -->|"시야 확보 (Raycast)"| Combat_Entry
+    end
 
-    state Combat {
-        [*] --> Chasing
-        Chasing --> Attacking: 거리 < 2.5m
-        Attacking --> Chasing: 공격 종료
-        Chasing --> Searching: 거리 > 10m (도망감)
-    }
+    subgraph Combat
+        Combat_Entry[Chasing] -->|"거리 < 2.5m"| Attacking
+        Attacking -->|"공격 종료"| Combat_Entry
+        Combat_Entry -->|"거리 > 10m (도망감)"| Search_Entry
+    end
 
-    state Searching {
-        [*] --> MoveToLastKnown
-        MoveToLastKnown --> Scanning: 5초 대기
-        Scanning --> Idle: 시간 초과
-        Scanning --> Combat: 플레이어 재발견
-    }
+    subgraph Searching
+        Search_Entry[MoveToLastKnown] -->|"5초 대기"| Scanning
+        Scanning -->|"시간 초과"| Idle
+        Scanning -->|"플레이어 재발견"| Combat_Entry
+    end
 
-    state Dead {
-        [*] --> DieAnimation
-        DieAnimation --> [*]
-    }
+    subgraph Dead
+        DieAnimation --> End(( ))
+    end
 
-    Idle --> Dead: HP <= 0
-    Combat --> Dead: HP <= 0
-    Searching --> Dead: HP <= 0
+    Idle -->|"HP <= 0"| DieAnimation
+    Combat -->|"HP <= 0"| DieAnimation
+    Searching -->|"HP <= 0"| DieAnimation
 ```
 
 ## 4. 상태 머신 로직 (State Machine Logic)
@@ -119,3 +115,84 @@ stateDiagram-v2
 ### 6.2. Event-Driven Interaction (`Health.OnDie`)
 *   **Decoupling**: 보스 AI가 매 프레임 `if (hp <= 0)`을 체크하지 않습니다.
 *   **Efficiency**: 오직 사망 사건이 발생했을 때만 로직이 실행되므로 성능 낭비가 없습니다.
+
+## 7. 구현된 공격 패턴 (Implemented Attack Patterns)
+
+### 7.1. Basic Attack (기본 공격)
+*   **동작**: 제자리에서 플레이어를 향해 이빨로 무는 근접 공격.
+*   **로직**:
+    1.  `HeadDamageCaster` 활성화.
+    2.  `attackDamage` 적용.
+    3.  `attackDuration` 동안 대기 후 종료.
+*   **DamageCaster 배치 (Bone-Synced Hitbox)**:
+    ```
+    Dragon Model → Head Bone
+     └── HeadDamageCasterPlace (Transform)  ← DamageCaster._castCenter
+    ```
+    Head Bone의 자식 오브젝트(`HeadDamageCasterPlace`)를 생성하여 `DamageCaster`의 `castCenter`로 할당합니다.
+    이로 인해 별도의 좌표 계산 없이도, 물기 애니메이션 시 머리가 앞으로 나갈 때 공격 판정 범위(Sphere)가 물리적으로 동기화되어 함께 이동합니다.
+    (기존에는 머리가 나가도 판정은 몸통 쪽에 머무는 문제가 있었음)
+
+### 7.2. Claw Attack (할퀴기 돌진)
+*   **동작**: 플레이어를 향해 회전 후, 짧은 거리를 도약(Rush)하여 발톱으로 할퀴는 공격.
+*   **전략 패턴(Strategy)**: `IBossAttackPattern`을 구현하여 `BossAttackState`의 수정 없이 추가됨.
+*   **애니메이션 동기화 (Animation Sync)**:
+    *   `normalizedTime`을 사용하여 애니메이션 진행률에 따라 이동과 종료를 정밀하게 제어합니다.
+    *   단순 시간 대기(`WaitForSeconds`)가 아닌, 실제 애니메이션 재생 길이에 맞춰 로직이 실행되므로 애니메이션 속도가 변해도 안전합니다.
+*   **설정(`ClawAttackSettings`)**:
+    *   `damageMultiplier`: 기본 공격력의 1.5배.
+    *   `rushSpeed`: 도약 속도.
+    *   `rushPhaseRatio`: 애니메이션의 30%(`0.3`) 지점까지만 돌진 이동 적용.
+    *   `exitPhaseRatio`: 애니메이션의 50%(`0.5`) 지점에서 강제 종료하여 복귀 모션을 생략.
+
+---
+
+## 8. 피격 구조 (Hit Structure — Compound Collider)
+
+Dragon 모델은 단일 Mesh Collider 대신 **Compound Collider**(복합 충돌체) 방식을 사용합니다.
+
+### 8.1. 구조 (Bone-Synced Hierarchy)
+물리 판정용 콜라이더를 모델의 본(Bone) 구조 아래에 직접 배치하여, 애니메이션에 따른 위치 변화를 자동으로 추적합니다.
+
+```
+Boss (Root)
+├── CharacterController       ← 이동 전용 (Physics)
+├── Health                    ← HP 관리 (본체)
+└── Dragon Model (Visual)
+    └── Root / Pelvis / ...
+        ├── Head Bone
+        │   └── BossHitBox (Head) ← CapsuleCollider (Trigger)
+        ├── Body Bone
+        │   └── BossHitBox (Body) ← CapsuleCollider (Trigger)
+        └── Tail Bone
+            └── BossHitBox (Tail) ← CapsuleCollider (Trigger)
+```
+
+이 구조 덕분에 도약(Rush)이나 물기 공격 시 모델이 크게 움직여도 판정 영역이 완벽하게 동기화됩니다.
+
+### 8.2. 데이터 흐름
+```
+DamageCaster (Player Sword)
+  → OverlapSphereNonAlloc으로 BossHitBox(IDamageable) 감지
+    → BossHitBox.TakeDamage(damage)
+      → _ownerHealth.TakeDamage(damage)  ← Health(본체)로 위임
+```
+
+### 8.3. 중복 피격 방지
+`DamageCaster`가 한 프레임에 Head, Body, Tail 콜라이더를 모두 감지하더라도, `BossHitBox.Owner`(= 본체 Health)의 `InstanceID`를 추적하여 **한 번의 공격에 한 번의 데미지만** 적용됩니다.
+
+---
+
+## 9. 디버그 설정 (Feature Toggles)
+
+개발 중 특정 기능을 인스펙터에서 개별적으로 켜고 끌 수 있도록 `BossController`에 다음 토글이 구현되어 있습니다.
+
+| 토글 | 기본값 | 설명 |
+|------|--------|------|
+| `enableChase` | ✅ On | 보스가 플레이어를 추적하여 이동 |
+| `enableRotation` | ✅ On | 보스가 타겟 방향으로 회전 |
+| `enableBasicAttack` | ✅ On | Basic Attack 패턴 사용 허용 |
+| `enableClawAttack` | ✅ On | Claw Attack 패턴 사용 허용 |
+
+*   **사용 목적**: 특정 기능 없이 다른 기능만 테스트하고 싶을 때 유용. 예) 공격만 끄고 추적 로직 디버깅.
+*   **패턴 선택 로직**: 둘 다 활성화 시 50% 확률로 랜덤 선택. 하나만 활성화 시 해당 패턴만 실행.

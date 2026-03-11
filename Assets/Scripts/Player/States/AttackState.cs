@@ -154,6 +154,8 @@ namespace Core.Player.States
 
         public override void Exit()
         {
+            // 상태가 비정상 종료되어도 공격 판정이 남지 않도록 강제 종료한다.
+            Controller.OnHitEnd();
             _comboIndex = 0;
             _reserveNextCombo = false;
         }

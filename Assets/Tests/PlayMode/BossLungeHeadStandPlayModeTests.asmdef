@@ -1,0 +1,10 @@
+{
+    "name": "BossLungeHeadStandPlayModeTests",
+    "references": [],
+    "optionalUnityReferences": [
+        "TestAssemblies"
+    ],
+    "defineConstraints": [],
+    "includePlatforms": [],
+    "excludePlatforms": []
+}

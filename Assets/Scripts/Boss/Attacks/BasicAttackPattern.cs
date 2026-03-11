@@ -21,10 +21,10 @@ namespace Core.Boss.Attacks
             }
 
             // 공격 애니메이션 재생
-            controller.Visual?.TriggerAttack();
+            controller.Visual?.PlayAttack();
 
             // DamageCaster 활성화
-            controller.DamageCaster?.EnableHitbox(controller.AttackDamage);
+            controller.HeadDamageCaster?.EnableHitbox(controller.AttackDamage);
 
             _timer = controller.AttackDuration;
         }
@@ -38,7 +38,7 @@ namespace Core.Boss.Attacks
         public void Exit(BossController controller)
         {
             // 히트박스 안전 정리
-            controller.DamageCaster?.DisableHitbox();
+            controller.HeadDamageCaster?.DisableHitbox();
         }
     }
 }

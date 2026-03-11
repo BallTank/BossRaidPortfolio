@@ -19,6 +19,9 @@ namespace Core.Combat
         public event Action OnDeath;
 
         public bool IsDead => _currentHealth <= 0;
+        public int MaxHealth => _maxHealth;
+        public int CurrentHealth => _currentHealth;
+        public float HealthRatio => _maxHealth > 0 ? (float)_currentHealth / _maxHealth : 0f;
 
         private void Awake()
         {
@@ -28,6 +31,7 @@ namespace Core.Combat
         public void TakeDamage(int damage)
         {
             if (IsDead || _isInvincible) return;
+            if (damage <= 0) return;
 
             _currentHealth -= damage;
             Debug.Log($"{gameObject.name} took {damage} damage. HP: {_currentHealth}/{_maxHealth}");

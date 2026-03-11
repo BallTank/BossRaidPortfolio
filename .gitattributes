@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+Assets/CombatGirlsCharacterPack/**/*.fbx filter=lfs diff=lfs merge=lfs -text
+Assets/FourEvilDragonsPBR/**/*.fbx filter=lfs diff=lfs merge=lfs -text
+Assets/FourEvilDragonsPBR/Texture/DragonUsurper/Red/*.png filter=lfs diff=lfs merge=lfs -text
+Assets/UNI[[:space:]]VFX/**/*.fbx filter=lfs diff=lfs merge=lfs -text

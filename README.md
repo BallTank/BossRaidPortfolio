@@ -1,4 +1,4 @@
-# ⚔️ Boss Raid Action (Project Portfolio)
+﻿# ⚔️ Boss Raid Action (Project Portfolio)
 
 ![Gameplay Preview](https://via.placeholder.com/800x400?text=Please+Insert+Gameplay+GIF+Here)
 > **"Solid Architecture, Zero-GC, Network-Ready Input"**
@@ -66,9 +66,10 @@ Assets/Scripts/Core
 | --- | --- |
 | 🏗️ **[System Blueprint](docs/System_Blueprint.md)** | 전체 클래스 다이어그램 및 시스템 아키텍처 설계도 |
 | 📖 **[Coding Standard](docs/Coding_Standard.md)** | 프로젝트 코딩 컨벤션 및 최적화 가이드라인 |
-| 📅 **[Progress Log](docs/Progress_Log.md)** | 일일 개발 일지 및 주요 마일스톤 달성 현황 |
+| 📅 **[Progress Log](docs/Progress_Log/README.md)** | 일일 개발 일지 및 주요 마일스톤 달성 현황 |
 
 ## 📧 Contact
 
 *   **이름**: 이종휘
-*   **Email**: [osmf12@naver.com]
+*   **Email**: osmf12@naver.com
+
