@@ -25,8 +25,8 @@ namespace Core.CameraSystem
         [Tooltip("Camera movement basis transform. If empty, runtime creates one.")]
         [SerializeField] private Transform cameraRoot;
 
-        [SerializeField, HideInInspector] private float positionSmoothTime = 0.08f;
-        [SerializeField, HideInInspector] private float rotationSmoothTime = 0.06f;
+        [SerializeField, HideInInspector] private float positionSmoothTime = 0.01f;
+        [SerializeField, HideInInspector] private float rotationSmoothTime = 0.01f;
 
         [Header("Follow")]
         [Tooltip("Height offset from follow target position.")]
