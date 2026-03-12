@@ -191,18 +191,18 @@ MonoBehaviour:
   aoeAttackRange: 39.87
   chaseReengageBuffer: 1
   searchDuration: 5
-  attackDamage: 2
+  attackDamage: 4
   attackDuration: 1
-  attackCooldown: 4
+  attackCooldown: 2
   _headDamageCaster: {fileID: 375716743}
   _lungeDamageCaster: {fileID: 1119454101}
   lungeAttackSettings:
-    damageMultiplier: 1.5
+    damageMultiplier: 30
     damageCastNormalizedWindow: {x: 0.34, y: 0.8}
   projectileAttackSettings:
     warningDuration: 0.3
-    damage: 7
-    speed: 15
+    damage: 6
+    speed: 10
     lifetime: 4
     volleyCount: 7
     volleyInterval: 0.8
@@ -222,7 +222,7 @@ MonoBehaviour:
     castRange: 24
     landDuration: 0.8
     spawnInterval: 0.7
-    damage: 10
+    damage: 20
     warningDuration: 1.2
     activeDuration: 0.3
     tickInterval: 0.25
@@ -253,7 +253,7 @@ MonoBehaviour:
   enableProjectileAttack: 1
   enableAoEAttack: 1
   ignorePlayerCollision: 1
-  enableLungeRootMotionDebugLog: 1
+  enableLungeRootMotionDebugLog: 0
   lungeRootMotionDebugLogInterval: 0.01
   showPhaseDebugLabel: 0
 --- !u!143 &242866945
@@ -294,7 +294,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 29f8d572df6abc242b243fcd31b4d868, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _maxHealth: 100
+  _maxHealth: 600
   _currentHealth: 0
   _isInvincible: 0
 --- !u!1 &311313666
