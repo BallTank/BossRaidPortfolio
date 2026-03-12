@@ -48,6 +48,12 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     [SerializeField] private string _playerDisplayName = "Player";
     [SerializeField] private string _bossDisplayName = "Dragon";
 
+    [Header("Attack2 Debug")]
+    [SerializeField] private bool enableAttack2DebugLog = true;
+    [SerializeField] private float attack2DebugTraceDuration = 0.8f;
+    [SerializeField, Range(0.01f, 0.5f)] private float attack2DebugLogInterval = 0.05f;
+    [SerializeField] private float attack2DebugNearDistance = 2.5f;
+
     // Animation Constants
     public const string ANIM_PARAM_SPEED = "Speed";
     public const string ANIM_STATE_LOCOMOTION = "Locomotion";
@@ -85,6 +91,12 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     private bool _suppressDamageTakenReaction;
     private float _latestLookYaw;
     private float _latestLookPitch;
+    private BossAttackHitType _activeStunSourceHitType;
+    private float _attack2DebugTraceTimer;
+    private float _nextAttack2DebugLogTime;
+    private float _nextAttack2StunDebugLogTime;
+    private bool _wasAttack2NearLastFrame;
+    private Core.Boss.BossController _attack2DebugBoss;
 
     // Public Properties for States
     public float MoveSpeed => moveSpeed;
@@ -125,6 +137,9 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         if (postStunInvulDuration < 0f) postStunInvulDuration = 0f;
         if (pushbackDuration < 0f) pushbackDuration = 0f;
         if (projectileCountTimer < 0f) projectileCountTimer = 0f;
+        if (attack2DebugTraceDuration < 0f) attack2DebugTraceDuration = 0f;
+        if (attack2DebugLogInterval < 0.01f) attack2DebugLogInterval = 0.01f;
+        if (attack2DebugNearDistance < 0f) attack2DebugNearDistance = 0f;
     }
 
     private void Awake()
@@ -186,13 +201,18 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         UpdateProjectileHitCountTimer();
         UpdatePostStunInvulnerability();
 
-        if (_inputProvider == null) return;
+        if (_inputProvider == null)
+        {
+            UpdateAttack2DebugTrace();
+            return;
+        }
 
         PlayerInputPacket input = _inputProvider.GetInput();
         _latestLookYaw = input.lookYaw;
         _latestLookPitch = input.lookPitch;
 
         _stateMachine.CurrentState?.Update(input);
+        UpdateAttack2DebugTrace();
     }
 
     /// <summary>
@@ -241,6 +261,9 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         _isPostStunInvulnerable = false;
         _postStunInvulTimer = 0f;
         ResetProjectileHitCounter();
+        _activeStunSourceHitType = BossAttackHitType.Unknown;
+        _attack2DebugTraceTimer = 0f;
+        _wasAttack2NearLastFrame = false;
 
         blinkWhiteEffect?.StopBlink();
         UpdateHealthInvincibilityByState();
@@ -262,20 +285,19 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         switch (hitData.HitType)
         {
             case BossAttackHitType.Attack1:
-                return ApplyNormalDamageAndHitReaction(hitData.Damage)
+                return ApplyDamageAndHitReaction(hitData.Damage)
                     ? BossAttackHitResolution.Damaged
                     : BossAttackHitResolution.Ignored;
 
             case BossAttackHitType.Attack2:
-                BeginStun(hitData.ForceDirection);
-                return BossAttackHitResolution.StunOnly;
+                return HandleAttack2Hit(hitData);
 
             case BossAttackHitType.Attack3Projectile:
             case BossAttackHitType.Attack4Projectile:
                 return HandleProjectileHit(hitData);
         }
 
-        return ApplyNormalDamageAndHitReaction(hitData.Damage)
+        return ApplyDamageAndHitReaction(hitData.Damage)
             ? BossAttackHitResolution.Damaged
             : BossAttackHitResolution.Ignored;
     }
@@ -285,13 +307,32 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         if (!_isStunned) return;
 
         _isStunned = false;
+        _activeStunSourceHitType = BossAttackHitType.Unknown;
         _stateMachine.ChangeState(MoveState);
         StartPostStunInvulnerability();
     }
 
+    private BossAttackHitResolution HandleAttack2Hit(in BossAttackHitData hitData)
+    {
+        BeginAttack2DebugTrace("Hit", hitData.Damage, hitData.ForceDirection);
+
+        bool didDamage = TryApplyDamage(hitData.Damage);
+        if (!didDamage)
+        {
+            return BossAttackHitResolution.Ignored;
+        }
+
+        if (!_health.IsDead)
+        {
+            BeginStun(hitData.ForceDirection, BossAttackHitType.Attack2);
+        }
+
+        return BossAttackHitResolution.Damaged;
+    }
+
     private BossAttackHitResolution HandleProjectileHit(in BossAttackHitData hitData)
     {
-        bool didDamage = ApplyNormalDamageAndHitReaction(hitData.Damage);
+        bool didDamage = ApplyDamageAndHitReaction(hitData.Damage);
         if (!didDamage)
         {
             return BossAttackHitResolution.Ignored;
@@ -307,7 +348,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         _projectileHitCount += 1;
         if (_projectileHitCount >= 2)
         {
-            BeginStun(hitData.ForceDirection);
+            BeginStun(hitData.ForceDirection, hitData.HitType);
             ResetProjectileHitCounter();
             return BossAttackHitResolution.Damaged;
         }
@@ -315,17 +356,28 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         return BossAttackHitResolution.Damaged;
     }
 
-    private bool ApplyNormalDamageAndHitReaction(int damage)
+    private bool TryApplyDamage(int damage)
     {
         if (_health == null || _health.IsDead) return false;
         if (damage <= 0) return false;
 
         int previousHp = _health.CurrentHealth;
         _suppressDamageTakenReaction = true;
-        _health.TakeDamage(damage);
-        _suppressDamageTakenReaction = false;
+        try
+        {
+            _health.TakeDamage(damage);
+        }
+        finally
+        {
+            _suppressDamageTakenReaction = false;
+        }
 
-        bool didDamage = _health.CurrentHealth < previousHp;
+        return _health.CurrentHealth < previousHp;
+    }
+
+    private bool ApplyDamageAndHitReaction(int damage)
+    {
+        bool didDamage = TryApplyDamage(damage);
         if (didDamage && !_health.IsDead)
         {
             _stateMachine.ChangeState(HitState);
@@ -334,9 +386,10 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         return didDamage;
     }
 
-    private void BeginStun(Vector3 forceDirection)
+    private void BeginStun(Vector3 forceDirection, BossAttackHitType sourceHitType)
     {
         _isStunned = true;
+        _activeStunSourceHitType = sourceHitType;
         _isPostStunInvulnerable = false;
         _postStunInvulTimer = 0f;
         blinkWhiteEffect?.StopBlink();
@@ -362,6 +415,11 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
             pushDistance,
             configuredPushbackDuration);
         _stateMachine.ChangeState(StunState);
+
+        if (sourceHitType == BossAttackHitType.Attack2)
+        {
+            BeginAttack2DebugTrace("StunEnter", 0, planarForceDirection);
+        }
     }
 
     private void StartPostStunInvulnerability()
@@ -428,6 +486,37 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         _health.SetInvincible(_isStunned || _isPostStunInvulnerable);
     }
 
+    public void ReportStunMovement(Vector3 movement, float verticalVelocity, float pushbackTimer, float pushbackSpeed, CollisionFlags collisionFlags)
+    {
+        if (!enableAttack2DebugLog) return;
+        if (!_isStunned || _activeStunSourceHitType != BossAttackHitType.Attack2) return;
+        if (Time.time < _nextAttack2StunDebugLogTime) return;
+
+        _nextAttack2StunDebugLogTime = Time.time + attack2DebugLogInterval;
+
+        float bossDistance;
+        float bossNormalizedTime;
+        string bossStateName;
+        TryGetAttack2BossDebugData(out bossDistance, out bossStateName, out bossNormalizedTime);
+
+        float planarMove = new Vector2(movement.x, movement.z).magnitude;
+        Debug.Log(
+            $"[Attack2PlayerY][StunMove] " +
+            $"playerY={transform.position.y:F3} " +
+            $"grounded={_characterController.isGrounded} " +
+            $"ccVelY={_characterController.velocity.y:F3} " +
+            $"verticalVel={verticalVelocity:F3} " +
+            $"moveY={movement.y:F3} " +
+            $"planarMove={planarMove:F3} " +
+            $"pushTimer={pushbackTimer:F3} " +
+            $"pushSpeed={pushbackSpeed:F3} " +
+            $"flags={collisionFlags} " +
+            $"state={GetCurrentStateName()} " +
+            $"bossDist={bossDistance:F3} " +
+            $"bossState={bossStateName} " +
+            $"bossNTime={bossNormalizedTime:F3}");
+    }
+
     private void ResetProjectileHitCounter()
     {
         _projectileHitCount = 0;
@@ -487,6 +576,132 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     {
         Vector3 gravityMove = Vector3.up * verticalVelocity * Time.deltaTime;
         _characterController.Move(gravityMove);
+    }
+
+    private void UpdateAttack2DebugTrace()
+    {
+        if (!enableAttack2DebugLog || _characterController == null) return;
+
+        float bossDistance;
+        float bossNormalizedTime;
+        string bossStateName;
+        bool isAttack2Near = TryGetAttack2BossDebugData(out bossDistance, out bossStateName, out bossNormalizedTime);
+
+        if (isAttack2Near && !_wasAttack2NearLastFrame)
+        {
+            BeginAttack2DebugTrace("NearEnter", 0, Vector3.zero);
+            LogAttack2DebugSnapshot("NearEnter", bossDistance, bossStateName, bossNormalizedTime);
+        }
+        else if (!isAttack2Near && _wasAttack2NearLastFrame)
+        {
+            LogAttack2DebugSnapshot("NearExit", bossDistance, bossStateName, bossNormalizedTime);
+        }
+
+        _wasAttack2NearLastFrame = isAttack2Near;
+
+        if (_attack2DebugTraceTimer <= 0f) return;
+
+        _attack2DebugTraceTimer -= Time.deltaTime;
+        if (Time.time < _nextAttack2DebugLogTime) return;
+
+        _nextAttack2DebugLogTime = Time.time + attack2DebugLogInterval;
+        LogAttack2DebugSnapshot("Trace", bossDistance, bossStateName, bossNormalizedTime);
+    }
+
+    private void BeginAttack2DebugTrace(string phase, int damage, Vector3 forceDirection)
+    {
+        if (!enableAttack2DebugLog) return;
+
+        _attack2DebugTraceTimer = Mathf.Max(_attack2DebugTraceTimer, attack2DebugTraceDuration);
+        _nextAttack2DebugLogTime = 0f;
+        _nextAttack2StunDebugLogTime = 0f;
+
+        float bossDistance;
+        float bossNormalizedTime;
+        string bossStateName;
+        TryGetAttack2BossDebugData(out bossDistance, out bossStateName, out bossNormalizedTime);
+
+        Debug.Log(
+            $"[Attack2PlayerY][{phase}] " +
+            $"damage={damage} " +
+            $"force=({forceDirection.x:F3},{forceDirection.y:F3},{forceDirection.z:F3}) " +
+            $"playerY={transform.position.y:F3} " +
+            $"grounded={_characterController.isGrounded} " +
+            $"ccVelY={_characterController.velocity.y:F3} " +
+            $"state={GetCurrentStateName()} " +
+            $"bossDist={bossDistance:F3} " +
+            $"bossState={bossStateName} " +
+            $"bossNTime={bossNormalizedTime:F3}");
+    }
+
+    private void LogAttack2DebugSnapshot(string phase, float bossDistance, string bossStateName, float bossNormalizedTime)
+    {
+        float playerBottomY = transform.position.y + _characterController.center.y - (_characterController.height * 0.5f);
+        float playerTopY = transform.position.y + _characterController.center.y + (_characterController.height * 0.5f);
+
+        Debug.Log(
+            $"[Attack2PlayerY][{phase}] " +
+            $"playerY={transform.position.y:F3} " +
+            $"bottomY={playerBottomY:F3} " +
+            $"topY={playerTopY:F3} " +
+            $"grounded={_characterController.isGrounded} " +
+            $"ccVelY={_characterController.velocity.y:F3} " +
+            $"state={GetCurrentStateName()} " +
+            $"stunSource={_activeStunSourceHitType} " +
+            $"bossDist={bossDistance:F3} " +
+            $"bossState={bossStateName} " +
+            $"bossNTime={bossNormalizedTime:F3}");
+    }
+
+    private bool TryGetAttack2BossDebugData(out float bossDistance, out string bossStateName, out float bossNormalizedTime)
+    {
+        bossDistance = -1f;
+        bossNormalizedTime = 0f;
+        bossStateName = "None";
+
+        if (_attack2DebugBoss == null)
+        {
+            _attack2DebugBoss = FindObjectOfType<Core.Boss.BossController>();
+        }
+
+        if (_attack2DebugBoss == null)
+        {
+            return false;
+        }
+
+        bossDistance = Core.Boss.BossController.GetPlanarDistance(_attack2DebugBoss.transform.position, transform.position);
+
+        Animator bossAnimator = _attack2DebugBoss.Visual?.Animator;
+        if (bossAnimator == null)
+        {
+            return false;
+        }
+
+        AnimatorStateInfo stateInfo = bossAnimator.GetCurrentAnimatorStateInfo(0);
+        bool isLungeAttack = stateInfo.IsName("Lunge Attack");
+        bool isLegacyClawAttack = stateInfo.IsName("Claw Attack");
+        if (isLungeAttack)
+        {
+            bossStateName = "Lunge Attack";
+        }
+        else if (isLegacyClawAttack)
+        {
+            bossStateName = "Claw Attack";
+        }
+        else
+        {
+            bossStateName = "Other";
+        }
+
+        bossNormalizedTime = stateInfo.normalizedTime;
+        return (isLungeAttack || isLegacyClawAttack) && bossDistance <= attack2DebugNearDistance;
+    }
+
+    private string GetCurrentStateName()
+    {
+        return _stateMachine?.CurrentState != null
+            ? _stateMachine.CurrentState.GetType().Name
+            : "None";
     }
 
     private void Reset()

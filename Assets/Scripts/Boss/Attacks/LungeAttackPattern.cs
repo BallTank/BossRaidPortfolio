@@ -10,11 +10,11 @@ namespace Core.Boss.Attacks
     public class LungeAttackPattern : IBossAttackPattern
     {
         private readonly BossController.LungeAttackSettings _settings;
-        private const float FixedHitboxOffPhaseRatio = 0.8f;
         private const float FixedExitPhaseRatio = 1.0f;
         private Vector3 _lungeStartPosition;
-        private bool _hitboxDisabled;
+        private bool _damageWindowActive;
         private bool _lungeStateObserved;
+        private int _damagePayload;
 
         public LungeAttackPattern(BossController.LungeAttackSettings settings)
         {
@@ -26,8 +26,9 @@ namespace Core.Boss.Attacks
             controller.StopMoving();
             controller.ResetLungeRootMotionDebugLogWindow();
             _lungeStartPosition = controller.transform.position;
-            _hitboxDisabled = false;
+            _damageWindowActive = false;
             _lungeStateObserved = false;
+            _damagePayload = Mathf.RoundToInt(controller.AttackDamage * _settings.damageMultiplier);
 
             // 타겟 방향으로 즉시 회전
             if (controller.Target != null)
@@ -51,10 +52,6 @@ namespace Core.Boss.Attacks
                 Vector3 pos = controller.transform.position;
                 Debug.Log($"[LungeDebug][Enter] pos=({pos.x:F3},{pos.y:F3},{pos.z:F3})");
             }
-
-            // DamageCaster 활성화 (기본 공격력 × damageMultiplier)
-            int damage = (int)(controller.AttackDamage * _settings.damageMultiplier);
-            controller.LungeDamageCaster?.EnableHitbox(damage);
         }
 
         /// <summary>
@@ -75,24 +72,55 @@ namespace Core.Boss.Attacks
             bool isLungeState = stateInfo.IsName("Lunge Attack") || stateInfo.IsName("Claw Attack");
             if (!isLungeState)
             {
-                // 이미 도약 상태를 거쳤고 판정 종료가 끝났다면,
-                // 애니메이터가 다음 상태로 넘어간 프레임에서도 안전하게 공격을 종료한다.
-                return _lungeStateObserved && _hitboxDisabled;
+                if (_lungeStateObserved)
+                {
+                    CloseDamageWindow(controller);
+                    return true;
+                }
+
+                return false;
             }
 
             _lungeStateObserved = true;
             float progress = stateInfo.normalizedTime;
+            float hitStart = _settings.damageCastNormalizedWindow.x;
+            float hitEnd = _settings.damageCastNormalizedWindow.y;
 
-            // 판정 종료 시점(0.8)과 상태 종료 시점(클립 끝)을 분리한다.
-            if (!_hitboxDisabled && progress >= FixedHitboxOffPhaseRatio)
+            if (!_damageWindowActive && progress >= hitStart && progress < hitEnd)
             {
-                controller.LungeDamageCaster?.DisableHitbox();
-                _hitboxDisabled = true;
+                OpenDamageWindow(controller);
+            }
+
+            if (_damageWindowActive && progress >= hitEnd)
+            {
+                CloseDamageWindow(controller);
+            }
+
+            if (progress >= FixedExitPhaseRatio)
+            {
+                CloseDamageWindow(controller);
+                return true;
             }
 
             // normalizedTime: 0.0(시작) ~ 1.0(끝). 루프 클립은 1.0 초과 가능.
             // 애니메이션 종료 판정은 클립 끝(1.0) 기준으로 수행한다.
-            return progress >= FixedExitPhaseRatio;
+            return false;
+        }
+
+        private void OpenDamageWindow(BossController controller)
+        {
+            if (_damageWindowActive || _damagePayload <= 0) return;
+
+            controller.LungeDamageCaster?.EnableHitbox(_damagePayload);
+            _damageWindowActive = true;
+        }
+
+        private void CloseDamageWindow(BossController controller)
+        {
+            if (!_damageWindowActive) return;
+
+            controller.LungeDamageCaster?.DisableHitbox();
+            _damageWindowActive = false;
         }
 
         public void Exit(BossController controller)
@@ -100,8 +128,7 @@ namespace Core.Boss.Attacks
             // 판정 종료 및 이동 정지 (사망 등 강제 전환 시에도 안전하게 정리)
             controller.EndLungeTravelDirectionLock();
             controller.Visual?.SetLungeRootMotionEnabled(false);
-            controller.LungeDamageCaster?.DisableHitbox();
-            _hitboxDisabled = true;
+            CloseDamageWindow(controller);
             controller.StopMoving();
 
             if (controller.EnableLungeRootMotionDebugLog)

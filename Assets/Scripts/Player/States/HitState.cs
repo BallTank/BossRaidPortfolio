@@ -122,7 +122,8 @@ namespace Core.Player.States
             _verticalVelocity += Controller.Gravity * Time.deltaTime;
             movement += Vector3.up * (_verticalVelocity * Time.deltaTime);
 
-            Controller.CharController.Move(movement);
+            CollisionFlags collisionFlags = Controller.CharController.Move(movement);
+            Controller.ReportStunMovement(movement, _verticalVelocity, _pushbackTimer, _pushbackSpeed, collisionFlags);
 
             if (_stunTimer <= 0f)
             {

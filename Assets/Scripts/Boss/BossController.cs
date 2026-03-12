@@ -3,9 +3,30 @@ using Core.Boss.Attacks;
 using Core.Boss.Projectiles;
 using Core.Combat;
 using Core.Common;
+using Core.Common.Attributes;
 using Core.Common.Patterns;
 using UnityEngine;
 using UnityEngine.Serialization;
+
+namespace Core.Common.Attributes
+{
+    /// <summary>
+    /// Vector2를 최소/최대 슬라이더로 그리기 위한 인스펙터 속성.
+    /// </summary>
+    public sealed class MinMaxRangeAttribute : PropertyAttribute
+    {
+        public float Min { get; }
+        public float Max { get; }
+        public bool ShowFields { get; }
+
+        public MinMaxRangeAttribute(float min, float max, bool showFields = true)
+        {
+            Min = min;
+            Max = max;
+            ShowFields = showFields;
+        }
+    }
+}
 
 namespace Core.Boss
 {
@@ -144,6 +165,11 @@ namespace Core.Boss
             if (lungeRootMotionDebugLogInterval < 0.01f) lungeRootMotionDebugLogInterval = 0.01f;
 
             SyncBasicAttackRangeToHeadDamageCaster();
+
+            if (lungeAttackSettings != null)
+            {
+                lungeAttackSettings.ClampValues();
+            }
 
             if (projectileAttackSettings != null)
             {
@@ -702,6 +728,18 @@ namespace Core.Boss
         {
             [Tooltip("기본 공격력 대비 배수")]
             public float damageMultiplier = 1.5f;
+
+            [MinMaxRange(0f, 1f)]
+            [Tooltip("Attack2 판정 활성 normalized window (x = start, y = end)")]
+            public Vector2 damageCastNormalizedWindow = new Vector2(0.15f, 0.8f);
+
+            public void ClampValues()
+            {
+                if (damageMultiplier < 0f) damageMultiplier = 0f;
+
+                damageCastNormalizedWindow.x = Mathf.Clamp01(damageCastNormalizedWindow.x);
+                damageCastNormalizedWindow.y = Mathf.Clamp(damageCastNormalizedWindow.y, damageCastNormalizedWindow.x, 1f);
+            }
         }
 
         [System.Serializable]
