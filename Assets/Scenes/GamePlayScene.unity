@@ -159,6 +159,8 @@ Transform:
   m_LocalScale: {x: 2.4849, y: 2.4849, z: 2.4849}
   m_ConstrainProportionsScale: 0
   m_Children:
+  - {fileID: 375716742}
+  - {fileID: 1119454100}
   - {fileID: 1487502254}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 180.79, z: 0}
@@ -192,10 +194,11 @@ MonoBehaviour:
   attackDamage: 2
   attackDuration: 1
   attackCooldown: 4
-  _headDamageCaster: {fileID: 423284611}
-  _lungeDamageCaster: {fileID: 1189825118}
+  _headDamageCaster: {fileID: 375716743}
+  _lungeDamageCaster: {fileID: 1119454101}
   lungeAttackSettings:
     damageMultiplier: 1.5
+    damageCastNormalizedWindow: {x: 0.34, y: 0.8}
   projectileAttackSettings:
     warningDuration: 0.3
     damage: 7
@@ -400,6 +403,59 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &375716741
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 375716742}
+  - component: {fileID: 375716743}
+  m_Layer: 6
+  m_Name: HeadAttackCaster
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &375716742
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 375716741}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 242866943}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &375716743
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 375716741}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e63d09e61f26b4b4db8c3a27731f4051, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _radius: 2.7
+  _targetLayer:
+    serializedVersion: 2
+    m_Bits: 128
+  _maxTargets: 10
+  _castCenter: {fileID: 1470039690}
+  _bossAttackHitType: 0
+  _showGizmos: 1
+  _gizmoColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!1 &423284607
 GameObject:
   m_ObjectHideFlags: 0
@@ -411,7 +467,6 @@ GameObject:
   - component: {fileID: 423284608}
   - component: {fileID: 423284609}
   - component: {fileID: 423284610}
-  - component: {fileID: 423284611}
   m_Layer: 6
   m_Name: Head
   m_TagString: Untagged
@@ -470,27 +525,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _ownerHealth: {fileID: 242866946}
---- !u!114 &423284611
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 423284607}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e63d09e61f26b4b4db8c3a27731f4051, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _radius: 2.7
-  _targetLayer:
-    serializedVersion: 2
-    m_Bits: 128
-  _maxTargets: 10
-  _castCenter: {fileID: 1470039690}
-  _bossAttackHitType: 0
-  _showGizmos: 1
-  _gizmoColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!1 &499507000
 GameObject:
   m_ObjectHideFlags: 0
@@ -1167,6 +1201,59 @@ MonoBehaviour:
   sharpTurnYawThreshold: 65
   sharpTurnSoftBoost: 2
   sharpTurnStrongBoost: 4
+--- !u!1 &1119454099
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1119454100}
+  - component: {fileID: 1119454101}
+  m_Layer: 6
+  m_Name: LungeAttackCaster
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1119454100
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1119454099}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 242866943}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1119454101
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1119454099}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e63d09e61f26b4b4db8c3a27731f4051, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _radius: 8
+  _targetLayer:
+    serializedVersion: 2
+    m_Bits: 128
+  _maxTargets: 10
+  _castCenter: {fileID: 1165209285}
+  _bossAttackHitType: 0
+  _showGizmos: 1
+  _gizmoColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!1 &1150924250
 GameObject:
   m_ObjectHideFlags: 0
@@ -1267,7 +1354,7 @@ Transform:
   m_GameObject: {fileID: 1165209284}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 115, y: -58, z: -0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1284,7 +1371,6 @@ GameObject:
   - component: {fileID: 1189825115}
   - component: {fileID: 1189825116}
   - component: {fileID: 1189825117}
-  - component: {fileID: 1189825118}
   m_Layer: 6
   m_Name: Body
   m_TagString: Untagged
@@ -1343,27 +1429,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _ownerHealth: {fileID: 242866946}
---- !u!114 &1189825118
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1189825114}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e63d09e61f26b4b4db8c3a27731f4051, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  _radius: 4.86
-  _targetLayer:
-    serializedVersion: 2
-    m_Bits: 128
-  _maxTargets: 10
-  _castCenter: {fileID: 1165209285}
-  _bossAttackHitType: 0
-  _showGizmos: 1
-  _gizmoColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!1 &1197243531
 GameObject:
   m_ObjectHideFlags: 0
@@ -2172,6 +2237,10 @@ MonoBehaviour:
   _bossHealthForHUD: {fileID: 242866946}
   _playerDisplayName: Player
   _bossDisplayName: Dragon
+  enableAttack2DebugLog: 1
+  attack2DebugTraceDuration: 0.8
+  attack2DebugLogInterval: 0.05
+  attack2DebugNearDistance: 2.5
 --- !u!143 &1585844238
 CharacterController:
   m_ObjectHideFlags: 0

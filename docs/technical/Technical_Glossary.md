@@ -72,6 +72,8 @@
 * **Pattern Attack Range (패턴별 공격 사거리)**: `BossController`가 공격 패턴마다 별도 사거리(`Basic`, `Lunge`, `Projectile`, `AoE`)를 가지는 규칙. 공격 패턴 선택 시 현재 거리에서 유효한 패턴만 후보로 포함한다.
 * **Basic Range Origin (기본 공격 사거리 기준점)**: Basic 패턴 거리 판정의 시작점 Transform. `basicAttackRangeOrigin`으로 주입하며, 미할당 시 Boss Root를 사용한다. 현재 기본 씬에서는 `HeadDamageCasterPlace`를 기준점으로 사용한다.
 * **Basic Range-Hitbox Sync (기본 사거리-히트박스 반경 동기화)**: `basicAttackRange`를 `HeadDamageCaster.radius`와 동일 값으로 유지해 공격 가능 거리 판단과 실제 타격 판정 반경이 일치하도록 보장하는 규칙.
+* **Logic-Owned DamageCaster (로직 소유 DamageCaster)**: `DamageCaster` 컴포넌트를 Boss root 또는 로직 전용 자식에 두고, 공격 시점/Owner/HitType은 `BossController`와 패턴 로직이 관리하는 배치 방식. Visual hierarchy에는 위치 추종용 앵커만 남긴다.
+* **Visual Cast Anchor (비주얼 판정 앵커)**: `HeadDamageCasterPlace`, `BodyDamageCasterPlace`처럼 Visual/Bone 계층에 남겨두는 위치 기준 Transform. `DamageCaster`는 이 앵커를 `_castCenter`로 사용해 본 이동만 추종한다.
 * **Phase1 Attack Priority (페이즈1 공격 우선순위)**: Phase1에서 Basic/Lunge 사거리 조건이 동시에 성립하면 Basic을 우선 선택하는 규칙. Lunge는 Basic 범위를 벗어난 경우에만 선택한다.
 * **Lunge Root Motion Relay (도약 루트모션 릴레이)**: Lunge 애니메이션의 루트모션 델타를 Animator `OnAnimatorMove`에서 수신해 `BossController.ApplyLungeRootMotion(deltaPosition, normalizedTime)`으로 전달하는 방식. 기본 경로는 Animator XZ 델타 기반이며, 캐릭터 루트 이동은 `CharacterController.Move`로 적용된다.
 * **Lunge Root Motion Fallback (도약 루트모션 폴백)**: `animator.deltaPosition` XZ 델타가 임계값 이하일 때 `Visual` 월드 이동량 델타를 대체 입력으로 사용하는 보조 경로.
@@ -79,7 +81,7 @@
 * **Lunge Travel Direction Lock (도약 이동 방향 고정)**: Lunge 시작 시 타겟 방향을 고정하고, 루트모션 이동량을 해당 방향으로 재투영하는 규칙.
 * **Lunge Motion Distribution Tuning (도약 이동량 분포 보정)**: 실험 9에서 `normalizedTime` 구간별 배수(`midBoost*`, `lateReduce*`)로 Lunge 이동량 분포를 조정하는 방식. `enableMotionDistributionTuning`으로 토글하며, `OnValidate`에서 구간/배수 유효성을 보정한다.
 * **Lunge Root Motion Scale Probe (도약 루트모션 배수 프로브)**: 실제 프레임에 적용된 이동량 배수를 `LastLungeRootMotionMagnitudeScale`과 `[LungeDebug][RootMotion] scale=...` 로그로 노출해 튜닝값 반영 여부를 추적하는 기록 항목.
-* **Lunge Fixed Timing (도약 고정 타이밍)**: 현재 Lunge 패턴은 판정 종료(`normalizedTime 0.8`)와 상태 종료(`normalizedTime 1.0`)를 고정 비율 상수로 운영하는 방식.
+* **Lunge Damage Window Timing (도약 판정 윈도우 타이밍)**: 현재 Lunge 패턴은 `damageCastNormalizedWindow`의 `start/end` 값을 사용해 Attack2 판정이 열리는 구간을 제어한다. 상태 종료 시점은 `normalizedTime 1.0`을 유지한다.
 * **Range-Only Detection Trigger (거리 단일 감지 트리거)**: Idle/Searching에서 Combat(스크림 인트로) 진입을 감지 반경(`IsTargetInDetectionRange`)만으로 판정하는 규칙. 장애물/시야선(LOS) 여부와 무관하게 거리 조건만 충족하면 전투 전환이 발생한다.
 * **Chase Hysteresis (추적 히스테리시스)**: 단일 공격 사거리 임계값 대신 현재 페이즈에서 활성화된 패턴의 `최대 사거리`(해제)와 `최대 사거리 + ChaseReengageBuffer`(재진입) 이중 임계값을 두어 Walk/Idle 경계 지터를 완화하는 기법.
 * **Asset+Meta Pair Rule (에셋-메타 쌍 규칙)**: Unity 에셋은 파일만 커밋하면 참조가 보장되지 않는다. 참조 안정성을 위해 원본 에셋과 해당 `.meta`를 반드시 쌍으로 버전관리하는 규칙.
@@ -116,6 +118,7 @@
 * **Invul Ignore Non-Consume**: `ReceiveBossAttackHit` 결과가 `Ignored`일 때 그 시도를 hit consumed로 확정하지 않는 규칙. invul이 끝나면 active window 안에서 1회 피격 기회를 다시 평가한다.
 * **Projectile Count Timer**: 플레이어가 투사체 피격 누적을 판정하는 짧은 타이머 창. 타이머 내 1타는 일반 피격, 2타 이상은 스턴으로 승격한다.
 * **StunState**: 플레이어 스턴 전용 상태. 입력 기반 행동(이동/공격/스킬/점프/상호작용/회전)을 차단하고, 피격 방향 기반 푸시백과 스턴 타이머를 처리한다.
+* **Damage-Reaction Split (데미지-반응 분리)**: HP 감소 처리와 상태 반응(`HitState`, `StunState`)을 분리하는 규칙. Attack2처럼 `damage + stun` 조합이 필요한 보스 공격에서 공용 데미지 파이프라인을 재사용할 수 있다.
 * **Post-Stun Invulnerability**: 스턴 종료 후 적용되는 후속 무적 구간. 데미지/재스턴을 차단하며, `BlinkWhiteEffect`가 점멸 표현(기본 주기 0.2s)을 담당한다.
 * **BlinkWhite Shader Parameter (`_BlinkWhite`)**: 플레이어 후속 무적 점멸 표현을 위한 전용 셰이더 파라미터. `0`은 원본 색, `1`은 흰색으로 해석하고 `lerp(originalBaseColor, white, _BlinkWhite)` 규칙으로 최종 출력색을 만든다. 현재 구현에서 `1` 구간은 조명 영향을 무시한 순수 white 출력이다.
 * **BlinkWhiteEffect**: 플레이어/보스에 부착 가능한 점멸 전용 컴포넌트(`Assets/Scripts/Common/Visual/BlinkWhiteEffect.cs`). `_BlinkWhite` 셰이더 파라미터를 `MaterialPropertyBlock`으로 제어하며, `PlayBlink`, `PlaySingleBlink`, `SetBlink`, `StopBlink` API를 제공한다.
@@ -129,9 +132,9 @@
 * **IBossAttackPattern**: 보스 공격 패턴 인터페이스 (Strategy Pattern 적용). `Enter`/`Update`/`Exit` 메서드를 정의하여 `BossAttackState`가 구체 패턴을 몰라도 실행할 수 있게 함.
 * **BasicAttackPattern**: `IBossAttackPattern`의 기본 구현체. 보스의 근접 공격(애니메이션 재생 + DamageCaster 활성화 + 타이머 기반 종료)을 측술화.
 * **Invincibility Frame (무적 시간)**: 특정 구간 동안 추가 데미지를 차단하는 보호 기간. 현재 플레이어는 `stunned` 또는 `post-stun invulnerability` 상태에서 `Health.SetInvincible(true/false)`로 제어한다.
-* **Bone-Synced Hitbox (본 동기화 피격 판정)**: `DamageCaster._castCenter`를 스켈레톤의 Bone 자식 Transform으로 설정하여, 애니메이션에 따라 히트박스 위치가 자동으로 동기화되는 기법. 코드 수정 없이 물리 판정과 애니메이션을 연동할 수 있음.
+* **Bone-Synced Hitbox (본 동기화 피격 판정)**: `DamageCaster._castCenter`를 스켈레톤의 Bone 자식 Transform으로 설정하여, 애니메이션에 따라 히트박스 위치가 자동으로 동기화되는 기법. `DamageCaster` 컴포넌트 자체는 로직 계층에 두고, 위치만 Bone 앵커를 따라가게 구성할 수 있다.
 * **Partial Animation (부분 애니메이션)**: 애니메이션 클립 전체를 재생하지 않고, 특정 구간(예: 도약 부분)만 재생한 후 강제로 종료(`exitPhaseRatio`)하여 동작의 템포를 조절하는 기법. 복귀 모션 등을 생략하여 타격감을 높일 때 사용됨.
-* **Lunge Hitbox/Exit Split Timing (도약 판정/상태 종료 분리 타이밍)**: Lunge 패턴에서 `rushPhaseRatio` 전진 구간 분기를 제거하고, 히트박스 종료 시점(`normalizedTime 0.8`)과 상태 종료 시점(`normalizedTime 1.0`)을 분리해 운영하는 방식. 이동은 루트모션 릴레이가 담당한다.
+* **Lunge Hitbox/Exit Split Timing (도약 판정/상태 종료 분리 타이밍)**: Lunge 패턴에서 히트박스 시작/종료는 `damageCastNormalizedWindow`로 조정하고, 상태 종료는 별도로 `normalizedTime 1.0` 기준으로 유지하는 방식. 이동은 루트모션 릴레이가 담당한다.
 * **Windup (준비 구간)**: Attack2 시작 직후의 사전 동작 구간. 본 구간에서는 보스가 도약을 시작하기 전 지면 정렬과 충돌 안정화가 우선된다.
 * **PreLaunch (도약 직전 구간)**: 실제 이륙(Launch) 직전의 마지막 준비 구간. `Windup`과 함께 ground lock 적용 대상이며, 플레이어 머리 타기 회귀를 막기 위해 `stepOffset 0`을 유지한다.
 * **Launch Marker (도약 시작 마커)**: Attack2에서 ground lock을 해제하고 루트모션 Y를 허용하는 전환 기준 이벤트(애니메이션 마커). 월드 Y 변화량 대신 상태 전환의 기준점으로 사용한다.
@@ -149,7 +152,8 @@
 * **Attack2 SpatialProbe (Attack2 공간 좌표 프로브)**: `[Attack2Landing][SpatialProbe]` 로그로 `player`, `boss`, `visual`, `red(Boss/Visual/Red)` 월드 좌표와 상대 벡터(`player-boss`, `player-red`, `boss-red`, `visualInBoss`, `redInBoss`) 및 `redPath`를 함께 출력해 좌표계 이탈 원인을 추적하는 규칙.
 * **GroundSnap Failure Reason (GroundSnap 실패 사유 코드)**: `GroundSnapMiss`/`GroundSnapSkipMaxDistance` 로그에 `InvalidSetup`, `MaskEmpty`, `NoHit`, `AllFiltered` 같은 원인 코드를 명시해 착지 보정 실패의 원인을 즉시 판별하는 규칙.
 * **Attack2 Core Timing Trio (Attack2 핵심 타이밍 3종)**: `preLaunchStartNormalizedTime`, `launchNormalizedTime`, `landSnapNormalizedTime`의 묶음. Windup/PreLaunch/Airborne/LandSnap 구간 경계를 정의하는 1차 튜닝 축이다.
-* **Attack2 Inspector Timeline (Attack2 인스펙터 타임라인)**: `BossControllerEditor`에서 핵심 타이밍 3종과 Guard(`0.98`)를 막대 그래프로 표시하는 시각화. 수치 변경이 어느 구간 길이를 바꾸는지 즉시 확인하기 위한 편의 계층이다.
+* **Attack2 Inspector Damage Window Gauge (Attack2 인스펙터 피격 윈도우 게이지)**: `damageCastNormalizedWindow`를 기본 인스펙터에서 2핸들 MinMax 슬라이더와 `Start/End` float field로 표시하는 UX. Attack2 DamageCaster 활성 구간을 `normalizedTime 0~1` 범위에서 직접 튜닝한다.
+* **Attack2 Player Y Trace (`[Attack2PlayerY]`)**: 플레이어가 Attack2 근접/피격/스턴 이동 구간에서 출력하는 디버그 로그 태그. `playerY`, `bottomY/topY`, `grounded`, `ccVelY`, `CollisionFlags`, 현재 상태, 보스 Attack2 거리/정규화 시간을 함께 기록해 하반신 잠김 원인을 추적한다.
 * **Attack2 Gizmo Feature Toggle Set (Attack2 기즈모 기능 토글 세트)**: `showAttackRangesGizmo`, `showDetectionRangeGizmo`, `showAttack2GroundProbeGizmo`, `showAttack2SnapWindowGizmo`, `showAttack2SpatialLineGizmo`의 묶음. 필요한 진단 기즈모만 선택 출력해 디버깅 노이즈를 줄이는 규칙이다.
 * **Ground Probe Gizmo (지면 프로브 기즈모)**: Attack2의 `groundRayStartHeight`, `groundRayDistance`, `groundMask` 기준으로 실제 Ray 시작점/길이/히트 지점을 Scene 뷰에 표시하는 시각 진단 도구.
 * **Snap Window Gizmo (스냅 윈도우 기즈모)**: `groundSnapMaxDistance`와 `groundSnapEpsilon`을 시각화해 현재 Boss Y 대비 허용 보정 범위와 목표 스냅 Y가 창 안에 있는지 표시하는 디버그 기즈모.
