@@ -2186,6 +2186,7 @@ GameObject:
   - component: {fileID: 963194227}
   - component: {fileID: 963194226}
   - component: {fileID: 963194229}
+  - component: {fileID: 963194230}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -2311,6 +2312,34 @@ MonoBehaviour:
     m_MipBias: 0
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
+--- !u!114 &963194230
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 963194225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9625b6a84ac54ca6b704d37bf0fd7804, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  playerController: {fileID: 0}
+  followTarget: {fileID: 0}
+  cameraRoot: {fileID: 0}
+  positionSmoothTime: 0.01
+  rotationSmoothTime: 0.01
+  targetHeight: 1.5
+  followOffset: {x: 0, y: 2.65, z: -5.8}
+  minPitch: -40
+  maxPitch: 75
+  autoBehindAssist: 0
+  assistMoveThreshold: 0.15
+  softAssistStrength: 3.5
+  strongAssistStrength: 7
+  sharpTurnYawThreshold: 65
+  sharpTurnSoftBoost: 2
+  sharpTurnStrongBoost: 4
 --- !u!1001 &985357644
 PrefabInstance:
   m_ObjectHideFlags: 0
