@@ -9,3 +9,6 @@ Assets/ApocalypticEnvironment/**/*.[Tt][Gg][Aa] filter=lfs diff=lfs merge=lfs -t
 Assets/ApocalypticEnvironment/**/*.[Pp][Ss][Dd] filter=lfs diff=lfs merge=lfs -text
 Assets/ApocalypticEnvironment/**/*.[Ee][Xx][Rr] filter=lfs diff=lfs merge=lfs -text
 Assets/ApocalypticEnvironment/**/LightingData.asset filter=lfs diff=lfs merge=lfs -text
+Assets/Fantasy[[:space:]]Skybox[[:space:]]FREE/**/*.[Pp][Nn][Gg] filter=lfs diff=lfs merge=lfs -text
+Assets/Fantasy[[:space:]]Skybox[[:space:]]FREE/**/*.[Ee][Xx][Rr] filter=lfs diff=lfs merge=lfs -text
+Assets/Fantasy[[:space:]]Skybox[[:space:]]FREE/**/*.asset filter=lfs diff=lfs merge=lfs -text
