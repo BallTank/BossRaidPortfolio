@@ -124,6 +124,7 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 128
   visualEffect: {fileID: 0}
+  hitReturnDelay: 0.35
 --- !u!54 &3690214383853546723
 Rigidbody:
   m_ObjectHideFlags: 0
@@ -173,7 +174,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 2752035550481001553, guid: e2910cc85cea15a42998e63bb70f4c00, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0
+      value: 0.09
       objectReference: {fileID: 0}
     - target: {fileID: 2752035550481001553, guid: e2910cc85cea15a42998e63bb70f4c00, type: 3}
       propertyPath: m_LocalRotation.w

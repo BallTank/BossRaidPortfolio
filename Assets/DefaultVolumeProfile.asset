@@ -668,10 +668,10 @@ MonoBehaviour:
     m_Value: 0.5
   outlineMinDepthThreshold:
     m_OverrideState: 1
-    m_Value: 0.0004
+    m_Value: 0
   outlineSaturationDiffThreshold:
     m_OverrideState: 1
-    m_Value: 0.31
+    m_Value: 0.25
   outlineCustomize:
     m_OverrideState: 0
     m_Value: 0
