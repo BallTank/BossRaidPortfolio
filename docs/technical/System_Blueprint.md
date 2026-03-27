@@ -43,6 +43,7 @@ classDiagram
     class PlayerInputPacket { <<Struct>> }
     class AttackComboData { <<Struct>> }
     class InputFlag { <<Enumeration>> }
+    class MultiplayerLocomotionState { <<Struct>> }
     class BossAttackHitData { <<Struct>> }
     class BossAttackHitType { <<Enumeration>> }
     class BossAttackHitResolution { <<Enumeration>> }
@@ -80,6 +81,23 @@ classDiagram
     }
 
     class LocalInputProvider { +GetInput() }
+    class MultiplayerBufferedInputProvider {
+        +SetInput(PlayerInputPacket, int)
+        +Clear()
+        +GetInput()
+    }
+    class MultiplayerPlayerAvatar {
+        <<NetworkBehaviour>>
+        +OnNetworkSpawn()
+        +SubmitOwnerInputServerRpc(...)
+        +PushAuthoritativeLocomotionStateClientRpc(...)
+    }
+    class MultiplayerLocalPlayerRegistry {
+        <<Static>>
+        +LocalPlayer PlayerController
+        +SetLocalPlayer(PlayerController)
+        +Clear()
+    }
     class PlayerVisual { +Animator Animator }
     class BlinkWhiteEffect {
         +PlayBlink(float)
@@ -127,6 +145,7 @@ classDiagram
 
     %% Relationships
     LocalInputProvider ..|> IInputProvider : implements
+    MultiplayerBufferedInputProvider ..|> IInputProvider : implements
     PlayerController ..|> IDashContext : implements
     PlayerController ..|> IAttackable : implements
     PlayerController ..|> IBossAttackHitReceiver : implements
@@ -139,6 +158,11 @@ classDiagram
     PlayerController --> CombatHUDController : updates
     PlayerController --> Health : owns
     ThirdPersonCameraController --> PlayerController : reads look cache / injects CameraRoot
+    ThirdPersonCameraController --> MultiplayerLocalPlayerRegistry : resolves local owner in multiplayer
+    MultiplayerPlayerAvatar --> PlayerController : configures runtime role
+    MultiplayerPlayerAvatar --> LocalInputProvider : toggles local owner input
+    MultiplayerPlayerAvatar --> MultiplayerBufferedInputProvider : writes remote owner input
+    MultiplayerPlayerAvatar o-- MultiplayerLocomotionState : snapshots/replay
 
     PlayerBaseState --|> BaseState : extends
     MoveState --|> PlayerBaseState : extends
@@ -388,10 +412,6 @@ classDiagram
 *   **Transition Router**: `Assets/Scripts/Common/SceneLoader.cs`
 *   **Loading Orchestrator**: `Assets/Scripts/Common/LoadingSceneController.cs`
 *   **Result & Restart**: `Assets/Scripts/Common/GameManager.cs`
-*   **Multiplayer Bootstrap Owner**: `Assets/Scripts/Multiplayer/Bootstrap/MultiplayerServicesBootstrap.cs`
-*   **Multiplayer Session Owner**: `Assets/Scripts/Multiplayer/Services/MultiplayerSessionService.cs`
-*   **Multiplayer Title Driver**: `Assets/Scripts/Multiplayer/UI/MultiplayerTitleSceneDriver.cs`
-*   **Multiplayer Scene Path Rule**: `Assets/Scripts/Multiplayer/SceneFlow/MultiplayerScenePaths.cs`
 
 ```mermaid
 classDiagram
@@ -401,6 +421,7 @@ classDiagram
         <<MonoBehaviour>>
         -GameSceneId _nextSceneId
         -float _inputLockDuration
+        -float _hostStartEnableDelay
         -bool _keepRuntimeRootInEditMode
         -TitlePanelState _currentPanelState
         -LobbyRole _currentLobbyRole
@@ -409,6 +430,7 @@ classDiagram
         +Update()
         +ShowPanel()
         +HandleSoloPlaySelected()
+        +ShowMultiplayerLobby(...)
     }
 
     class SceneLoader {
@@ -426,34 +448,6 @@ classDiagram
         +Update()
     }
 
-    class MultiplayerTitleSceneDriver {
-        <<MonoBehaviour>>
-        +HandleCreateRoomSelectedAsync()
-        +HandleJoinRoomSelectedAsync()
-        +HandleStartSelected()
-    }
-
-    class MultiplayerServicesBootstrap {
-        <<MonoBehaviour>>
-        +EnsureInitializedAsync()
-        +IsReady bool
-        +PlayerId string
-    }
-
-    class MultiplayerSessionService {
-        <<MonoBehaviour>>
-        +CreateHostSessionAsync(string)
-        +JoinClientSessionAsync(string)
-        +StartGameplayAsync()
-        +ShutdownSessionAsync()
-    }
-
-    class MultiplayerScenePaths {
-        <<Static>>
-        +IsMultiplayerTitleScene(string) bool
-        +GamePlayScenePath string
-    }
-
     class GameManager {
         <<MonoBehaviour>>
         +ResolveGameOver(GameResult)
@@ -464,19 +458,11 @@ classDiagram
     TitleSceneController ..> SceneLoader : requests transition
     SceneLoader --> LoadingSceneController : reserves target
     LoadingSceneController ..> SceneLoader : consumes target/completes transition
-    MultiplayerTitleSceneDriver ..> TitleSceneController : wraps duplicated title scene buttons
-    MultiplayerTitleSceneDriver ..> MultiplayerSessionService : delegates create/join/start owner
-    MultiplayerTitleSceneDriver ..> MultiplayerScenePaths : loads duplicated gameplay path for Solo Play
-    MultiplayerSessionService ..> MultiplayerServicesBootstrap : ensures bootstrap and UGS ready
-    MultiplayerSessionService ..> MultiplayerScenePaths : starts NGO synchronized gameplay load
     GameManager ..> SceneLoader : shares game flow context
 ```
 
-멀티플레이 duplicated title scene(`Assets/Scenes/mutiplayer/TitleScene.unity`)에서는 `MultiplayerTitleSceneRuntimeInstaller`가 runtime에만 `MultiplayerTitleSceneDriver`를 붙인다.
-이 driver는 `Create Room` / `Join` / Host `Start`를 `MultiplayerSessionService`로 위임하고, `Solo Play`만 common scene name 대신 duplicated gameplay scene path를 직접 로드한다.
-현재 `MultiplayerScenePaths.GamePlayScenePath`의 기본 target은 lightweight verify scene(`Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity`)이며, full-art duplicate scene(`Assets/Scenes/mutiplayer/GamePlayScene.unity`)은 참조용으로 유지한다.
-Host `Start`는 service가 `LobbyActive -> StartingGameplay`, lobby `SessionState=Starting`, NGO synchronized scene load, fail cleanup/title return까지 owner로 처리한다. Session 7 strict cleanup에서는 `Closing` busy guard와 session-version guard를 추가해 cleanup 중 새 action과 stale async write를 막는다.
-fast multiplayer verify build는 `Assets/Editor/FastMultiplayerVerifyBuildRunner.cs`가 `TitleScene + GamePlayScene_Verify`만 직접 빌드하고, build 동안 `Assets/Map/Beautify/URP/Runtime/Resources`를 임시 제외한 뒤 자동 복구한다.
+`main` 기준 `TitleSceneController`는 `MultiplayerModePanel / HostCreatePanel / ClientJoinPanel / LobbyPanel / WrongKeyPopup`을 local prototype UI로 유지한다.
+이 경로는 title flow/layout 검증과 menu state transition 확인용이며, real Relay/Lobby/NGO bootstrap은 `feature/multiplayer` 브랜치에서만 소유한다.
 
 ---
 
@@ -553,8 +539,8 @@ fast multiplayer verify build는 `Assets/Editor/FastMultiplayerVerifyBuildRunner
 | **Physics System** | `NonAlloc` 물리 판정(OverlapSphere) 및 최적화 완료. |
 | **Object Pooling** | `BossProjectilePool` 기반 투사체 재사용(Prewarm/Max/Expand) 구현 완료. |
 | **Third-Person Camera Module** | `Assets/Scripts/Camera/ThirdPersonCameraController.cs`를 메인 카메라 측 모듈로 분리해 카메라 설정을 카메라 오브젝트로 이동했다. |
-| **Package Baseline** | Unity 2022.3 기준으로 package manifest 정리 및 lock 재생성 경로 복구 (`URP/VFX 14.0.12`, `TMP 추가`, Unity 6 전용 의존성 제거). |
-| **External Asset Distribution Policy** | 런타임 실사용 에셋만 Git/LFS로 선별 추적한다. 기준은 GUID 의존성 폐쇄(씬/프리팹/설정의 직접+간접 참조)이며, `Assets/TextMesh Pro` 루트와 미사용 서드파티 리소스는 제외한다. Unity 참조 안정성을 위해 에셋과 `.meta`를 쌍으로 버전관리한다. |
+| **Package Baseline** | Unity 2022.3 기준 shared `main` baseline은 `URP/VFX 14.0.12`, `TMP`, `2D Sprite`, `FBX`만 유지하고, UGS/NGO/Relay/Lobby package set은 `feature/multiplayer` 브랜치에서만 소유한다. |
+| **External Asset Distribution Policy** | 프로젝트 소유 코드/씬/프리팹/설정만 Git으로 추적하고, 서드파티 imported pack은 Google Drive 배포본을 기준선으로 관리한다. 현재 외부 배포 pack은 `Assets/ApocalypticEnvironment`, `Assets/CombatGirlsCharacterPack`, `Assets/Fantasy Skybox FREE`, `Assets/FourEvilDragonsPBR`, `Assets/Hits Effects FREE`, `Assets/InfographicElements_UI`, `Assets/Lunar Landscape 3D`, `Assets/Map`, `Assets/PixPlays`, `Assets/UNI VFX`다. Unity 참조 안정성을 위해 Drive 배포본도 원본 에셋과 `.meta`를 같은 상대 경로로 함께 보관한다. |
 
 ### 4.2. Player System
 | Component | Note |
@@ -567,6 +553,13 @@ fast multiplayer verify build는 `Assets/Editor/FastMultiplayerVerifyBuildRunner
 | **Hit/Damage System** | `IDamageable`, `DamageCaster`, `Health` + `IBossAttackHitReceiver` 기반 보스 공격 메타데이터 라우팅 구현 완료. 플레이어는 `StunState`/`Projectile Count Timer`/후속 무적 규칙을 사용하고, 보스는 공격 준비/실행 중 피격 모션을 무시한다. 플레이어/보스의 점멸은 공용 `BlinkWhiteEffect` 컴포넌트(`Assets/Scripts/Common/Visual/BlinkWhiteEffect.cs`)가 담당하며 `_BlinkWhite` 셰이더(`Assets/Shaders/BlinkWhiteLit.shader`)를 `MaterialPropertyBlock`으로 제어한다. |
 | **Asset Integration** | `PlayerAnimator`의 `Hit/Attack1/2/3/Die` 상태 모션 재연결 완료(2026-02-21). |
 | **Environment Fix Guard (환경 오류 복구)** | `Assets/Editor/PlayerAnimatorGuard.cs`로 환경 변경 시 발생하는 Animator 참조 오류를 자동 복구/검증한다. 필수 state/motion + 파라미터(`Speed` Float, `Hit` Trigger) 누락 점검, 모든 Layer + 중첩 StateMachine 재귀 순회, Locomotion BlendTree 자식 모션 검증, 중복 상태명 경고, 로드/임포트/이동/메뉴 경로를 지원하며 `Hit` 상태명은 `PlayerController.ANIM_STATE_HIT` 상수를 공용 참조한다. 추가로 `Attack1/2/3` 클립의 `OnHitStart/OnHitEnd` 이벤트 자동 보정 및 누락/순서 검증, `Tools/Validation/Fix Player Attack Events` 메뉴를 포함한다. |
+| **Multiplayer Ownership Scaffold** | `feature/multiplayer` 기준 `MultiplayerPlayerAvatar`, `MultiplayerBufferedInputProvider`, `MultiplayerLocalPlayerRegistry`, `MultiplayerGameplaySceneCoordinator`를 추가했다. scene cleanup은 `SceneManager.sceneLoaded` + avatar spawn fallback으로 보강했고, legacy scene `Player`는 main camera 분리 후 runtime hierarchy에서 제거한다. network player runtime name은 `hostPlayer` / `clientPlayer`로 고정하고, spawn slot은 Host/Client 기준으로 좌우 분리한다. 카메라/HUD는 local-owned player에만 다시 bind하며 backlog `4.1` 구현 기준은 충족했다. |
+| **4.4 Reference-Based Direction (Current)** | current `4.4` direction은 `Host authority + same CharacterController movement truth as solo + Boss Room style local presentation/camera masking`이다. `1~2 sec delay`, client authority, half prediction(`client predict + Host correction only`), separate custom locomotion motor는 current active answer로 채택하지 않는다. `Boss Room`은 structure/masking reference이고, `TheEndGame`와 prediction samples는 study reference로만 유지한다. |
+| **4.4 Movement Reset (Current Active Path)** | latest reset + masking pass 기준 current default runtime path는 `Host authority + same CharacterController movement truth as solo`다. `MultiplayerPlayerAvatar`는 client owner input을 Host로 올리고, Host authority replica는 `Full` simulation mode에서 `MultiplayerBufferedInputProvider`를 입력으로 사용해 solo와 같은 `MoveState` / `CharacterController.Move()` 경로를 계속 실행한다. client owner는 `LookOnly` mode에서 local look를 유지하고, gameplay root의 위치/회전 truth는 Host authoritative snapshot을 apply받는다. 추가로 `PlayerController`와 `ThirdPersonCameraController`는 local owner visual child / camera follow anchor에만 Boss Room style masking을 적용한다. current default path에서는 `idle -> move start` frame snap을 유지하고, `big error = snap`, `moving medium-large error = faster temporary smooth catch-up`, `idle/catch-up small error = normal smooth catch-up` 규칙을 사용한다. `active move = direct follow` 실험은 local jitter를 더 키워 current active path에서는 다시 제거했다. latest narrow follow-up은 `LookOnly` local owner의 locomotion `Speed` animator parameter를 즉시 갱신하고 큰 facing angle change에서만 body rotation을 빠르게 snap하도록 보강한 상태다. current diagnosis step으로는 `PlayerController`에 temporary local owner presentation trace hook을 추가해 `root / target / visual / offset / yaw`를 기록했고, trace 결과 `visualTargetOffset`이 moving 초반 약 `0.22 ~ 0.46`까지 커지는 것을 기준으로 medium catch-up tuning을 추가했다. Path B `Phase 0` follow-up으로 `MultiplayerPlayerAvatar`에는 explicit `LocomotionRuntimePath` switch point가 추가됐고, current default는 계속 `HostOnlyCharacterController`로 남긴다. Path B `Phase 1` follow-up으로는 owner uplink / host buffer / replay history가 같은 `MultiplayerLocomotionInput` contract를 사용하도록 정리했다. Path B `Phase 2` follow-up으로는 `PlayerController` 안에 shared `CharacterController` locomotion core(capture / apply / simulate)를 추출했다. Path B `Phase 3~5` follow-up으로는 `PredictionReconciliation` path를 locomotion-only scope에서 실제로 연결했다. 이 path를 선택하면 owner는 local prediction을 즉시 돌리고, Host authority replica는 같은 shared core로 authoritative locomotion state를 계산해 owner에게 ack state를 내려주며, owner는 mismatch 시 authoritative state로 복원 후 pending input을 replay한다. non-locomotion state에서는 여전히 Host-only fallback을 유지한다. verify gameplay test prefab(`Assets/Resources/Multiplayer/MultiplayerPlayerAvatar.prefab`)은 `_locomotionRuntimePath = PredictionReconciliation`를 serialize해 `Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity` runtime spawn이 바로 Path B를 타도록 맞췄고, spawn 시에는 selected path / active prediction / role / simulation mode를 한 줄로 log한다. latest debug-line cleanup 기준 current required runtime logs는 `MultiplayerRuntimeRoot` startup tick log, `MultiplayerPlayerAvatar` role configuration log, real Path B owner path의 `[MultiplayerClientMoveTrace]`, 그리고 pure strafe용 `[MultiplayerPredictedRenderTrace]`다. old `LookOnly` presentation trace는 default off이고, current Path B trace는 기본적으로 `predict / fallback / reconcile`만 남기며 noisy `deadzone / duplicate` packet logs와 idle `predict` spam은 default off다. latest narrow startup follow-up은 owner prediction이 local current transform을 오래 baseline으로 잡지 않도록, first Host authoritative locomotion state를 startup baseline으로 먼저 수용한 뒤 normal prediction/replay를 시작하도록 바꿨다. latest Path B trace reading says `0 -> 1` input start lag is now mostly solved and remaining pure `A / D` slight jitter looks more like render-side tick-step visibility than authority mismatch. For that reason, `MultiplayerRuntimeRoot` now sets an explicit `NetworkConfig.TickRate = 60` for multiplayer runtime verification and logs the active tick rate once at startup. latest narrow render follow-up keeps Path B authority/replay as-is and smooths only the local predicted visual-child path in `PredictedLocomotion`. latest render update replaced old `SmoothDamp` chase with shared tick interpolation, and the latest timing-shape follow-up keeps that shared path but changes the interpolation alpha to a stronger faster-early cubic ease-out curve so the visible body spends less of the tick trailing behind the current predicted target. large gaps still use the same snap rule. latest narrow transition follow-up keeps that interpolation and adds one sharp move-angle predicted-body snap so turn/strafe transition frames do not keep dragging the visible child behind the predicted root. the lateral-lead experiment did not outperform the shared interpolation path, so current active render shape now uses the same eased `previous predicted tick -> current predicted tick` interpolation for `forward/back` and `A / D`, while keeping sharp-transition snap and big-gap snap as separate safety rules. latest tick-boundary follow-up keeps the same shared path again, but now applies a small `alphaFloor = 0.05` before the cubic ease-out curve so the first render frame after a new predicted target does not begin at exact `alpha = 0`. latest grouped visual reading says larger `alphaFloor` values can reduce lag numbers but increase render-speed spikes, so the current calm visual zone is the lower range around `0.04 ~ 0.07`. `MultiplayerPlayerAvatar` Inspector에는 attached networking components 역할을 easy English help box로 먼저 보여주는 custom guide를 추가해 component stack 이해를 돕는다. old dead custom-motor branch는 active build path에서 제거했다. |
+| **4.4 Predicted Render Trace Metrics** | latest follow-up 기준 `[MultiplayerPredictedRenderTrace]`는 `root / target / visual / visualTargetOffset / visualRootOffset / rootYaw / visualVelMag` 외에 `tickStep / behindTicks / interpMode / smoothWindow / alphaFloor / linearAlpha / interpAlpha / supportSmooth`도 함께 기록한다. easy English reading은 `behindTicks`가 visible body가 몇 tick 정도 뒤처지는지를 뜻하고, `alphaFloor`는 tick-boundary frame이 exact `alpha = 0`에서 시작하지 않도록 먼저 주는 minimum start progress다. important correction: current visual smoothing judgment should use `visualVelMag` too, not only `behindTicks`, because smaller lag numbers can still look more jittery if the visible body spikes harder inside the tick. |
+
+참조 로그: `docs/Progress_Log/2026-03-25.md`
+참조 로그: `docs/Progress_Log/2026-03-26.md`
 
 ### 4.3. Boss System (The Dragon)
 | Component | Note |
@@ -583,18 +576,22 @@ fast multiplayer verify build는 `Assets/Editor/FastMultiplayerVerifyBuildRunner
 ### 4.4. User Interface (UI)
 | Component | Note |
 | --- | --- |
-| **UI System** | 전투 HUD 배치 + `CombatHUDController` 연동 완료. `Health.OnDamageTaken/OnDeath` 이벤트로 플레이어/보스 HP Fill을 즉시 갱신하고, `DamageCaster.OnAttackWindowResolved` 결과를 `HIT + 피해량` 고정형 피드백(스케일 강조 후 짧은 페이드 아웃)으로 표시한다. 이름 라벨(`Player`, `Dragon`) 및 `ShowHud(bool)` 기반 전체 표시 제어를 포함한다. shared `Canvas.prefab`의 `PartnerHUD_Panel`은 기본적으로 숨기고, `PlayerController.InitializeCombatHUD()`가 `MultiplayerSessionService.HasActiveSession`이 true일 때만 `SetPartnerHudVisible(true)`로 연다. combo UI(`Text_Combo`)도 기본 hidden 상태를 유지하며, `AttackState.StartComboStep()`은 `PlayerController.SetPendingComboHudStep(step)`로 현재 단계만 준비하고, 실제 open은 `DamageCaster.OnAttackHitConfirmed` -> `PlayerController.ShowComboHud(step)` -> `CombatHUDController.ShowCombo(step)` 경로에서만 수행한다. `AttackState.Exit()` / `InitializeCombatHUD()` / `ShowHud(false)`는 `HideCombo()`로 stale combo UI를 정리한다. duplicated multiplayer title scene의 `Solo Play`도 duplicated multiplayer gameplay scene path로 들어갈 수 있으므로, partner HUD 표시 게이트는 scene path가 아니라 real session state를 truth source로 사용한다. current multiplayer fast-check gameplay scene은 lightweight verify scene(`Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity`)이고, 이 scene은 `Ground`, `Wall`, `Systems`, `ResultTestTrigger`, shared `Canvas.prefab`만 유지해 heavy background art 없이 Host/Client/Lobby/result flow를 검증한다. full-art duplicate scene(`Assets/Scenes/mutiplayer/GamePlayScene.unity`)은 별도 참조용으로 남겨 둔다. |
-| **Title Multiplayer UI** | `TitleSceneController`가 기존 캔버스 위에 `TitleMainPanel / MultiplayerModePanel / HostCreatePanel / ClientJoinPanel / LobbyPanel / WrongKeyPopup`을 구성한다. main title scene의 UI 레이아웃은 그대로 두고, duplicated multiplayer title scene(`Assets/Scenes/mutiplayer/TitleScene.unity`)에서는 `MultiplayerTitleSceneRuntimeInstaller` + `MultiplayerTitleSceneDriver`가 runtime에만 붙는다. 이 driver는 Host `Create Room`, Client `Join`, Host `Start`를 모두 `MultiplayerSessionService`로 넘기고, service는 먼저 `MultiplayerServicesBootstrap` ready를 보장한 뒤 Host는 `Relay allocation -> join code -> Lobby create(metadata S1) -> NGO Host start`, Client는 `join code normalize -> Lobby query(S1) -> Lobby join -> Relay join -> NGO Client start`, Host `Start`는 `StartGameplayAsync()` -> `StartingGameplay` -> NGO synchronized scene load를 수행한다. 성공 시 `LobbyPanel`에는 real room title, real join code, real player count가 바인딩되고, wrong key는 `WrongKeyPopup`으로 되돌리며 그 외 실패와 `Cancel`은 strict cleanup 후 title로 돌아간다. `LobbyActive` 구간에서는 host heartbeat, `2s` poll fallback, host-owned `SessionState(Waiting/Ready)` metadata sync가 유지되며, `Start`는 Host에게만 보이고 `2/2 connected + NGO stable + 2초 유지`일 때만 활성화된다. Session 7 strict cleanup hardening 이후에는 driver가 `Closing` state를 구독해 cleanup 시작 즉시 추가 버튼 입력을 막고, service는 session-version guard로 stale refresh/heartbeat/session-state update 결과를 무시한다. multiplayer fast-check 기본 path는 `Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity`이고, gameplay start 시 driver는 `Starting...` label + button lock만 담당하며 fail 시 snapshot rebind 또는 title return popup으로 복구한다. 2026-03-19 manual smoke 기준으로 both peers는 same lobby/session과 same gameplay verify scene enter까지 확인됐고, player model selection / boss gameplay shared state는 아직 후속 sync 범위로 남아 있다. |
+| **UI System** | 전투 HUD 배치 + `CombatHUDController` 연동 완료. `Health.OnDamageTaken/OnDeath` 이벤트로 플레이어/보스 HP Fill을 즉시 갱신하고, `DamageCaster.OnAttackWindowResolved` 결과를 `HIT + 피해량` 고정형 피드백(스케일 강조 후 짧은 페이드 아웃)으로 표시한다. 이름 라벨(`Player`, `Dragon`) 및 `ShowHud(bool)` 기반 전체 표시 제어를 포함한다. shared `Canvas.prefab`의 `PartnerHUD_Panel`은 기본적으로 숨기고, shared `main`의 `PlayerController.InitializeCombatHUD()`는 항상 `SetPartnerHudVisible(false)`를 호출해 partner slot을 reserve-only 상태로 유지한다. combo UI(`Text_Combo`)도 기본 hidden 상태를 유지하며, `AttackState.StartComboStep()`은 `PlayerController.SetPendingComboHudStep(step)`로 현재 단계만 준비하고, 실제 open은 `DamageCaster.OnAttackHitConfirmed` -> `PlayerController.ShowComboHud(step)` -> `CombatHUDController.ShowCombo(step)` 경로에서만 수행한다. `AttackState.Exit()` / `InitializeCombatHUD()` / `ShowHud(false)`는 `HideCombo()`로 stale combo UI를 정리한다. `GameManager`는 scene binding이 비어 있어도 `GameOver_Panel` / `GameResult` text를 runtime에서 재탐색한다. |
+| **Title Prototype UI** | `TitleSceneController`가 기존 캔버스 위에 `TitleMainPanel / MultiplayerModePanel / HostCreatePanel / ClientJoinPanel / LobbyPanel / WrongKeyPopup`을 구성한다. `main`에서는 이 패널들이 local prototype flow로만 동작하며, Host path는 auto room title + fake join code + start unlock timer를 사용한다. real bootstrap/session/network transport는 이 브랜치에 두지 않고 `feature/multiplayer`에서만 유지한다. |
 
 ### 4.5. Game Logic & Flow
 | Component | Note |
 | --- | --- |
-| **Game Loop** | `TitleSceneController`가 `Solo Play / Multi Play` 버튼 기반 시작 흐름을 관리하고, main scene 기준으로는 `SceneLoader` + `LoadingSceneController` 경유 전투 진입/`GameManager` 결과 처리까지 연결한다. duplicated multiplayer title scene에서는 `Solo Play`만 `MultiplayerScenePaths` 기반 path load를 사용해 lightweight verify scene(`Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity`)으로 직접 이동한다. multiplayer Host `Start`는 `MultiplayerSessionService.StartGameplayAsync()`가 `LobbyActive -> StartingGameplay`, lobby `SessionState=Starting`, NGO `NetworkSceneManager.LoadScene(...)`, `OnLoadEventCompleted` 완료 판정까지 owner로 처리한다. `15s` timeout, mid-start disconnect, scene sync fail은 strict cleanup 후 duplicated multiplayer title scene으로 복귀한다. Session 7 strict cleanup hardening은 `Back/Cancel/fail/disconnect`를 같은 close order로 묶고, cleanup이 완료되기 전에는 new create/join/start를 허용하지 않는다. fast multiplayer verify build는 `Assets/Editor/FastMultiplayerVerifyBuildRunner.cs`가 `TitleScene + GamePlayScene_Verify`를 직접 빌드하고, build 동안 Beautify runtime `Resources`를 잠시 제외해 `Hidden/Kronnect/Beautify` compile 부담을 줄인다. 2026-03-19 manual smoke에서 both peers same-scene enter는 통과했고, current known gap은 shared player model selection과 boss/gameplay state sync다. Session 6 gameplay start는 여기까지 구현됐고, 다음 단계는 `2P spawn`, `boss aggro`, `spectator`, `retry consensus`다. |
+| **Game Loop** | `TitleSceneController`가 `Solo Play / Multi Play` 버튼 기반 시작 흐름을 관리하고, `SceneLoader` + `LoadingSceneController` 경유 전투 진입/`GameManager` 결과 처리까지 연결한다. `Multi Play` path는 shared `main`에서 local UI prototype으로만 남아 있으며, host/client panel state와 wrong-key popup UX를 검증할 수 있다. real multiplayer runtime scene routing과 service bootstrap은 `feature/multiplayer`가 소유한다. |
 
-### 4.6. Network Architecture
+### 4.6. Branch Isolation Policy
 | Component | Note |
 | --- | --- |
-| **Netcode Prep** | `Session 1 - Package Baseline`, `Session 2 - Services Bootstrap`, `Session 3 - Host Create`, `Session 4 - Client Join`, `Session 5 - Lobby Active`, `Session 6 - gameplay start`, `Session 7 - strict cleanup`까지 구현됐다. `MultiplayerServicesBootstrap`은 `UnityServices.InitializeAsync()` + anonymous sign-in + `PlayerId` 확보를 one-time init으로 묶고, `MultiplayerRuntimeRoot`는 `NetworkManager` + `UnityTransport` singleton owner를 맡는다. `MultiplayerSessionService`는 Host create 시 `Relay allocation -> join code -> Lobby create(metadata S1) -> UnityTransport host relay configure -> NGO StartHost()`, Client join 시 `join code normalize -> QueryLobbiesAsync(S1) -> JoinLobbyByIdAsync -> Relay JoinAllocationAsync -> UnityTransport client relay configure -> NGO StartClient()` 순서를 실행하며, `LobbyActive` 동안 host heartbeat, `2s` poll fallback refresh, host-owned `SessionState(Waiting/Ready)` metadata sync, `2/2 + NGO stable + 2초` Start unlock gate를 관리한다. Host `StartGameplayAsync()`는 `StartingGameplay` state, host-owned `SessionState(Waiting/Ready/Starting)` sync, NGO `SceneManager.LoadScene(...)`, `OnLoadEventCompleted` completion gate, `15s` timeout / client disconnect fatal cleanup / title return mapping까지 owner로 관리한다. Session 7 strict cleanup hardening에서는 `Closing`을 real busy state로 취급하고, create/join/cleanup start마다 session version을 올려 old refresh/heartbeat/session-state update/lobby event callback 결과를 무효화한다. current fast multiplayer default target은 lightweight verify scene(`Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity`)이고, `LoadingSceneController`를 재사용하지 않는 direct gameplay scene sync로 Session 6를 닫았다. manual smoke 기준으로 same session + same-scene enter는 검증됐지만, in-game shared model selection과 boss/combat state sync는 아직 미구현이다. |
+| **Shared Main Baseline** | `main`은 UI/art/solo-safe shared branch다. 이 baseline은 `Assets/Scripts/Multiplayer/**`, duplicated multiplayer scenes, `Unity Services` / `Relay` / `Lobby` / `Netcode` package set 없이도 compile/run 가능해야 한다. shared art import에 필요한 `2D Sprite`, `FBX` package add-on은 허용한다. |
+| **Multiplayer Ownership** | real multiplayer runtime, duplicated scenes, network prefabs, UGS/NGO package set, partner HUD activation은 `feature/multiplayer` 브랜치가 단일 owner다. shared UI/art 변경은 먼저 `main`에 합치고, `feature/multiplayer`가 이후 `main`을 merge/pull하는 흐름을 기본값으로 한다. |
+| **Solo Branch Base** | `feature/solo-play`는 latest shared `main`에서 분기하는 safe gameplay branch다. solo-specific gameplay는 여기서 진행하되, shared UI/art asset은 계속 `main`을 integration point로 사용한다. |
+
+참조 로그: `docs/Progress_Log/2026-03-24.md`
 
 ---
 
