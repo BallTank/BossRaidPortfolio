@@ -192,6 +192,9 @@ MonoBehaviour:
   attackDamage: 2
   attackDuration: 1
   attackCooldown: 4
+  basicAttackSettings:
+    readyDuration: 0.2
+    readyNormalizedWindow: {x: 0.15, y: 0.45}
   _headDamageCaster: {fileID: 423284611}
   _lungeDamageCaster: {fileID: 1189825118}
   lungeAttackSettings:
@@ -1568,6 +1571,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   mouseSensitivity: 0.1
+  _startInputEnabled: 1
 --- !u!114 &1585844237
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1612,6 +1616,15 @@ MonoBehaviour:
   _bossHealthForHUD: {fileID: 242866946}
   _playerDisplayName: Player
   _bossDisplayName: Dragon
+  _simulationMode: 0
+  _isLocalPresentationEnabled: 1
+  _driveCameraRootFromLookInput: 0
+  _multiplayerLocomotionCollisionMask:
+    serializedVersion: 2
+    m_Bits: 0
+  _multiplayerLocomotionCollisionShell: 0.02
+  _multiplayerLocomotionGroundSnapDistance: 0.15
+  _multiplayerLocomotionMaxSlideIterations: 1
   enableAttack2DebugLog: 1
   attack2DebugTraceDuration: 0.8
   attack2DebugLogInterval: 0.05
@@ -5153,6 +5166,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Canvas
       objectReference: {fileID: 0}
+    - target: {fileID: 5408967736812468227, guid: 112537a074cf5c74a86e56798b4d1d19, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 7129185756635639407, guid: 112537a074cf5c74a86e56798b4d1d19, type: 3}
       propertyPath: m_Pivot.x
       value: 0
@@ -5231,6 +5248,14 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 7129185756635639407, guid: 112537a074cf5c74a86e56798b4d1d19, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 7989388143362648919, guid: 112537a074cf5c74a86e56798b4d1d19, type: 3}
+      propertyPath: m_IsActive
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 8638819297278406226, guid: 112537a074cf5c74a86e56798b4d1d19, type: 3}
+      propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
     m_RemovedComponents: []

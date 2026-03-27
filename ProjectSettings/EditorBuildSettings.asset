@@ -11,7 +11,7 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity
     guid: faa8d9a16ca6489a9bb3181654e99339
-  - enabled: 0
+  - enabled: 1
     path: Assets/Scenes/mutiplayer/LoadingScene.unity
     guid: b850638b70b074f45a3d0084ccf2ef43
   - enabled: 0

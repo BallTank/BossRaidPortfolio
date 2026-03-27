@@ -7,13 +7,23 @@ namespace Core.Multiplayer
     [DisallowMultipleComponent]
     public sealed class MultiplayerRuntimeRoot : MonoBehaviour
     {
+        private const string PlayerAvatarResourcePath = "Multiplayer/MultiplayerPlayerAvatar";
+        private const uint DefaultNetworkTickRate = 60;
+
         private static MultiplayerRuntimeRoot _instance;
+        private bool _isPlayerAvatarPrefabRegistered;
+        private bool _didWarnMissingPlayerAvatarPrefab;
+        private bool _didLogNetworkConfig;
+
+        [Header("Network Tick")]
+        [SerializeField] private uint _networkTickRate = DefaultNetworkTickRate;
 
         public static bool HasInstance => _instance != null;
         public static MultiplayerRuntimeRoot Instance => GetOrCreateInstance();
 
         public NetworkManager NetworkManager { get; private set; }
         public UnityTransport UnityTransport { get; private set; }
+        public GameObject PlayerAvatarPrefab { get; private set; }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void ResetStaticState()
@@ -58,6 +68,7 @@ namespace Core.Multiplayer
         public void EnsureConfigured()
         {
             EnsureComponents();
+            EnsurePlayerAvatarPrefabLoaded();
             ConfigureNetworkManager();
         }
 
@@ -86,7 +97,48 @@ namespace Core.Multiplayer
             NetworkManager.NetworkConfig.NetworkTransport = UnityTransport;
             NetworkManager.NetworkConfig.EnableSceneManagement = true;
             NetworkManager.NetworkConfig.PlayerPrefab = null;
+            NetworkManager.NetworkConfig.TickRate = _networkTickRate == 0 ? 1u : _networkTickRate;
             NetworkManager.RunInBackground = true;
+            RegisterPlayerAvatarPrefab();
+            LogRuntimeConfiguration();
+        }
+
+        private void EnsurePlayerAvatarPrefabLoaded()
+        {
+            if (PlayerAvatarPrefab != null)
+            {
+                return;
+            }
+
+            PlayerAvatarPrefab = Resources.Load<GameObject>(PlayerAvatarResourcePath);
+            if (PlayerAvatarPrefab == null && !_didWarnMissingPlayerAvatarPrefab)
+            {
+                _didWarnMissingPlayerAvatarPrefab = true;
+                Debug.LogWarning($"MultiplayerRuntimeRoot: Could not load player avatar prefab at Resources/{PlayerAvatarResourcePath}.prefab");
+            }
+        }
+
+        private void RegisterPlayerAvatarPrefab()
+        {
+            if (_isPlayerAvatarPrefabRegistered || PlayerAvatarPrefab == null || NetworkManager == null)
+            {
+                return;
+            }
+
+            NetworkManager.AddNetworkPrefab(PlayerAvatarPrefab);
+            _isPlayerAvatarPrefabRegistered = true;
+        }
+
+        private void LogRuntimeConfiguration()
+        {
+            if (_didLogNetworkConfig || NetworkManager == null || NetworkManager.NetworkConfig == null)
+            {
+                return;
+            }
+
+            _didLogNetworkConfig = true;
+            Debug.Log(
+                $"MultiplayerRuntimeRoot: configured TickRate={NetworkManager.NetworkConfig.TickRate} PlayerAvatarPrefab={(PlayerAvatarPrefab != null ? PlayerAvatarPrefab.name : "null")} SceneManagement={NetworkManager.NetworkConfig.EnableSceneManagement}");
         }
     }
 }

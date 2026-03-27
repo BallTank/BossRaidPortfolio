@@ -486,6 +486,7 @@ namespace Core.Multiplayer
                 }
 
                 await _gameplayStartTaskSource.Task;
+                MultiplayerGameplaySceneCoordinator.TrySpawnAuthoritativePlayers();
                 Debug.Log("MultiplayerSessionService: Gameplay scene sync completed.");
             }
             catch (Exception ex)

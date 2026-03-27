@@ -165,6 +165,28 @@ namespace Core.GameFlow
             }
         }
 
+        public void SetPlayerHealth(Health playerHealth)
+        {
+            if (_playerHealth == playerHealth)
+            {
+                return;
+            }
+
+            bool shouldRebind = _isHealthEventsBound;
+            if (shouldRebind)
+            {
+                UnbindHealthEvents();
+            }
+
+            _playerHealth = playerHealth;
+            _playerDead = _playerHealth != null && _playerHealth.IsDead;
+
+            if (shouldRebind && isActiveAndEnabled)
+            {
+                BindHealthEvents();
+            }
+        }
+
         private void ResolveGameOverUiReferences()
         {
             if (_gameOverRoot != null && _resultLabel != null)
