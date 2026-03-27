@@ -8,64 +8,131 @@ namespace Core.Player
     {
         [Header("Settings")]
         [SerializeField] private float mouseSensitivity = 0.1f;
+        [SerializeField] private bool _startInputEnabled = true;
 
-        // [수정됨] PlayerControlInput으로 변경
         private PlayerControlInput _inputActions;
+        private static LocalInputProvider _cursorOwner;
 
         private float _currentYaw;
         private float _currentPitch;
+        private bool _runtimeInputEnabled;
+        private Vector2 _cachedMoveDirection;
+        private byte _cachedButtons;
 
         private void Awake()
         {
-            // [수정됨] 생성자도 PlayerControlInput으로 변경
             _inputActions = new PlayerControlInput();
-
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
             _currentYaw = transform.eulerAngles.y;
             _currentPitch = transform.eulerAngles.x;
+            _runtimeInputEnabled = false;
+            _cachedMoveDirection = Vector2.zero;
+            _cachedButtons = 0;
         }
 
         private void OnEnable()
         {
-            // Action Map 이름이 "Player"인지 확인!
-            _inputActions.Player.Enable();
+            SetRuntimeInputEnabled(_startInputEnabled);
         }
 
         private void OnDisable()
         {
-            _inputActions.Player.Disable();
+            SetRuntimeInputEnabled(false);
         }
 
         private void Update()
         {
-            // Action 이름 "Look"
+            if (!_runtimeInputEnabled)
+            {
+                return;
+            }
+
             Vector2 mouseDelta = _inputActions.Player.Look.ReadValue<Vector2>();
             _currentYaw += mouseDelta.x * mouseSensitivity;
 
-            // 위아래(Pitch) 누적 및 제한
-            // 마우스 위로 올리면(-) 각도가 줄어야 고개가돌림
             _currentPitch -= mouseDelta.y * mouseSensitivity;
-            _currentPitch = Mathf.Clamp(_currentPitch, -80f, 80f); // 목꺾임 방지
+            _currentPitch = Mathf.Clamp(_currentPitch, -80f, 80f);
+            RefreshCachedGameplayInput();
         }
 
         public PlayerInputPacket GetInput()
         {
             PlayerInputPacket packet = new PlayerInputPacket();
+            if (!_runtimeInputEnabled)
+            {
+                packet.lookYaw = _currentYaw;
+                packet.lookPitch = _currentPitch;
+                return packet;
+            }
 
-            // 1. 이동 (Move)
-            packet.moveDir = _inputActions.Player.Move.ReadValue<Vector2>().normalized;
-
-            // 2. 시점
+            packet.moveDir = _cachedMoveDirection;
             packet.lookYaw = _currentYaw;
             packet.lookPitch = _currentPitch;
-
-            // 3. 버튼 (Dash, Attack, Jump)
-            packet.SetFlag(InputFlag.Dash, _inputActions.Player.Dash.IsPressed());
-            packet.SetFlag(InputFlag.Attack, _inputActions.Player.Attack.IsPressed());
-            packet.SetFlag(InputFlag.Jump, _inputActions.Player.Jump.IsPressed());
+            packet.buttons = _cachedButtons;
 
             return packet;
+        }
+
+        public void SetLookAngles(float yaw, float pitch)
+        {
+            _currentYaw = yaw;
+            _currentPitch = Mathf.Clamp(pitch, -80f, 80f);
+        }
+
+        public void SetRuntimeInputEnabled(bool enabled)
+        {
+            if (_inputActions == null)
+            {
+                return;
+            }
+
+            _startInputEnabled = enabled;
+            _runtimeInputEnabled = enabled;
+
+            if (enabled)
+            {
+                _inputActions.Player.Enable();
+                RefreshCachedGameplayInput();
+                _cursorOwner = this;
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+                return;
+            }
+
+            _inputActions.Player.Disable();
+            _cachedMoveDirection = Vector2.zero;
+            _cachedButtons = 0;
+            if (_cursorOwner == this)
+            {
+                _cursorOwner = null;
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+            }
+        }
+
+        private void RefreshCachedGameplayInput()
+        {
+            if (_inputActions == null)
+            {
+                return;
+            }
+
+            _cachedMoveDirection = _inputActions.Player.Move.ReadValue<Vector2>().normalized;
+            _cachedButtons = 0;
+
+            if (_inputActions.Player.Dash.IsPressed())
+            {
+                _cachedButtons |= (byte)InputFlag.Dash;
+            }
+
+            if (_inputActions.Player.Attack.IsPressed())
+            {
+                _cachedButtons |= (byte)InputFlag.Attack;
+            }
+
+            if (_inputActions.Player.Jump.IsPressed())
+            {
+                _cachedButtons |= (byte)InputFlag.Jump;
+            }
         }
     }
 }

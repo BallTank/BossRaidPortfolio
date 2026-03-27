@@ -1,4 +1,5 @@
 ﻿using UnityEngine;
+using UnityEngine.SceneManagement;
 #if UNITY_EDITOR
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -77,12 +78,15 @@ namespace Core.CameraSystem
 
         private static void EnsureComponentExists(bool markSceneDirtyInEditor)
         {
-            PlayerController player = FindObjectOfType<PlayerController>();
-            if (player == null) return;
-
             Camera mainCamera = Camera.main;
             if (mainCamera == null) return;
             if (mainCamera.GetComponent<ThirdPersonCameraController>() != null) return;
+
+            if (!IsMultiplayerGameplayContext())
+            {
+                PlayerController player = FindObjectOfType<PlayerController>();
+                if (player == null) return;
+            }
 
             mainCamera.gameObject.AddComponent<ThirdPersonCameraController>();
 
@@ -121,9 +125,10 @@ namespace Core.CameraSystem
 
         private void LateUpdate()
         {
+            RefreshBindingIfNeeded();
+
             if (!_initialized)
             {
-                ResolveReferences();
                 InitializeRig();
                 if (!_initialized) return;
             }
@@ -136,9 +141,13 @@ namespace Core.CameraSystem
         /// </summary>
         private void ResolveReferences()
         {
-            if (playerController == null)
+            PlayerController resolvedPlayerController = ResolvePreferredPlayerController();
+            if (resolvedPlayerController != playerController)
             {
-                playerController = FindObjectOfType<PlayerController>();
+                playerController = resolvedPlayerController;
+                followTarget = playerController != null ? playerController.transform : null;
+                _initialized = false;
+                _hasLastFollowPosition = false;
             }
 
             if (followTarget == null && playerController != null)
@@ -265,7 +274,7 @@ namespace Core.CameraSystem
         {
             if (!_hasLastFollowPosition) return 0f;
 
-            Vector3 delta = followTarget.position - _lastFollowPosition;
+            Vector3 delta = GetResolvedFollowPosition() - _lastFollowPosition;
             delta.y = 0f;
             float deltaTime = Mathf.Max(Time.deltaTime, 0.0001f);
             return delta.magnitude / deltaTime;
@@ -273,15 +282,61 @@ namespace Core.CameraSystem
 
         private void UpdateFollowPositionSnapshot()
         {
-            _lastFollowPosition = followTarget.position;
+            _lastFollowPosition = GetResolvedFollowPosition();
             _hasLastFollowPosition = true;
         }
 
         private Vector3 GetAnchorPosition()
         {
-            Vector3 anchor = followTarget.position;
+            Vector3 anchor = GetResolvedFollowPosition();
             anchor.y += targetHeight;
             return anchor;
+        }
+
+        private Vector3 GetResolvedFollowPosition()
+        {
+            if (playerController != null)
+            {
+                return playerController.GetPreferredCameraFollowPosition();
+            }
+
+            return followTarget.position;
+        }
+
+        private void RefreshBindingIfNeeded()
+        {
+            ResolveReferences();
+
+            if (playerController == null)
+            {
+                _initialized = false;
+            }
+        }
+
+        private PlayerController ResolvePreferredPlayerController()
+        {
+            if (IsMultiplayerGameplayContext())
+            {
+                return Core.Multiplayer.MultiplayerLocalPlayerRegistry.LocalPlayer;
+            }
+
+            if (playerController != null)
+            {
+                return playerController;
+            }
+
+            return FindObjectOfType<PlayerController>();
+        }
+
+        private static bool IsMultiplayerGameplayContext()
+        {
+            if (!Core.Multiplayer.MultiplayerSessionService.HasInstance || !Core.Multiplayer.MultiplayerSessionService.Instance.HasActiveSession)
+            {
+                return false;
+            }
+
+            Scene activeScene = SceneManager.GetActiveScene();
+            return string.Equals(activeScene.path, Core.Multiplayer.MultiplayerScenePaths.GamePlayScenePath, System.StringComparison.OrdinalIgnoreCase);
         }
 
     }
