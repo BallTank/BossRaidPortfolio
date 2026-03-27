@@ -78,3 +78,8 @@ crashlytics-build.properties
 .vscode/
 .gemini/
 
+# Local keep-out paths for multiplayer iteration
+/Assets/Animations/CombatGirlsCharacterPack/
+/Assets/PixPlays/
+/docs/temp_console_log.txt
+
