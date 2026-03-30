@@ -953,7 +953,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2171768ee9d84149a3ef155787820f25, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _locomotionRuntimePath: 1
 --- !u!95 &7921304313427914470
 Animator:
   serializedVersion: 5

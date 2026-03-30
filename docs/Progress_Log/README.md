@@ -24,12 +24,13 @@
 - [TEMPLATE.md](./TEMPLATE.md)
 
 ## 📅 날짜별 로그
-- [2026-03-27.md](./2026-03-27.md) - multiplayer Path B single-visible-gauge inspector cleanup for `clientPlayer` predicted render tuning + avatar component guide help box + predicted render lateral lead follow-up + render-behind trace metrics + grouped lead comparison + hidden `0.0` baseline reset + lateral-branch removal + cubic ease-out alpha timing follow-up + tick-boundary `alphaFloor` follow-up + calm-visual reading correction (`visualVelMag` + low `alphaFloor` zone) + compile validation
-- [2026-03-26.md](./2026-03-26.md) - multiplayer `4.4` movement experiment history + reset to Host-only `CharacterController` path + Boss Room style presentation/camera masking + direct-follow revert + presentation trace hook + trace-based medium moving catch-up + Path B Phase 0 runtime path switch + Path B Phase 1 locomotion input contract + Path B Phase 2 shared locomotion core extraction + Path B Phase 3/4/5 prediction-authority-reconciliation wiring + verify prefab `PredictionReconciliation` override + Path B client prediction trace hook + explicit multiplayer tick-rate tuning + debug-line cleanup + first authoritative baseline sync fix + predicted render smoothing follow-up + predicted render trace hook + predicted render tick interpolation + sharp-transition snap follow-up + first render-smooth baseline guess + inspector-guided range/baseline follow-up + single-visible-gauge cleanup + compile validation
-- [2026-03-25.md](./2026-03-25.md) - multiplayer gameplay local ownership scaffold + runtime legacy `Player` removal + exact `hostPlayer`/`clientPlayer` naming
-- [2026-03-24.md](./2026-03-24.md) - main multiplayer runtime/package cleanup + shared branch baseline 복구 + branch ownership 문서 동기화 + third-party imported pack Google Drive cutover
-- [2026-03-18.md](./2026-03-18.md) - multiplayer test gameplay scene artist map/UI merge + partner HUD multiplayer-only gate + combo HUD hit-confirm gate + main gameplay scene promotion + multiplayer folder route restore
-- [2026-03-17.md](./2026-03-17.md) - Client join 런타임 + Lobby Events compile 안정화
+- [2026-03-30.md](./2026-03-30.md) - `PlayerController` 멀티플레이 정리, `LookOnly` 제거, 이동 문서 동기화, 빌드 검증
+- [2026-03-27.md](./2026-03-27.md) - predicted render 튜닝 정리, lateral lead 제거, cubic ease-out/`alphaFloor` 보정, 빌드 검증
+- [2026-03-26.md](./2026-03-26.md) - Host-only 경로 리셋, prediction/reconcile 연결, 빌드 검증
+- [2026-03-25.md](./2026-03-25.md) - 멀티플레이 로컬 소유권 뼈대, legacy `Player` 제거, `hostPlayer`/`clientPlayer` 이름 고정
+- [2026-03-24.md](./2026-03-24.md) - 멀티플레이 런타임·패키지 정리, shared baseline 복구, 브랜치 문서 동기화
+- [2026-03-18.md](./2026-03-18.md) - 멀티플레이 테스트 씬 통합, partner HUD/콤보 HUD 게이트, 메인 gameplay 씬 승격
+- [2026-03-17.md](./2026-03-17.md) - Client join 런타임, Lobby Events 컴파일 안정화
 - [2026-03-16.md](./2026-03-16.md)
 - [2026-03-13.md](./2026-03-13.md)
 - [2026-03-12.md](./2026-03-12.md)

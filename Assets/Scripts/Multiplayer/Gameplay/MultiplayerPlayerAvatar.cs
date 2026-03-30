@@ -7,12 +7,6 @@ using UnityEngine;
 
 namespace Core.Multiplayer
 {
-    public enum LocomotionRuntimePath
-    {
-        HostOnlyCharacterController,
-        PredictionReconciliation
-    }
-
     [DisallowMultipleComponent]
     [RequireComponent(typeof(NetworkObject))]
     [RequireComponent(typeof(PlayerController))]
@@ -25,9 +19,6 @@ namespace Core.Multiplayer
         private const float FallbackFixedDeltaTime = 1f / 30f;
         private const float OwnerPositionCorrectionDeadzone = 0.03f;
         private const float OwnerYawCorrectionDeadzone = 1.25f;
-
-        [Header("Locomotion Runtime Path")]
-        [SerializeField] private LocomotionRuntimePath _locomotionRuntimePath = LocomotionRuntimePath.HostOnlyCharacterController;
 
         [Header("Prediction Debug")]
         [SerializeField] private bool _enableClientPredictionTrace = true;
@@ -82,7 +73,6 @@ namespace Core.Multiplayer
         private int _serverLastProcessedInputSequence;
         private int _serverNextInputSequenceToProcess = 1;
         private bool _hasReceivedInitialAuthoritativeBaseline;
-        private bool _hasLoggedPredictionPathFallback;
         private float _nextClientPredictionTraceLogTime;
         private float _nextClientAuthoritativeTraceLogTime;
 
@@ -113,7 +103,6 @@ namespace Core.Multiplayer
             ResetRuntimeState();
             MultiplayerGameplaySceneCoordinator.EnsureCurrentGameplayScenePrepared();
             RefreshAvatarDebugName();
-            LogPredictionPathFallbackIfNeeded();
             ConfigureRuntimeRole();
         }
 
@@ -162,7 +151,7 @@ namespace Core.Multiplayer
             }
 
             _lastReceivedAuthoritativeServerTick = state.ServerTick;
-            if (ShouldActivatePredictionRuntimePath() && !_hasReceivedInitialAuthoritativeBaseline)
+            if (!_hasReceivedInitialAuthoritativeBaseline)
             {
                 _playerController.ApplyLocomotionState(state);
                 ApplyLocomotionAnimator(state.PlanarVelocity.magnitude);
@@ -345,19 +334,16 @@ namespace Core.Multiplayer
 
         private void ConfigureClientOwnedPlayer()
         {
-            bool usePredictionRuntimePath = ShouldActivatePredictionRuntimePath();
             _localInputProvider?.SetLookAngles(transform.eulerAngles.y, _playerController.LatestLookPitch);
             _localInputProvider?.SetRuntimeInputEnabled(true);
             _playerController.SetInputProviderOverride(_localInputProvider);
-            _playerController.SetSimulationMode(usePredictionRuntimePath
-                ? PlayerController.RuntimeSimulationMode.PredictedLocomotion
-                : PlayerController.RuntimeSimulationMode.LookOnly);
+            _playerController.SetSimulationMode(PlayerController.RuntimeSimulationMode.PredictedLocomotion);
             _playerController.SetLocalPresentationEnabled(true);
             _playerController.SetLookDrivenCameraRootEnabled(false);
-            SetCharacterControllerEnabled(usePredictionRuntimePath);
+            SetCharacterControllerEnabled(true);
             SetOwnerTransformSyncEnabled(false);
-            _hasReceivedInitialAuthoritativeBaseline = !usePredictionRuntimePath;
-            _clientAllowsPrediction = !usePredictionRuntimePath;
+            _hasReceivedInitialAuthoritativeBaseline = false;
+            _clientAllowsPrediction = false;
             _clientPredictedState = _playerController.CaptureCurrentLocomotionState(0, 0, false);
             _hasClientPredictedState = true;
             BindLocalPresentation();
@@ -578,8 +564,7 @@ namespace Core.Multiplayer
 
         private bool ShouldUseAuthoritativeLocomotion()
         {
-            if (!ShouldActivatePredictionRuntimePath()
-                || _playerController == null
+            if (_playerController == null
                 || !_playerController.CanRunNetworkLocomotion)
             {
                 return false;
@@ -761,7 +746,6 @@ namespace Core.Multiplayer
             _serverLastProcessedInputSequence = 0;
             _serverNextInputSequenceToProcess = 1;
             _hasReceivedInitialAuthoritativeBaseline = false;
-            _hasLoggedPredictionPathFallback = false;
             _nextClientPredictionTraceLogTime = 0f;
             _nextClientAuthoritativeTraceLogTime = 0f;
 
@@ -836,34 +820,10 @@ namespace Core.Multiplayer
             return result < 0 ? result + modulo : result;
         }
 
-        private bool ShouldActivatePredictionRuntimePath()
-        {
-            return _locomotionRuntimePath == LocomotionRuntimePath.PredictionReconciliation
-                   && IsPredictionRuntimePathReady();
-        }
-
-        private static bool IsPredictionRuntimePathReady()
-        {
-            return true;
-        }
-
-        private void LogPredictionPathFallbackIfNeeded()
-        {
-            if (_hasLoggedPredictionPathFallback
-                || _locomotionRuntimePath != LocomotionRuntimePath.PredictionReconciliation
-                || IsPredictionRuntimePathReady())
-            {
-                return;
-            }
-
-            _hasLoggedPredictionPathFallback = true;
-            Debug.Log("MultiplayerPlayerAvatar: PredictionReconciliation path is selected but not active yet. Falling back to HostOnlyCharacterController for Phase 0.");
-        }
-
         private void LogRuntimeRoleConfiguration()
         {
             Debug.Log(
-                $"MultiplayerPlayerAvatar: role configured name={gameObject.name} selectedPath={_locomotionRuntimePath} activePrediction={ShouldActivatePredictionRuntimePath()} server={IsServer} owner={IsOwner} mode={_playerController.SimulationMode}");
+                $"MultiplayerPlayerAvatar: role configured name={gameObject.name} predictionPath=PredictionReconciliation server={IsServer} owner={IsOwner} mode={_playerController.SimulationMode}");
         }
 
         private void LogClientPredictionTrace(in MultiplayerLocomotionInput input, in MultiplayerLocomotionState predictedState, bool canPredictThisTick)
@@ -872,7 +832,6 @@ namespace Core.Multiplayer
                 || !_tracePredictionTicks
                 || !IsOwner
                 || IsServer
-                || !ShouldActivatePredictionRuntimePath()
                 || Time.time < _nextClientPredictionTraceLogTime)
             {
                 return;
@@ -914,8 +873,7 @@ namespace Core.Multiplayer
         {
             if (!_enableClientPredictionTrace
                 || !IsOwner
-                || IsServer
-                || !ShouldActivatePredictionRuntimePath())
+                || IsServer)
             {
                 return;
             }
@@ -966,8 +924,7 @@ namespace Core.Multiplayer
 
         private bool ShouldPredictLocomotionThisTick(in PlayerInputPacket input)
         {
-            if (!ShouldActivatePredictionRuntimePath()
-                || !_clientAllowsPrediction
+            if (!_clientAllowsPrediction
                 || _playerController == null
                 || !_playerController.CanRunNetworkLocomotion)
             {

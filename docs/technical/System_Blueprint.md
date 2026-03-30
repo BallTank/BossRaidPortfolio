@@ -54,6 +54,7 @@ classDiagram
         +MoveSpeed float
         +Animator Animator
         -_stateMachine StateMachine
+        -_multiplayerPresentationDriver MultiplayerPlayerPresentationDriver
         +MoveState MoveState
         +DashState DashState
         +JumpState JumpState
@@ -64,6 +65,11 @@ classDiagram
         +PlayerVisual Visual
         +Update()
         +SetCameraRoot(Transform)
+        +CaptureCurrentLocomotionState(...)
+        +ApplyLocomotionState(...)
+        +SimulateLocomotionTickFromCurrent(...)
+        +RefreshLocalPresentationBindings()
+        +GetPreferredCameraFollowPosition() Vector3
         +SetPendingComboHudStep(int)
         +ShowComboHud(int)
         +HideComboHud()
@@ -86,11 +92,23 @@ classDiagram
         +Clear()
         +GetInput()
     }
+    class PlayerLocomotionCore {
+        <<Static>>
+        +CaptureCurrentState(...)
+        +ApplyState(...)
+        +SimulateTick(...)
+    }
     class MultiplayerPlayerAvatar {
         <<NetworkBehaviour>>
         +OnNetworkSpawn()
         +SubmitOwnerInputServerRpc(...)
         +PushAuthoritativeLocomotionStateClientRpc(...)
+    }
+    class MultiplayerPlayerPresentationDriver {
+        +RefreshBindings()
+        +HandleSimulationModeChanged(...)
+        +UpdatePredictedLocomotionPresentation(PlayerInputPacket)
+        +GetPreferredCameraFollowPosition() Vector3
     }
     class MultiplayerLocalPlayerRegistry {
         <<Static>>
@@ -157,6 +175,8 @@ classDiagram
     PlayerController --> DamageCaster : controls/subscribes
     PlayerController --> CombatHUDController : updates
     PlayerController --> Health : owns
+    PlayerController --> PlayerLocomotionCore : delegates shared locomotion sim
+    PlayerController --> MultiplayerPlayerPresentationDriver : delegates multiplayer presentation
     ThirdPersonCameraController --> PlayerController : reads look cache / injects CameraRoot
     ThirdPersonCameraController --> MultiplayerLocalPlayerRegistry : resolves local owner in multiplayer
     MultiplayerPlayerAvatar --> PlayerController : configures runtime role
@@ -554,12 +574,14 @@ classDiagram
 | **Asset Integration** | `PlayerAnimator`의 `Hit/Attack1/2/3/Die` 상태 모션 재연결 완료(2026-02-21). |
 | **Environment Fix Guard (환경 오류 복구)** | `Assets/Editor/PlayerAnimatorGuard.cs`로 환경 변경 시 발생하는 Animator 참조 오류를 자동 복구/검증한다. 필수 state/motion + 파라미터(`Speed` Float, `Hit` Trigger) 누락 점검, 모든 Layer + 중첩 StateMachine 재귀 순회, Locomotion BlendTree 자식 모션 검증, 중복 상태명 경고, 로드/임포트/이동/메뉴 경로를 지원하며 `Hit` 상태명은 `PlayerController.ANIM_STATE_HIT` 상수를 공용 참조한다. 추가로 `Attack1/2/3` 클립의 `OnHitStart/OnHitEnd` 이벤트 자동 보정 및 누락/순서 검증, `Tools/Validation/Fix Player Attack Events` 메뉴를 포함한다. |
 | **Multiplayer Ownership Scaffold** | `feature/multiplayer` 기준 `MultiplayerPlayerAvatar`, `MultiplayerBufferedInputProvider`, `MultiplayerLocalPlayerRegistry`, `MultiplayerGameplaySceneCoordinator`를 추가했다. scene cleanup은 `SceneManager.sceneLoaded` + avatar spawn fallback으로 보강했고, legacy scene `Player`는 main camera 분리 후 runtime hierarchy에서 제거한다. network player runtime name은 `hostPlayer` / `clientPlayer`로 고정하고, spawn slot은 Host/Client 기준으로 좌우 분리한다. 카메라/HUD는 local-owned player에만 다시 bind하며 backlog `4.1` 구현 기준은 충족했다. |
-| **4.4 Reference-Based Direction (Current)** | current `4.4` direction은 `Host authority + same CharacterController movement truth as solo + Boss Room style local presentation/camera masking`이다. `1~2 sec delay`, client authority, half prediction(`client predict + Host correction only`), separate custom locomotion motor는 current active answer로 채택하지 않는다. `Boss Room`은 structure/masking reference이고, `TheEndGame`와 prediction samples는 study reference로만 유지한다. |
-| **4.4 Movement Reset (Current Active Path)** | latest reset + masking pass 기준 current default runtime path는 `Host authority + same CharacterController movement truth as solo`다. `MultiplayerPlayerAvatar`는 client owner input을 Host로 올리고, Host authority replica는 `Full` simulation mode에서 `MultiplayerBufferedInputProvider`를 입력으로 사용해 solo와 같은 `MoveState` / `CharacterController.Move()` 경로를 계속 실행한다. client owner는 `LookOnly` mode에서 local look를 유지하고, gameplay root의 위치/회전 truth는 Host authoritative snapshot을 apply받는다. 추가로 `PlayerController`와 `ThirdPersonCameraController`는 local owner visual child / camera follow anchor에만 Boss Room style masking을 적용한다. current default path에서는 `idle -> move start` frame snap을 유지하고, `big error = snap`, `moving medium-large error = faster temporary smooth catch-up`, `idle/catch-up small error = normal smooth catch-up` 규칙을 사용한다. `active move = direct follow` 실험은 local jitter를 더 키워 current active path에서는 다시 제거했다. latest narrow follow-up은 `LookOnly` local owner의 locomotion `Speed` animator parameter를 즉시 갱신하고 큰 facing angle change에서만 body rotation을 빠르게 snap하도록 보강한 상태다. current diagnosis step으로는 `PlayerController`에 temporary local owner presentation trace hook을 추가해 `root / target / visual / offset / yaw`를 기록했고, trace 결과 `visualTargetOffset`이 moving 초반 약 `0.22 ~ 0.46`까지 커지는 것을 기준으로 medium catch-up tuning을 추가했다. Path B `Phase 0` follow-up으로 `MultiplayerPlayerAvatar`에는 explicit `LocomotionRuntimePath` switch point가 추가됐고, current default는 계속 `HostOnlyCharacterController`로 남긴다. Path B `Phase 1` follow-up으로는 owner uplink / host buffer / replay history가 같은 `MultiplayerLocomotionInput` contract를 사용하도록 정리했다. Path B `Phase 2` follow-up으로는 `PlayerController` 안에 shared `CharacterController` locomotion core(capture / apply / simulate)를 추출했다. Path B `Phase 3~5` follow-up으로는 `PredictionReconciliation` path를 locomotion-only scope에서 실제로 연결했다. 이 path를 선택하면 owner는 local prediction을 즉시 돌리고, Host authority replica는 같은 shared core로 authoritative locomotion state를 계산해 owner에게 ack state를 내려주며, owner는 mismatch 시 authoritative state로 복원 후 pending input을 replay한다. non-locomotion state에서는 여전히 Host-only fallback을 유지한다. verify gameplay test prefab(`Assets/Resources/Multiplayer/MultiplayerPlayerAvatar.prefab`)은 `_locomotionRuntimePath = PredictionReconciliation`를 serialize해 `Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity` runtime spawn이 바로 Path B를 타도록 맞췄고, spawn 시에는 selected path / active prediction / role / simulation mode를 한 줄로 log한다. latest debug-line cleanup 기준 current required runtime logs는 `MultiplayerRuntimeRoot` startup tick log, `MultiplayerPlayerAvatar` role configuration log, real Path B owner path의 `[MultiplayerClientMoveTrace]`, 그리고 pure strafe용 `[MultiplayerPredictedRenderTrace]`다. old `LookOnly` presentation trace는 default off이고, current Path B trace는 기본적으로 `predict / fallback / reconcile`만 남기며 noisy `deadzone / duplicate` packet logs와 idle `predict` spam은 default off다. latest narrow startup follow-up은 owner prediction이 local current transform을 오래 baseline으로 잡지 않도록, first Host authoritative locomotion state를 startup baseline으로 먼저 수용한 뒤 normal prediction/replay를 시작하도록 바꿨다. latest Path B trace reading says `0 -> 1` input start lag is now mostly solved and remaining pure `A / D` slight jitter looks more like render-side tick-step visibility than authority mismatch. For that reason, `MultiplayerRuntimeRoot` now sets an explicit `NetworkConfig.TickRate = 60` for multiplayer runtime verification and logs the active tick rate once at startup. latest narrow render follow-up keeps Path B authority/replay as-is and smooths only the local predicted visual-child path in `PredictedLocomotion`. latest render update replaced old `SmoothDamp` chase with shared tick interpolation, and the latest timing-shape follow-up keeps that shared path but changes the interpolation alpha to a stronger faster-early cubic ease-out curve so the visible body spends less of the tick trailing behind the current predicted target. large gaps still use the same snap rule. latest narrow transition follow-up keeps that interpolation and adds one sharp move-angle predicted-body snap so turn/strafe transition frames do not keep dragging the visible child behind the predicted root. the lateral-lead experiment did not outperform the shared interpolation path, so current active render shape now uses the same eased `previous predicted tick -> current predicted tick` interpolation for `forward/back` and `A / D`, while keeping sharp-transition snap and big-gap snap as separate safety rules. latest tick-boundary follow-up keeps the same shared path again, but now applies a small `alphaFloor = 0.05` before the cubic ease-out curve so the first render frame after a new predicted target does not begin at exact `alpha = 0`. latest grouped visual reading says larger `alphaFloor` values can reduce lag numbers but increase render-speed spikes, so the current calm visual zone is the lower range around `0.04 ~ 0.07`. `MultiplayerPlayerAvatar` Inspector에는 attached networking components 역할을 easy English help box로 먼저 보여주는 custom guide를 추가해 component stack 이해를 돕는다. old dead custom-motor branch는 active build path에서 제거했다. |
+| **4.4 Reference-Based Direction (Current)** | current `4.4` direction은 `Host authority + local locomotion prediction + reconciliation/replay + shared CharacterController movement truth`다. `1~2 sec delay`, client authority, half prediction(`client predict + Host correction only`), separate custom locomotion motor, deprecated `LookOnly` fallback은 current active answer로 채택하지 않는다. `Boss Room`은 historical masking reference로만 남기고, current code path는 predicted render smoothing 쪽을 유지한다. |
+| **4.4 Multiplayer Movement (Current)** | current runtime code는 `PredictionReconciliation` 한 경로만 유지한다. client owner는 항상 `PredictedLocomotion` mode에서 locomotion prediction을 수행하고, Host authority replica는 shared `PlayerLocomotionCore`를 사용해 같은 move / rotate / gravity / grounded rule로 authoritative locomotion state를 계산한다. owner는 first Host authoritative locomotion state를 baseline으로 받은 뒤 normal prediction/reconcile/replay를 시작하고, non-locomotion input에서는 같은 구조 안에서 Host authoritative `Full` simulation으로만 fallback한다. render layer는 `previous predicted tick -> current predicted tick` interpolation, big-gap snap, sharp-transition snap, cubic ease-out, `alphaFloor = 0.05`, `NetworkConfig.TickRate = 60`을 유지한다. 2026-03-30 cleanup으로 deprecated `LookOnly`, `HostOnlyCharacterController`, `LocomotionRuntimePath` switch, old presentation trace, prefab path override는 current code path에서 제거했다. runtime role log는 fixed `PredictionReconciliation` path를 전제로 `server / owner / mode` 중심으로 남긴다. |
+| **PlayerController Multiplayer Diet (2026-03-30)** | `PlayerController`는 solo FSM/HUD/attack 중심 orchestration은 유지하되, shared locomotion simulation은 `Assets/Scripts/Player/PlayerLocomotionCore.cs`로, local multiplayer presentation / predicted render smoothing / trace는 `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerPresentationDriver.cs`로 위임한다. `MultiplayerPlayerPresentationDriver`는 now `PredictedLocomotion` 전용 driver이고, deprecated `LookOnly` path와 old masking/camera-follow branch는 제거됐다. `MultiplayerPlayerAvatar`와 `ThirdPersonCameraController`는 기존 `PlayerController` public API를 그대로 사용하고, controller 내부에서 compatibility wrapper만 유지해 call site churn을 줄였다. |
 | **4.4 Predicted Render Trace Metrics** | latest follow-up 기준 `[MultiplayerPredictedRenderTrace]`는 `root / target / visual / visualTargetOffset / visualRootOffset / rootYaw / visualVelMag` 외에 `tickStep / behindTicks / interpMode / smoothWindow / alphaFloor / linearAlpha / interpAlpha / supportSmooth`도 함께 기록한다. easy English reading은 `behindTicks`가 visible body가 몇 tick 정도 뒤처지는지를 뜻하고, `alphaFloor`는 tick-boundary frame이 exact `alpha = 0`에서 시작하지 않도록 먼저 주는 minimum start progress다. important correction: current visual smoothing judgment should use `visualVelMag` too, not only `behindTicks`, because smaller lag numbers can still look more jittery if the visible body spikes harder inside the tick. |
 
 참조 로그: `docs/Progress_Log/2026-03-25.md`
 참조 로그: `docs/Progress_Log/2026-03-26.md`
+참조 로그: `docs/Progress_Log/2026-03-30.md`
 
 ### 4.3. Boss System (The Dragon)
 | Component | Note |
