@@ -111,13 +111,9 @@
 
 - [x] 맵 & UI 본게임에 합치기
 - [x] 파트너 UI 멀티일 때만 뜨게 하기
-- [x] 콤보 평소에는 끄고 있다가 콤보일때만 켜기
+- [ ] 콤보 평소에는 끄고 있다가 콤보일때만 켜기
 - [ ] 결과 후 승리/패배 나오게 하기
-- [ ] 맵 장애물들을 용이 무시하게 하기 (길찾기 또는 장애물을 통과하게 
-하기)
-- [ ] 대시 UI 충전모션 넣기
-- [x] 멀티용 빌드 간략화 버전 만들기
-- [ ] 멀티 아닌 게임신 분리해서 배포하기
+- [ ] 맵 장애물들을 용이 무시하게 하기 (길찾기 또는 장애물을 통과하게 하기)
 
 
 #### 🚧 버그
@@ -127,13 +123,35 @@
 - [x] 🟡**(보스, attack1) 준비동작 수치조절**: 인스펙터에서 준비 시간 & 어느 동작까지가 준비동작인지 인스펙터에서 조절 가능하게 만들기
 
 #### 멀티플레이어
-- [ ] NGO/UTP/Relay/Lobby 패키지 및 서비스 초기화
+- [x] NGO/UTP/Relay/Lobby 패키지 및 서비스 초기화
+- [x] Host/Client lobby create/join 흐름 구현
+- [ ] 2인 gameplay scene spawn 동기화
+    - [x] Host는 Host player를 조작하고, Client는 Client player를 조작
+    - [x] Host와 Client는 둘 다 서로의 캐릭터를 볼 수 있어야 함
+    - [x] Host는 자기 카메라만 보고, Client도 자기 카메라만 봐야 함
+    - [x] Host authority input path 정리: Client input -> Host receive/simulate -> result replicate, 그리고 client jitter 없이 이동해야 함
+---
+
+### 8주차: 멀티플레이 구현
+
+- [ ] 콤보 평소에는 끄고 있다가 콤보일때만 켜기
+- [ ] 결과 후 승리/패배 나오게 하기
+- [ ] 맵 장애물들을 용이 무시하게 하기 (길찾기 또는 장애물을 통과하게 하기)
+
+
+#### 멀티플레이어
+- [x] NGO/UTP/Relay/Lobby 패키지 및 서비스 초기화
+- [x] Host/Client lobby create/join 흐름 구현
+- [ ] 2인 gameplay scene spawn 동기화
+    - [ ] refactoring: PlayerController multiplayer부분 떼기.
+    - [ ] Host screen에서 Client player 애니메이션 움직이게 하기
 
 ---
 
+
 #### 멀티플레이어
 1. [x] `TitleScene` 멀티플레이 UI 구조 설계 확정
-2. [ ] NGO/UTP/Relay/Lobby 패키지 및 서비스 초기화
+2. [x] NGO/UTP/Relay/Lobby 패키지 및 서비스 초기화
 2.1 [x] package 준비 세션
 2.2 [x] UGS bootstrap 세션
 2.3 [x] Host create 세션
@@ -141,7 +159,7 @@
 2.5 [x] Lobby active 세션
 2.6 [x] gameplay start 세션
 2.7 [x] strict cleanup 세션
-3. [ ] Host/Client lobby create/join 흐름 구현
+3. [x] Host/Client lobby create/join 흐름 구현
 4. [ ] 2인 gameplay scene spawn 동기화
 5. [ ] boss aggro + spectator + retry consensus 구현
 6. [ ] `System_Blueprint`와 `Technical_Glossary`에 확정 구현 결과 반영
@@ -179,7 +197,6 @@
 - [x] 🟡**(플레이어, 스턴) 리팩토링**: 넉백 길이 짧게 하기.
 - [x] 🟡**(보스, attack1) 준비동작 수치조절**: 인스펙터에서 준비 시간 & 어느 동작까지가 준비동작인지 인스펙터에서 조절 가능하게 만들기
 - [ ] 🟡**(플레이어, UI) 콤보**: 콤보 기능 넣기
-- [ ] 🟡**(시스템, 사운드) 사운드 로직개발**: 사운드가 뭐가 필요한지 그리고 관련 로직 개발
 - [x] 🟢**지형 애셋 추가**: HQ Apocalyptic Environment 이 애셋을 이용해서 대체
 - [x] 🟢**하늘 애셋 추가**: Fantasy Skybox FREE 이 애셋을 이용해서 대체
 - [x] 🟢**글씨 다르게 하기**: 글씨 다르게 하기
@@ -189,7 +206,6 @@
 - [x] 🟢**(보스, 컴포넌트) 애니메이터 컴포넌트**: 프리팹은 프리팹만 있게 하기. 비주얼 
 로직은 비주얼 gameobject에 넣기
 - [ ] 🟢**(플레이어, UI) 콤보 구현**: 때릴 때 콤보 넣게 하기
-- [ ] 🟢**(멀티플레이어, 로비) 호스트 나감 -> 클라이언트 또한 나가게 하기 **: 계속 로비에 있는 클라이언트를 타이틀로 가게 하기.
 - [ ] 🟡**(보스, 패턴 추가) 스프레이 불 추가**: attack5로 스프레이 불 넣기
 - [ ] ~~🟡**(보스) 회전 수정**: 플레이어를 항상 쳐다보는 것이 아닌 공격을 하기 전, 공격을 한 직후는 boss rotation 고정.~~
 - [ ] ~~🟡**(보스, attack5) attack4 형태를 한꺼번에 나오게 하기**: attack4가 하나씩 떨어졌다면 attack5는 한꺼번에 맵 전역에 떨어지게 하기.~~
