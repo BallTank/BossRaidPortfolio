@@ -49,6 +49,17 @@ namespace Core.CameraSystem
         [SerializeField, HideInInspector] private float sharpTurnSoftBoost = 2f;
         [SerializeField, HideInInspector] private float sharpTurnStrongBoost = 4f;
 
+        [Header("Predicted Camera Tuning")]
+        [SerializeField, HideInInspector] private bool usePredictedOwnerTightFollow = true;
+        [SerializeField, HideInInspector, Range(0f, 0.05f)] private float predictedOwnerPositionSmoothTime = 0f;
+        [SerializeField, HideInInspector, Range(0f, 0.05f)] private float predictedOwnerRotationSmoothTime = 0f;
+
+        [Header("Multiplayer Camera Trace")]
+        [SerializeField, HideInInspector] private bool enableMultiplayerCameraFollowTrace = true;
+        [SerializeField, HideInInspector, Range(0.02f, 0.5f)] private float multiplayerCameraFollowTraceLogInterval = 0.08f;
+        [SerializeField, HideInInspector] private float multiplayerCameraFollowTraceDeltaThreshold = 0.01f;
+        [SerializeField, HideInInspector] private float multiplayerCameraFollowTraceStillThreshold = 0.001f;
+
         private Vector3 _positionVelocity;
         private float _yawVelocity;
         private float _pitchVelocity;
@@ -57,6 +68,12 @@ namespace Core.CameraSystem
         private Vector3 _lastFollowPosition;
         private bool _hasLastFollowPosition;
         private bool _initialized;
+        private Vector3 _lastTraceAnchorPosition;
+        private Vector3 _lastTraceDesiredPosition;
+        private Vector3 _lastTraceCameraPosition;
+        private bool _hasMultiplayerCameraTraceState;
+        private int _anchorStillFrameCount;
+        private float _nextMultiplayerCameraFollowTraceLogTime;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void EnsureGameplayCameraControllerRuntime()
@@ -111,6 +128,11 @@ namespace Core.CameraSystem
             sharpTurnYawThreshold = Mathf.Clamp(sharpTurnYawThreshold, 0f, 180f);
             if (sharpTurnSoftBoost < 0f) sharpTurnSoftBoost = 0f;
             if (sharpTurnStrongBoost < 0f) sharpTurnStrongBoost = 0f;
+            if (predictedOwnerPositionSmoothTime < 0f) predictedOwnerPositionSmoothTime = 0f;
+            if (predictedOwnerRotationSmoothTime < 0f) predictedOwnerRotationSmoothTime = 0f;
+            if (multiplayerCameraFollowTraceLogInterval < 0.02f) multiplayerCameraFollowTraceLogInterval = 0.02f;
+            if (multiplayerCameraFollowTraceDeltaThreshold < 0f) multiplayerCameraFollowTraceDeltaThreshold = 0f;
+            if (multiplayerCameraFollowTraceStillThreshold < 0f) multiplayerCameraFollowTraceStillThreshold = 0f;
         }
 
         private void Awake()
@@ -203,6 +225,7 @@ namespace Core.CameraSystem
             playerController?.SetCameraRoot(cameraRoot);
             _lastFollowPosition = followTarget.position;
             _hasLastFollowPosition = true;
+            ResetMultiplayerCameraTraceState();
             _initialized = true;
         }
 
@@ -216,9 +239,26 @@ namespace Core.CameraSystem
             ApplyAutoBehindAssist(ref targetYaw);
             float targetPitch = Mathf.Clamp(inputPitch, minPitch, maxPitch);
 
-            float safeRotationSmoothTime = Mathf.Max(0.0001f, rotationSmoothTime);
-            _currentYaw = Mathf.SmoothDampAngle(_currentYaw, targetYaw, ref _yawVelocity, safeRotationSmoothTime);
-            _currentPitch = Mathf.SmoothDampAngle(_currentPitch, targetPitch, ref _pitchVelocity, safeRotationSmoothTime);
+            bool useTightPredictedFollow = ShouldUsePredictedOwnerTightFollow();
+            float activeRotationSmoothTime = useTightPredictedFollow
+                ? predictedOwnerRotationSmoothTime
+                : rotationSmoothTime;
+            float activePositionSmoothTime = useTightPredictedFollow
+                ? predictedOwnerPositionSmoothTime
+                : positionSmoothTime;
+            float safeRotationSmoothTime = Mathf.Max(0.0001f, activeRotationSmoothTime);
+            if (activeRotationSmoothTime > 0f)
+            {
+                _currentYaw = Mathf.SmoothDampAngle(_currentYaw, targetYaw, ref _yawVelocity, safeRotationSmoothTime);
+                _currentPitch = Mathf.SmoothDampAngle(_currentPitch, targetPitch, ref _pitchVelocity, safeRotationSmoothTime);
+            }
+            else
+            {
+                _currentYaw = targetYaw;
+                _currentPitch = targetPitch;
+                _yawVelocity = 0f;
+                _pitchVelocity = 0f;
+            }
 
             Vector3 anchor = GetAnchorPosition();
             cameraRoot.position = anchor;
@@ -226,15 +266,32 @@ namespace Core.CameraSystem
 
             Quaternion orbitRotation = Quaternion.Euler(_currentPitch, _currentYaw, 0f);
             Vector3 desiredPosition = anchor + orbitRotation * followOffset;
-            transform.position = Vector3.SmoothDamp(transform.position, desiredPosition, ref _positionVelocity, positionSmoothTime);
+            if (activePositionSmoothTime > 0f)
+            {
+                transform.position = Vector3.SmoothDamp(transform.position, desiredPosition, ref _positionVelocity, activePositionSmoothTime);
+            }
+            else
+            {
+                transform.position = desiredPosition;
+                _positionVelocity = Vector3.zero;
+            }
 
             Vector3 lookDirection = anchor - transform.position;
             if (lookDirection.sqrMagnitude > 0.0001f)
             {
                 Quaternion desiredRotation = Quaternion.LookRotation(lookDirection.normalized, Vector3.up);
-                float rotationLerp = 1f - Mathf.Exp(-Time.deltaTime / safeRotationSmoothTime);
-                transform.rotation = Quaternion.Slerp(transform.rotation, desiredRotation, rotationLerp);
+                if (activeRotationSmoothTime > 0f)
+                {
+                    float rotationLerp = 1f - Mathf.Exp(-Time.deltaTime / safeRotationSmoothTime);
+                    transform.rotation = Quaternion.Slerp(transform.rotation, desiredRotation, rotationLerp);
+                }
+                else
+                {
+                    transform.rotation = desiredRotation;
+                }
             }
+
+            UpdateMultiplayerCameraFollowTrace(anchor, desiredPosition, activePositionSmoothTime, activeRotationSmoothTime);
         }
 
         /// <summary>
@@ -310,7 +367,112 @@ namespace Core.CameraSystem
             if (playerController == null)
             {
                 _initialized = false;
+                ResetMultiplayerCameraTraceState();
             }
+        }
+
+        private void UpdateMultiplayerCameraFollowTrace(Vector3 anchor, Vector3 desiredPosition, float activePositionSmoothTime, float activeRotationSmoothTime)
+        {
+            Vector3 cameraPosition = transform.position;
+            if (!ShouldTraceMultiplayerCameraFollow())
+            {
+                CacheMultiplayerCameraTraceState(anchor, desiredPosition, cameraPosition);
+                return;
+            }
+
+            if (!_hasMultiplayerCameraTraceState)
+            {
+                CacheMultiplayerCameraTraceState(anchor, desiredPosition, cameraPosition);
+                return;
+            }
+
+            float anchorPlanarDelta = PlanarDistance(anchor, _lastTraceAnchorPosition);
+            float desiredPlanarDelta = PlanarDistance(desiredPosition, _lastTraceDesiredPosition);
+            float cameraPlanarDelta = PlanarDistance(cameraPosition, _lastTraceCameraPosition);
+            float cameraToAnchorPlanar = PlanarDistance(cameraPosition, anchor);
+            float cameraToDesired = Vector3.Distance(cameraPosition, desiredPosition);
+
+            bool anchorIsStill = anchorPlanarDelta <= multiplayerCameraFollowTraceStillThreshold;
+            int stillFramesBeforeSpike = 0;
+            if (anchorIsStill)
+            {
+                _anchorStillFrameCount++;
+            }
+            else
+            {
+                stillFramesBeforeSpike = _anchorStillFrameCount;
+                _anchorStillFrameCount = 0;
+            }
+
+            bool shouldTrace = !anchorIsStill
+                               || cameraPlanarDelta >= multiplayerCameraFollowTraceDeltaThreshold
+                               || cameraToDesired >= multiplayerCameraFollowTraceDeltaThreshold;
+            if (!shouldTrace || Time.time < _nextMultiplayerCameraFollowTraceLogTime)
+            {
+                CacheMultiplayerCameraTraceState(anchor, desiredPosition, cameraPosition);
+                return;
+            }
+
+            float deltaTime = Mathf.Max(Time.deltaTime, 0.0001f);
+            _nextMultiplayerCameraFollowTraceLogTime = Time.time + multiplayerCameraFollowTraceLogInterval;
+            Debug.Log(
+                $"[MultiplayerCameraFollowTrace] " +
+                $"anchor=({anchor.x:F3},{anchor.y:F3},{anchor.z:F3}) " +
+                $"desired=({desiredPosition.x:F3},{desiredPosition.y:F3},{desiredPosition.z:F3}) " +
+                $"camera=({cameraPosition.x:F3},{cameraPosition.y:F3},{cameraPosition.z:F3}) " +
+                $"anchorPlanarDelta={anchorPlanarDelta:F3} " +
+                $"desiredPlanarDelta={desiredPlanarDelta:F3} " +
+                $"cameraPlanarDelta={cameraPlanarDelta:F3} " +
+                $"anchorStillFrames={stillFramesBeforeSpike} " +
+                $"anchorPlanarSpeed={(anchorPlanarDelta / deltaTime):F3} " +
+                $"cameraPlanarSpeed={(cameraPlanarDelta / deltaTime):F3} " +
+                $"cameraToAnchorPlanar={cameraToAnchorPlanar:F3} " +
+                $"cameraToDesired={cameraToDesired:F3} " +
+                $"yaw={_currentYaw:F1} " +
+                $"pitch={_currentPitch:F1} " +
+                $"posSmooth={activePositionSmoothTime:F3} " +
+                $"rotSmooth={activeRotationSmoothTime:F3}");
+
+            CacheMultiplayerCameraTraceState(anchor, desiredPosition, cameraPosition);
+        }
+
+        private bool ShouldUsePredictedOwnerTightFollow()
+        {
+            return usePredictedOwnerTightFollow
+                   && playerController != null
+                   && playerController.SimulationMode == PlayerController.RuntimeSimulationMode.PredictedLocomotion;
+        }
+
+        private bool ShouldTraceMultiplayerCameraFollow()
+        {
+            return enableMultiplayerCameraFollowTrace
+                   && playerController != null
+                   && playerController.SimulationMode == PlayerController.RuntimeSimulationMode.PredictedLocomotion;
+        }
+
+        private void CacheMultiplayerCameraTraceState(Vector3 anchor, Vector3 desiredPosition, Vector3 cameraPosition)
+        {
+            _lastTraceAnchorPosition = anchor;
+            _lastTraceDesiredPosition = desiredPosition;
+            _lastTraceCameraPosition = cameraPosition;
+            _hasMultiplayerCameraTraceState = true;
+        }
+
+        private void ResetMultiplayerCameraTraceState()
+        {
+            _lastTraceAnchorPosition = Vector3.zero;
+            _lastTraceDesiredPosition = Vector3.zero;
+            _lastTraceCameraPosition = Vector3.zero;
+            _hasMultiplayerCameraTraceState = false;
+            _anchorStillFrameCount = 0;
+            _nextMultiplayerCameraFollowTraceLogTime = 0f;
+        }
+
+        private static float PlanarDistance(Vector3 a, Vector3 b)
+        {
+            a.y = 0f;
+            b.y = 0f;
+            return Vector3.Distance(a, b);
         }
 
         private PlayerController ResolvePreferredPlayerController()

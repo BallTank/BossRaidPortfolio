@@ -142,9 +142,13 @@
 #### 멀티플레이어
 - [x] NGO/UTP/Relay/Lobby 패키지 및 서비스 초기화
 - [x] Host/Client lobby create/join 흐름 구현
-- [ ] 2인 gameplay scene spawn 동기화
-    - [ ] refactoring: PlayerController multiplayer부분 떼기.
-    - [ ] Host screen에서 Client player 애니메이션 움직이게 하기
+- [x] 2인 gameplay scene spawn 동기화
+    - [x] refactoring: PlayerController multiplayer부분 떼기.
+    - [x] Host screen에서 Client player 애니메이션 움직이게 하기
+- [ ] boss aggro + spectator + retry consensus 구현
+    - [ ] boss authority host에 연동. 
+    - [ ] boss 공격 및 피격 구현
+    - [ ] boss aggro 구현
 
 ---
 
@@ -160,10 +164,9 @@
 2.6 [x] gameplay start 세션
 2.7 [x] strict cleanup 세션
 3. [x] Host/Client lobby create/join 흐름 구현
-4. [ ] 2인 gameplay scene spawn 동기화
-5. [ ] boss aggro + spectator + retry consensus 구현
-6. [ ] `System_Blueprint`와 `Technical_Glossary`에 확정 구현 결과 반영
-7. [ ] (싱글, 멀티) 다시 플레이 만들기
+4. [x] 2인 gameplay scene spawn 동기화
+5. [ ] boss aggro + 공격 구현
+6. [ ] (싱글, 멀티) 다시 플레이 만들기
 ---
 
 #### 🚧 버그

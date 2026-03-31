@@ -25,7 +25,7 @@
 
 ## 📅 날짜별 로그
 - [2026-03-31.md](./2026-03-31.md) - `clientPlayer` host locomotion animation sync fix, `AuthoritativeLocomotion` handoff 보강, 빌드 검증
-- [2026-03-30.md](./2026-03-30.md) - `PlayerController` 멀티플레이 정리, `LookOnly` 제거, 이동 문서 동기화, 빌드 검증
+- [2026-03-30.md](./2026-03-30.md) - `PlayerController` 멀티플레이 정리, `LookOnly` 제거, 지연 보정 경계 동기화 1차, 1차 검증 메모, `hardFailShadow` 제거 follow-up, `idleSettle` follow-up, camera-follow jitter trace 추가, owner render proxy follow-up, predicted owner camera orbit tuning, 지터 조사/수정 summary 문서 추가, 블로그 초안 문서 추가, 이동 문서 동기화, 빌드 검증
 - [2026-03-27.md](./2026-03-27.md) - predicted render 튜닝 정리, lateral lead 제거, cubic ease-out/`alphaFloor` 보정, 빌드 검증
 - [2026-03-26.md](./2026-03-26.md) - Host-only 경로 리셋, prediction/reconcile 연결, 빌드 검증
 - [2026-03-25.md](./2026-03-25.md) - 멀티플레이 로컬 소유권 뼈대, legacy `Player` 제거, `hostPlayer`/`clientPlayer` 이름 고정

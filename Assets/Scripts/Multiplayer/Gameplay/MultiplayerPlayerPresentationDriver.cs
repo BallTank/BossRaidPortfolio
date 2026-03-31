@@ -87,6 +87,11 @@ namespace Core.Multiplayer
 
         public Vector3 GetPreferredCameraFollowPosition()
         {
+            if (ShouldUsePredictedRenderSmoothingPresentation() && _hasPresentationWorldPosition)
+            {
+                return ResolvePresentationRootProxyPosition();
+            }
+
             return _controller.transform.position;
         }
 
@@ -163,6 +168,16 @@ namespace Core.Multiplayer
             }
 
             return _controller.transform.position;
+        }
+
+        private Vector3 ResolvePresentationRootProxyPosition()
+        {
+            if (!_hasPresentationDefaultTransform)
+            {
+                return _presentationWorldPosition;
+            }
+
+            return _presentationWorldPosition - (_controller.transform.rotation * _presentationDefaultLocalPosition);
         }
 
         private void UpdatePredictedPresentationPosition(Transform presentationTransform, bool shouldSnapPredictedTransition)
