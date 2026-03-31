@@ -76,10 +76,15 @@ flowchart LR
 
 | 상황 | mode | 의미 |
 | --- | --- | --- |
-| locomotion-only | `AuthoritativeLocomotion` | shared locomotion core authority sim |
+| locomotion-only | `AuthoritativeLocomotion` | shared locomotion core authority sim + host remote animator sync |
 | non-locomotion | `Full` | 기존 solo FSM authority sim |
 
 이건 `다른 경로`가 아니라 `같은 구조 내부 fallback`이다.
+
+추가 메모:
+
+* 2026-03-31 fix 기준 Host locomotion-only mode는 remote avatar animator를 `Locomotion` 으로 다시 맞추고, fixed-tick sim에서도 `Speed` 를 갱신한다.
+* 그래서 host 화면에서도 client idle/walk가 빠지지 않게 된다.
 
 ---
 

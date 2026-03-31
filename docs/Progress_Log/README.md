@@ -24,6 +24,7 @@
 - [TEMPLATE.md](./TEMPLATE.md)
 
 ## 📅 날짜별 로그
+- [2026-03-31.md](./2026-03-31.md) - `clientPlayer` host locomotion animation sync fix, `AuthoritativeLocomotion` handoff 보강, 빌드 검증
 - [2026-03-30.md](./2026-03-30.md) - `PlayerController` 멀티플레이 정리, `LookOnly` 제거, 이동 문서 동기화, 빌드 검증
 - [2026-03-27.md](./2026-03-27.md) - predicted render 튜닝 정리, lateral lead 제거, cubic ease-out/`alphaFloor` 보정, 빌드 검증
 - [2026-03-26.md](./2026-03-26.md) - Host-only 경로 리셋, prediction/reconcile 연결, 빌드 검증

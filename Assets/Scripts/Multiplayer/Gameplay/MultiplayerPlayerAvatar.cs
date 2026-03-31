@@ -501,7 +501,7 @@ namespace Core.Multiplayer
                         _serverNextInputSequenceToProcess,
                         currentServerTick,
                         true,
-                        false);
+                        true);
 
                     _serverLastProcessedInputSequence = _serverNextInputSequenceToProcess;
                     _serverNextInputSequenceToProcess++;
@@ -597,6 +597,11 @@ namespace Core.Multiplayer
                 ResolveCurrentServerTick(),
                 true);
             _hasServerAuthoritativeState = true;
+
+            float inputMagnitude = _bufferedInputProvider != null
+                ? _bufferedInputProvider.GetInput().moveDir.magnitude
+                : 0f;
+            ApplyLocomotionAnimator(inputMagnitude, forceLocomotionState: true);
         }
 
         private void EnterFullAuthoritativeFallbackMode()
@@ -702,11 +707,16 @@ namespace Core.Multiplayer
             PushAuthoritativeLocomotionStateClientRpc(state, _authoritativeStateClientRpcParams);
         }
 
-        private void ApplyLocomotionAnimator(float inputMagnitude)
+        private void ApplyLocomotionAnimator(float inputMagnitude, bool forceLocomotionState = false)
         {
             if (_playerController == null || _playerController.Animator == null)
             {
                 return;
+            }
+
+            if (forceLocomotionState)
+            {
+                _playerController.Animator.CrossFade(PlayerController.ANIM_STATE_LOCOMOTION, 0.1f);
             }
 
             _playerController.Animator.SetFloat(PlayerController.ANIM_PARAM_SPEED, Mathf.Clamp01(inputMagnitude));

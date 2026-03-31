@@ -36,6 +36,7 @@
 | runtime path | `PredictionReconciliation` |
 | client owner mode | `PredictedLocomotion` |
 | Host locomotion mode | `AuthoritativeLocomotion` |
+| Host locomotion visual | host remote avatar도 `Locomotion` + `Speed` 를 함께 갱신 |
 | Host non-locomotion fallback | `Full` |
 | 최종 authority | Host |
 | client 역할 | local prediction + reconcile/replay |
@@ -79,6 +80,15 @@ flowchart LR
 5. `[S5] Effect | owner가 deadzone 확인 후 필요 시 reconcile/replay 수행 | Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerAvatar.cs:141 | baseline/deadzone/replay`
 6. `[S6] Result | 반응은 빠르고, 남은 미세한 떨림은 주로 predicted render 쪽에서 읽는다 | Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerPresentationDriver.cs:247 | render trace`
 
+추가 메모:
+
+* 2026-03-31 fix 기준 Host locomotion-only path는 transform truth만 갱신하는 것이 아니다.
+* `AuthoritativeLocomotion` 재진입 시 remote avatar animator를 `Locomotion` 으로 되돌리고, fixed-tick sim에서도 `Speed` 를 같이 갱신해 host 화면의 client idle/walk 누락을 막는다.
+* 대표 근거 위치:
+  * `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerAvatar.cs:497`
+  * `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerAvatar.cs:580`
+  * `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerAvatar.cs:710`
+
 ### 2.4. 각 스크립트 역할
 
 | 스크립트 | 현재 역할 |
@@ -115,7 +125,7 @@ flowchart LR
 
 | 상황 | Host mode | 의미 |
 | --- | --- | --- |
-| locomotion-only | `AuthoritativeLocomotion` | shared locomotion core로 fixed-tick authority sim |
+| locomotion-only | `AuthoritativeLocomotion` | shared locomotion core로 fixed-tick authority sim + host remote animator sync |
 | non-locomotion | `Full` | 기존 solo FSM 경로를 Host authority로 실행 |
 
 이건 `Path A와 Path B가 같이 산다`는 뜻이 아니다.
