@@ -1,4 +1,4 @@
-﻿# 🛠️ System Blueprint: Boss Raid Portfolio
+# 🛠️ System Blueprint: Boss Raid Portfolio
 
 이 문서는 프로젝트의 핵심 아키텍처 설계와 데이터 규칙을 정의합니다. AI 및 개발자는 이 청사진을 준수하여 코드를 작성해야 합니다.
 
@@ -43,6 +43,9 @@ classDiagram
     class PlayerInputPacket { <<Struct>> }
     class AttackComboData { <<Struct>> }
     class InputFlag { <<Enumeration>> }
+    class ClientToHostPlayerActionIntent { <<Struct>> }
+    class HostPlayerState { <<Struct>> }
+    class HostToClientPlayerReactionSnapshot { <<Struct>> }
     class MultiplayerLocomotionState { <<Struct>> }
     class BossAttackHitData { <<Struct>> }
     class BossAttackHitType { <<Enumeration>> }
@@ -102,7 +105,15 @@ classDiagram
         <<NetworkBehaviour>>
         +OnNetworkSpawn()
         +SubmitOwnerInputServerRpc(...)
+        +SubmitOwnerActionIntentServerRpc(...)
         +PushAuthoritativeLocomotionStateClientRpc(...)
+    }
+    class HostPlayerActionValidator { +TryValidate(...) }
+    class HostPlayerReactionResolver {
+        +SeedFromRuntime(...)
+        +SyncRuntimeState(...)
+        +TryResolveBossHit(...)
+        +TryRecordDamageContribution(...)
     }
     class MultiplayerPlayerPresentationDriver {
         +RefreshBindings()
@@ -182,7 +193,16 @@ classDiagram
     MultiplayerPlayerAvatar --> PlayerController : configures runtime role
     MultiplayerPlayerAvatar --> LocalInputProvider : toggles local owner input
     MultiplayerPlayerAvatar --> MultiplayerBufferedInputProvider : writes remote owner input
+    MultiplayerPlayerAvatar --> ClientToHostPlayerActionIntent : emits action edges
+    MultiplayerPlayerAvatar --> HostPlayerActionValidator : validates dash/attack start
+    MultiplayerPlayerAvatar --> HostPlayerReactionResolver : resolves host reaction
+    MultiplayerPlayerAvatar o-- HostPlayerState : keeps host truth
+    MultiplayerPlayerAvatar o-- HostToClientPlayerReactionSnapshot : caches latest reaction
     MultiplayerPlayerAvatar o-- MultiplayerLocomotionState : snapshots/replay
+    ClientToHostPlayerActionIntent --> InputFlag : reuses action bits
+    HostPlayerActionValidator --> HostPlayerState : writes accepted action
+    HostPlayerReactionResolver --> HostPlayerState : updates
+    HostPlayerReactionResolver --> HostToClientPlayerReactionSnapshot : creates
 
     PlayerBaseState --|> BaseState : extends
     MoveState --|> PlayerBaseState : extends
@@ -574,16 +594,19 @@ classDiagram
 | **Asset Integration** | `PlayerAnimator`의 `Hit/Attack1/2/3/Die` 상태 모션 재연결 완료(2026-02-21). |
 | **Environment Fix Guard (환경 오류 복구)** | `Assets/Editor/PlayerAnimatorGuard.cs`로 환경 변경 시 발생하는 Animator 참조 오류를 자동 복구/검증한다. 필수 state/motion + 파라미터(`Speed` Float, `Hit` Trigger) 누락 점검, 모든 Layer + 중첩 StateMachine 재귀 순회, Locomotion BlendTree 자식 모션 검증, 중복 상태명 경고, 로드/임포트/이동/메뉴 경로를 지원하며 `Hit` 상태명은 `PlayerController.ANIM_STATE_HIT` 상수를 공용 참조한다. 추가로 `Attack1/2/3` 클립의 `OnHitStart/OnHitEnd` 이벤트 자동 보정 및 누락/순서 검증, `Tools/Validation/Fix Player Attack Events` 메뉴를 포함한다. |
 | **Multiplayer Ownership Scaffold** | `feature/multiplayer` 기준 `MultiplayerPlayerAvatar`, `MultiplayerBufferedInputProvider`, `MultiplayerLocalPlayerRegistry`, `MultiplayerGameplaySceneCoordinator`를 추가했다. scene cleanup은 `SceneManager.sceneLoaded` + avatar spawn fallback으로 보강했고, legacy scene `Player`는 main camera 분리 후 runtime hierarchy에서 제거한다. network player runtime name은 `hostPlayer` / `clientPlayer`로 고정하고, spawn slot은 Host/Client 기준으로 좌우 분리한다. 카메라/HUD는 local-owned player에만 다시 bind하며 backlog `4.1` 구현 기준은 충족했다. |
+| **Player Action Authority Bootstrap (2026-04-01)** | `ClientToHostPlayerActionIntent`와 `HostPlayerActionValidator`를 추가해 locomotion packet과 분리된 `dash / Attack1` action-intent uplink를 먼저 만들었다. `MultiplayerPlayerAvatar`는 owner action edge를 reliable ServerRpc로 Host에 보내고, Host local player도 같은 validator path를 network hop 없이 탄다. current slice는 `step 1~3` 범위만 반영하므로 validated action 실행/복제는 아직 붙이지 않았고, `MultiplayerActionIntentTrace` 기준으로 Host route를 먼저 고정했다. |
+| **Player Action Authority Host Slice (2026-04-01)** | `HostPlayerState`, `HostToClientPlayerReactionSnapshot`, `HostPlayerReactionResolver`를 추가해 `step 4~6` Host truth layer를 먼저 고정했다. `MultiplayerPlayerAvatar`는 server spawn 시 Host state를 seed하고, accepted action을 state에 기록하며, `PlayerController`의 `BossAttackResolved` / `AttackDamageResolved` event를 받아 one-shot reaction snapshot과 `server tick` 기준 `raw hit log`를 만든다. current follow-up 기준 remote `Dash/Attack` validation primary path는 separate action RPC가 아니라 `SubmitOwnerInputServerRpc(...)` receive 시점의 `server-buffer` edge detect다. `rpc-received` 는 extra diagnostic trace로만 남기고, Host truth는 `buffer-observe -> validate -> host-state` 흐름으로 고정했다. current slice는 아직 `Replicator / Applier` 이전 단계이므로 snapshot 생성과 Host log까지만 연결했고, owner/remote client apply는 다음 단계로 남겨 둔다. |
 | **4.4 Reference-Based Direction (Current)** | current `4.4` direction은 `Host authority + local free-move prediction + lazy boundary correction + shared CharacterController movement truth`다. `1~2 sec delay`, client authority, half prediction(`client predict + Host correction only`), separate custom locomotion motor, deprecated `LookOnly` fallback은 current active answer로 채택하지 않는다. `Boss Room`은 historical masking reference로만 남기고, current code path는 owner free-move 화면을 calm하게 유지하는 `single-root presentation` 쪽을 유지한다. |
-| **4.4 Multiplayer Movement (Current)** | current runtime code는 `PredictionReconciliation` 한 경로를 유지하되, owner free move correction policy를 `lazy boundary correction` 으로 좁혔다. client owner는 `PredictedLocomotion` mode에서 locomotion prediction을 수행하고, Host authority replica는 shared `PlayerLocomotionCore`를 사용해 같은 move / rotate / gravity / grounded rule로 authoritative locomotion state를 계산한다. owner는 first Host authoritative locomotion state를 baseline으로 받은 뒤, locomotion-only snapshot은 우선 `shadow authoritative state` 로 저장하고 drift만 계산한다. immediate sync는 `fallback(비이동 구간)`, `boundary sync`, `hard fail`, `stale sync`, `idleSettle` 에서 수행한다. current 1차 threshold는 free-move ignore `0.20m / 10deg`, hard-fail `0.65m / 25deg`, stale snapshot `300ms`, idle-settle planar speed `<= 0.05` 다. 2026-03-30 smoke test에서 old shadow snapshot compare 기반 `hardFailShadow` 가 too eager하다는 문제가 확인됐고, current follow-up code에서는 그 tick-side path를 제거했다. 후속으로 medium drift가 stop state에서 오래 남는 로그를 보고 `idleSettle` 을 추가했다. 그 다음 측정에서는 correction spam보다 `raw predicted root tick-step` 이 owner 화면 jitter의 중심임이 확인됐고, current code는 free move owner body와 camera가 같은 `render proxy` surface를 보도록 다시 연결했다. current 추가 follow-up으로 predicted owner camera orbit은 render proxy를 다시 `SmoothDamp` 하지 않고 direct follow를 기본값으로 사용한다. non-locomotion input에서는 같은 구조 안에서 Host authoritative `Full` simulation으로 fallback한다. 2026-03-31 fix에서는 Host authority replica가 move-only mode로 다시 들어올 때 remote avatar animator를 `Locomotion` 으로 되돌리고, fixed-tick locomotion sim에서도 `Speed` 를 함께 갱신해 host 화면에서 client idle/walk가 빠지지 않게 보강했다. `NetworkConfig.TickRate = 60` 을 유지한다. runtime 재검증은 이 shared render proxy + direct orbit follow 기준으로 다시 수행해야 한다. |
-| **PlayerController Multiplayer Diet (2026-03-30)** | `PlayerController`는 solo FSM/HUD/attack 중심 orchestration은 유지하되, shared locomotion simulation은 `Assets/Scripts/Player/PlayerLocomotionCore.cs`로, local multiplayer presentation / trace는 `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerPresentationDriver.cs`로 위임한다. current lazy-correction follow-up 기준 `MultiplayerPlayerPresentationDriver`는 free move owner 화면용 `render proxy` 를 관리하고, visual child와 camera가 같은 proxy surface를 보도록 연결한다. `MultiplayerPlayerAvatar`와 `ThirdPersonCameraController`는 기존 `PlayerController` public API를 그대로 사용하고, controller 내부에서 compatibility wrapper만 유지해 call site churn을 줄였다. |
-| **4.4 Predicted Render Trace Metrics** | current `[MultiplayerPredictedRenderTrace]`는 `root / target / visual / visualTargetOffset / visualRootOffset / rootYaw / visualVelMag` 와 `tickStep / behindTicks / interpMode / smoothWindow / alphaFloor / linearAlpha / interpAlpha / supportSmooth` 를 계속 기록한다. current free-move owner path에서는 visual child가 raw root가 아니라 `render proxy` target을 따르므로, `visualTargetOffset` 은 `proxy가 raw root에서 얼마나 뒤에 있는가` 를 읽는 값이 된다. `visualRootOffset` 은 visual child의 기본 local offset이 유지되면 0이 아니라 모델 기본값 근처로 남을 수 있다. 이 trace는 `body가 proxy를 잘 따르는가`, `raw root와 screen proxy가 어느 정도 벌어지는가` 를 보는 용도이고, camera가 실제로 같은 proxy를 보고 있는지는 `[MultiplayerCameraFollowTrace]` 를 함께 읽어야 한다. |
-| **4.4 Camera Follow Trace Metrics** | `[MultiplayerCameraFollowTrace]` 는 `ThirdPersonCameraController` 가 predicted owner를 따라갈 때 render frame 기준 `anchor / desired / camera` 이동량을 기록한다. 현재 로그는 `anchorPlanarDelta`, `desiredPlanarDelta`, `cameraPlanarDelta`, `anchorStillFrames`, `cameraToAnchorPlanar`, `cameraToDesired`, `yaw/pitch`, `posSmooth/rotSmooth` 를 남긴다. 여기서 `posSmooth / rotSmooth` 는 inspector base 값이 아니라 실제 active 값이다. current jitter 원인 분리에서는 `[MultiplayerClientMoveTrace]` 보다 이 trace가 더 직접적인 화면 측정값이고, current expected read는 `0.1m tick-step spike` 가 줄고 predicted owner path에서 `posSmooth=0`, `rotSmooth=0` direct orbit follow가 보이는 것이다. |
+| **4.4 Multiplayer Movement (Current)** | current runtime code는 `PredictionReconciliation` 한 경로를 유지하되, owner free move correction policy를 `lazy boundary correction` 으로 좁혔다. client owner는 `PredictedLocomotion` mode에서 locomotion prediction을 수행하고, Host authority replica는 shared `PlayerLocomotionCore`를 사용해 같은 move / rotate / gravity / grounded rule로 authoritative locomotion state를 계산한다. 2026-04-01 follow-up 기준 shared locomotion state는 `dash timer / dash cooldown / last buttons / dash active flag` 도 함께 들고 가며, `walk + dash` 를 같은 shared `CharacterController` sim 안에서 계산한다. owner는 first Host authoritative locomotion state를 baseline으로 받은 뒤, locomotion snapshot은 우선 `shadow authoritative state` 로 저장하고 drift만 계산한다. immediate sync는 `fallback(비이동 구간)`, `boundary sync`, `hard fail`, `stale sync`, `idleSettle` 에서 수행한다. current active gate는 `Dash` 는 predicted locomotion path에 남기고, `Attack / Jump` 같은 non-locomotion input만 Host authoritative `Full` simulation fallback으로 내린다. current 1차 threshold는 free-move ignore `0.20m / 10deg`, hard-fail `0.65m / 25deg`, stale snapshot `300ms`, idle-settle planar speed `<= 0.05` 다. 2026-03-30 smoke test에서 old shadow snapshot compare 기반 `hardFailShadow` 가 too eager하다는 문제가 확인됐고, current follow-up code에서는 그 tick-side path를 제거했다. 후속으로 medium drift가 stop state에서 오래 남는 로그를 보고 `idleSettle` 을 추가했다. 그 다음 측정에서는 correction spam보다 `raw predicted root tick-step` 이 owner 화면 jitter의 중심임이 확인됐고, current code는 free move owner body와 camera가 같은 `render proxy` surface를 보도록 다시 연결했다. current 추가 follow-up으로 predicted owner camera orbit은 render proxy를 다시 `SmoothDamp` 하지 않고 direct follow를 기본값으로 사용한다. 2026-04-01 dash smoothing follow-up에서는 dash 시작/진행도 이 same predicted path 안에 남도록 바꿨고, presentation driver는 dash 중 predicted transition을 즉시 snap해 dash root를 늦게 쫓는 느낌을 줄였다. 같은 날 후속 fix에서는 dash 종료/owner replay handoff의 animator `Speed` 도 actual planar speed를 함께 보도록 바꿔 reverse turn 직후 tiny idle flash를 줄였다. 2026-03-31 fix에서는 Host authority replica가 move-only mode로 다시 들어올 때 remote avatar animator를 `Locomotion` 으로 되돌리고, fixed-tick locomotion sim에서도 `Speed` 를 함께 갱신해 host 화면에서 client idle/walk가 빠지지 않게 보강했다. `NetworkConfig.TickRate = 60` 을 유지한다. runtime 재검증은 이 shared render proxy + direct orbit follow + predicted dash 기준으로 다시 수행해야 한다. |
+| **PlayerController Multiplayer Diet (2026-03-30)** | `PlayerController`는 solo FSM/HUD/attack 중심 orchestration은 유지하되, shared locomotion simulation은 `Assets/Scripts/Player/PlayerLocomotionCore.cs`로, local multiplayer presentation은 `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerPresentationDriver.cs`로 위임한다. current lazy-correction follow-up 기준 `MultiplayerPlayerPresentationDriver`는 free move owner 화면용 `render proxy` 를 관리하고, visual child와 camera가 같은 proxy surface를 보도록 연결한다. `MultiplayerPlayerAvatar`와 `ThirdPersonCameraController`는 기존 `PlayerController` public API를 그대로 사용하고, controller 내부에서 compatibility wrapper만 유지해 call site churn을 줄였다. |
+| **4.4 Connection Debug (2026-04-02)** | `MultiplayerSessionService`가 `[MultiplayerConnectionDebug]` structured logger를 사용해 `peer-connect`, `peer-disconnect`, `state-change`, `gameplay-sync-complete`, `pulse` event를 한 prefix로 남긴다. line은 current app role(`editor-host`, `build-client` 같은 `editor/build + host/client` 조합), `state`, `scene`, `localClientId`, `isServer`, `isClient`, `isConnected`, `isListening`, `shutdown`, `hostPeerCount`, `lobbyPlayers`를 함께 싣는다. 2026-04-02 follow-up 기준 Host state flow는 `LobbyActive -> StartingGameplay -> InGameplay` 로 나뉘며, `StartingGameplay` 는 scene handoff 동안만 사용하고 gameplay sync 완료 뒤에는 `InGameplay` 로 넘어가 late disconnect를 startup failure와 분리한다. disconnect logger는 exact edge를 보장하기 위해 `peer-disconnect` minimal line을 callback entry에서 먼저 남기고, avatar profile dump는 `peer-disconnect-detail` line으로 분리하며, shutdown 직전에는 cached snapshot 기반 `peer-disconnect-fallback` line을 한 번 더 남긴다. avatar 자체도 `avatar-profile-baseline` / `avatar-profile-transition` event로 `idle-only`, `idle-walk-only`, `action-observed` 진행을 미리 남겨 `idle/walk-only` run 여부를 disconnect 전부터 증명하게 한다. |
 
 참조 로그: `docs/Progress_Log/2026-03-25.md`
 참조 로그: `docs/Progress_Log/2026-03-26.md`
 참조 로그: `docs/Progress_Log/2026-03-30.md`
 참조 로그: `docs/Progress_Log/2026-03-31.md`
+참조 로그: `docs/Progress_Log/2026-04-01.md`
+참조 로그: `docs/Progress_Log/2026-04-02.md`
 
 ### 4.3. Boss System (The Dragon)
 | Component | Note |

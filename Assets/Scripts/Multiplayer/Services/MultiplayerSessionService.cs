@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -827,43 +827,60 @@ namespace Core.Multiplayer
         {
             NetworkManager networkManager = _runtimeRoot != null ? _runtimeRoot.NetworkManager : null;
             string disconnectReason = ResolveDisconnectDebugReason(clientId, networkManager);
-            LogNetworkPeerEvent("peer-disconnect", clientId, disconnectReason);
+            CaptureDisconnectDebugSnapshot(clientId, networkManager, disconnectReason);
+            LogPeerDisconnectEdge(clientId, disconnectReason, networkManager);
+            TryLogPeerDisconnectDetail(clientId, disconnectReason, networkManager);
 
-            if (!IsLobbyTrackedState(_state))
-            {
-                return;
-            }
+            bool preserveDisconnectSnapshotForShutdown = false;
 
-            if (!_isHost && networkManager != null && clientId == networkManager.LocalClientId)
+            try
             {
-                BeginFatalShutdown(DisconnectedFromHostMessage);
-                return;
-            }
-
-            if (_state == MultiplayerSessionState.StartingGameplay)
-            {
-                if (_isHost && clientId != NetworkManager.ServerClientId)
+                if (!IsLobbyTrackedState(_state))
                 {
-                    FailPendingGameplayStart(ClientDisconnectedDuringGameplayStartMessage);
-                }
-
-                return;
-            }
-
-            if (_state == MultiplayerSessionState.InGameplay)
-            {
-                if (_isHost && clientId != NetworkManager.ServerClientId)
-                {
-                    BeginFatalShutdown(ClientDisconnectedDuringGameplayMessage);
                     return;
                 }
-            }
 
-            UpdateHostStartUnlockGate(0f);
-            TryPublishCurrentSnapshot();
-            if (clientId != NetworkManager.ServerClientId)
+                if (!_isHost && networkManager != null && clientId == networkManager.LocalClientId)
+                {
+                    preserveDisconnectSnapshotForShutdown = true;
+                    BeginFatalShutdown(DisconnectedFromHostMessage);
+                    return;
+                }
+
+                if (_state == MultiplayerSessionState.StartingGameplay)
+                {
+                    if (_isHost && clientId != NetworkManager.ServerClientId)
+                    {
+                        preserveDisconnectSnapshotForShutdown = true;
+                        FailPendingGameplayStart(ClientDisconnectedDuringGameplayStartMessage);
+                    }
+
+                    return;
+                }
+
+                if (_state == MultiplayerSessionState.InGameplay)
+                {
+                    if (_isHost && clientId != NetworkManager.ServerClientId)
+                    {
+                        preserveDisconnectSnapshotForShutdown = true;
+                        BeginFatalShutdown(ClientDisconnectedDuringGameplayMessage);
+                        return;
+                    }
+                }
+
+                UpdateHostStartUnlockGate(0f);
+                TryPublishCurrentSnapshot();
+                if (clientId != NetworkManager.ServerClientId)
+                {
+                    RequestLobbyRefresh();
+                }
+            }
+            finally
             {
-                RequestLobbyRefresh();
+                if (!preserveDisconnectSnapshotForShutdown)
+                {
+                    ClearDisconnectDebugSnapshot();
+                }
             }
         }
 
@@ -1138,6 +1155,76 @@ namespace Core.Multiplayer
             WriteConnectionDebugLine(builder, warning: isDisconnectEvent);
         }
 
+        private void CaptureDisconnectDebugSnapshot(ulong peerClientId, NetworkManager networkManager, string reason)
+        {
+            _hasPendingDisconnectDebugSnapshot = true;
+            _pendingDisconnectPeerClientId = peerClientId;
+            _pendingDisconnectState = _state;
+            _pendingDisconnectReason = reason ?? string.Empty;
+            _pendingDisconnectNgoReason = networkManager != null ? networkManager.DisconnectReason ?? string.Empty : string.Empty;
+            _pendingDisconnectSceneName = SceneManager.GetActiveScene().name;
+            _pendingDisconnectAppLabel = ResolveConnectionDebugAppLabel();
+
+            if (networkManager != null && (networkManager.IsListening || networkManager.IsServer || networkManager.IsClient || networkManager.ShutdownInProgress))
+            {
+                _pendingDisconnectLocalClientIdLabel = networkManager.LocalClientId.ToString(CultureInfo.InvariantCulture);
+                return;
+            }
+
+            _pendingDisconnectLocalClientIdLabel = "na";
+        }
+
+        private void LogPeerDisconnectEdge(ulong peerClientId, string reason, NetworkManager networkManager)
+        {
+            StringBuilder builder = BeginConnectionDebugLine("peer-disconnect");
+            AppendDisconnectCoreFields(builder, peerClientId, reason, networkManager);
+            WriteConnectionDebugLine(builder, warning: false);
+        }
+
+        private void TryLogPeerDisconnectDetail(ulong peerClientId, string reason, NetworkManager networkManager)
+        {
+            try
+            {
+                StringBuilder builder = BeginConnectionDebugLine("peer-disconnect-detail");
+                AppendDisconnectCoreFields(builder, peerClientId, reason, networkManager);
+                AppendDisconnectInputProfiles(builder);
+                WriteConnectionDebugLine(builder, warning: true);
+            }
+            catch (Exception ex)
+            {
+                StringBuilder builder = BeginConnectionDebugLine("peer-disconnect-detail-failed");
+                AppendDisconnectCoreFields(builder, peerClientId, reason, networkManager);
+                builder.Append(' ').Append("detailError=").Append(ex.GetType().Name);
+                WriteConnectionDebugLine(builder, warning: true);
+            }
+        }
+
+        private void TryLogPeerDisconnectFallback()
+        {
+            if (!_hasPendingDisconnectDebugSnapshot)
+            {
+                return;
+            }
+
+            StringBuilder builder = BeginConnectionDebugLine("peer-disconnect-fallback");
+            builder.Append(' ').Append("peerClientId=").Append(_pendingDisconnectPeerClientId);
+
+            if (!string.IsNullOrEmpty(_pendingDisconnectReason))
+            {
+                builder.Append(' ').Append("reason=").Append(_pendingDisconnectReason);
+            }
+
+            if (!string.IsNullOrEmpty(_pendingDisconnectNgoReason))
+            {
+                builder.Append(' ').Append("ngoReason=").Append(_pendingDisconnectNgoReason);
+            }
+
+            builder.Append(' ').Append("capturedState=").Append(_pendingDisconnectState);
+            builder.Append(' ').Append("capturedScene=").Append(_pendingDisconnectSceneName);
+            builder.Append(' ').Append("capturedApp=").Append(_pendingDisconnectAppLabel);
+            builder.Append(' ').Append("capturedLocalClientId=").Append(_pendingDisconnectLocalClientIdLabel);
+            WriteConnectionDebugLine(builder, warning: false);
+        }
 
         private void LogSessionStateTransition(MultiplayerSessionState previousState, MultiplayerSessionState nextState)
         {
@@ -1178,6 +1265,21 @@ namespace Core.Multiplayer
             WriteConnectionDebugLine(builder, warning: false);
         }
 
+        private void AppendDisconnectCoreFields(StringBuilder builder, ulong peerClientId, string reason, NetworkManager networkManager)
+        {
+            builder.Append(' ').Append("peerClientId=").Append(peerClientId);
+
+            if (!string.IsNullOrEmpty(reason))
+            {
+                builder.Append(' ').Append("reason=").Append(reason);
+            }
+
+            string ngoReason = networkManager != null ? networkManager.DisconnectReason : string.Empty;
+            if (!string.IsNullOrEmpty(ngoReason))
+            {
+                builder.Append(' ').Append("ngoReason=").Append(ngoReason);
+            }
+        }
 
         private StringBuilder BeginConnectionDebugLine(string eventName)
         {
@@ -1519,6 +1621,7 @@ namespace Core.Multiplayer
 
         private async Task ShutdownSessionInternalAsync()
         {
+            TryLogPeerDisconnectFallback();
             SetState(MultiplayerSessionState.Closing);
 
             _heartbeatEnabled = false;
@@ -1639,8 +1742,20 @@ namespace Core.Multiplayer
             _lobbyPollTimer = 0f;
             _hostStartStableTimer = 0f;
             _gameplayStartTaskSource = null;
+            ClearDisconnectDebugSnapshot();
         }
 
+        private void ClearDisconnectDebugSnapshot()
+        {
+            _hasPendingDisconnectDebugSnapshot = false;
+            _pendingDisconnectPeerClientId = 0;
+            _pendingDisconnectState = MultiplayerSessionState.Idle;
+            _pendingDisconnectReason = string.Empty;
+            _pendingDisconnectNgoReason = string.Empty;
+            _pendingDisconnectSceneName = string.Empty;
+            _pendingDisconnectAppLabel = string.Empty;
+            _pendingDisconnectLocalClientIdLabel = "na";
+        }
 
         private int AdvanceSessionVersion()
         {

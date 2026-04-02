@@ -1,4 +1,4 @@
-using Core.Combat;
+﻿using Core.Combat;
 using Core.GameFlow;
 using System;
 using Core.Player;
@@ -116,6 +116,7 @@ namespace Core.Multiplayer
             RefreshAvatarDebugName();
             ConfigureRuntimeRole();
             ConfigureHostAuthorityContracts();
+            TryLogDisconnectProfileBaseline("spawn");
         }
 
         public override void OnNetworkDespawn()
@@ -146,6 +147,7 @@ namespace Core.Multiplayer
             }
 
             PlayerInputPacket input = locomotionInput.ToPlayerInputPacket();
+            TrackDisconnectInputProfile(input, locomotionInput.InputSequence, "server-buffer");
             ProcessBufferedActionIntentEdges(locomotionInput, input);
             _bufferedInputProvider.SetInput(locomotionInput);
             _serverLatestReceivedInputSequence = Mathf.Max(_serverLatestReceivedInputSequence, locomotionInput.InputSequence);
@@ -475,6 +477,7 @@ namespace Core.Multiplayer
 
             PlayerInputPacket input = _localInputProvider.GetInput();
             MultiplayerLocomotionInput locomotionInput = MultiplayerLocomotionInput.FromPlayerInputPacket(input, ++_nextLocalInputSequence);
+            TrackDisconnectInputProfile(input, locomotionInput.InputSequence, "client-owner");
             ObserveActionIntentEdges(input, submitToServer: true, sourceLabel: "client-owner");
             bool canPredictThisTick = _hasReceivedInitialAuthoritativeBaseline && ShouldPredictLocomotionThisTick(input);
 
@@ -520,6 +523,7 @@ namespace Core.Multiplayer
             }
 
             PlayerInputPacket input = _localInputProvider.GetInput();
+            TrackDisconnectInputProfile(input, ResolveCurrentServerTick(), "host-owner");
             ObserveActionIntentEdges(input, submitToServer: false, sourceLabel: "host-owner");
         }
 
@@ -1069,11 +1073,115 @@ namespace Core.Multiplayer
             gameObject.name = OwnerClientId == NetworkManager.ServerClientId
                 ? "hostPlayer"
                 : "clientPlayer";
-        }`r`n        private static int PositiveModulo(int value, int modulo)
+        }
+
+        public bool HasNoActionDisconnectProfile
+        {
+            get { return !_disconnectProfileSawActionButtons; }
+        }
+
+        public string BuildConnectionDebugProfile()
+        {
+            return
+                $"name={gameObject.name} " +
+                $"owner={OwnerClientId} " +
+                $"objectId={NetworkObjectId} " +
+                $"server={IsServer} " +
+                $"ownerLocal={IsOwner} " +
+                $"inputProfile={ResolveDisconnectInputProfileLabel()} " +
+                $"lastInputSeq={_disconnectProfileLastInputSequence} " +
+                $"lastSource={_disconnectProfileLastSourceLabel}";
+        }
+
+        private static int PositiveModulo(int value, int modulo)
         {
             int result = value % modulo;
             return result < 0 ? result + modulo : result;
-        }`r`n        private void LogRuntimeRoleConfiguration()
+        }
+
+        private void TrackDisconnectInputProfile(in PlayerInputPacket input, int inputSequence, string sourceLabel)
+        {
+            TryLogDisconnectProfileBaseline(sourceLabel);
+            string previousProfile = ResolveDisconnectInputProfileLabel();
+
+            if (inputSequence < _disconnectProfileLastInputSequence)
+            {
+                return;
+            }
+
+            _disconnectProfileLastInputSequence = inputSequence;
+            _disconnectProfileLastSourceLabel = sourceLabel;
+
+            if (input.moveDir.sqrMagnitude > DisconnectProfileMoveThresholdSqr)
+            {
+                _disconnectProfileSawMoveInput = true;
+            }
+
+            if ((input.buttons & (byte)(InputFlag.Dash | InputFlag.Attack | InputFlag.Jump)) != 0)
+            {
+                _disconnectProfileSawActionButtons = true;
+            }
+
+            TryLogDisconnectProfileTransition(previousProfile, ResolveDisconnectInputProfileLabel(), sourceLabel, inputSequence);
+        }
+
+        private string ResolveDisconnectInputProfileLabel()
+        {
+            if (_disconnectProfileSawActionButtons)
+            {
+                return "action-observed";
+            }
+
+            return _disconnectProfileSawMoveInput ? "idle-walk-only" : "idle-only";
+        }
+
+        private void TryLogDisconnectProfileBaseline(string sourceLabel)
+        {
+            if (_hasLoggedDisconnectProfileBaseline)
+            {
+                return;
+            }
+
+            string currentProfile = ResolveDisconnectInputProfileLabel();
+            if (!MultiplayerSessionService.TryLogAvatarConnectionProfileBaseline(
+                this,
+                currentProfile,
+                sourceLabel,
+                _disconnectProfileLastInputSequence))
+            {
+                return;
+            }
+
+            _hasLoggedDisconnectProfileBaseline = true;
+            _lastLoggedDisconnectProfileLabel = currentProfile;
+        }
+
+        private void TryLogDisconnectProfileTransition(
+            string previousProfile,
+            string currentProfile,
+            string sourceLabel,
+            int inputSequence)
+        {
+            if (string.Equals(previousProfile, currentProfile, StringComparison.Ordinal)
+                || string.Equals(_lastLoggedDisconnectProfileLabel, currentProfile, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            if (!MultiplayerSessionService.TryLogAvatarConnectionProfileTransition(
+                this,
+                previousProfile,
+                currentProfile,
+                sourceLabel,
+                inputSequence))
+            {
+                return;
+            }
+
+            _lastLoggedDisconnectProfileLabel = currentProfile;
+        }
+
+        private void LogRuntimeRoleConfiguration()
         {
             Debug.Log(
                 $"MultiplayerPlayerAvatar: role configured name={gameObject.name} predictionPath=PredictionReconciliation server={IsServer} owner={IsOwner} mode={_playerController.SimulationMode}");
