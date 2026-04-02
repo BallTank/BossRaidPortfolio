@@ -1,4 +1,4 @@
-using Core.Multiplayer;
+﻿using Core.Multiplayer;
 using UnityEngine;
 
 namespace Core.Player
@@ -144,15 +144,22 @@ namespace Core.Player
             }
 
             bool nextDashActive = dashStartedThisTick || nextDashTimer > 0f;
+            float locomotionBlendSpeed = ResolveLocomotionBlendSpeed(controller, input.moveDir.magnitude, nextPlanarVelocity);
+
             if (updateAnimator && controller.Animator != null)
             {
                 if (dashStartedThisTick)
                 {
                     controller.Animator.CrossFade(PlayerController.ANIM_STATE_DASH, 0.05f);
                 }
+                else if (wasDashActive && !nextDashActive)
+                {
+                    controller.Animator.CrossFade(PlayerController.ANIM_STATE_LOCOMOTION, 0.05f);
+                    controller.Animator.SetFloat(PlayerController.ANIM_PARAM_SPEED, locomotionBlendSpeed);
+                }
                 else if (!nextDashActive)
                 {
-                    controller.Animator.SetFloat(PlayerController.ANIM_PARAM_SPEED, input.moveDir.magnitude);
+                    controller.Animator.SetFloat(PlayerController.ANIM_PARAM_SPEED, locomotionBlendSpeed);
                 }
             }
 
@@ -195,6 +202,16 @@ namespace Core.Player
             return Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
         }
 
+        private static float ResolveLocomotionBlendSpeed(PlayerController controller, float inputMagnitude, Vector3 planarVelocity)
+        {
+            float normalizedPlanarSpeed = 0f;
+            if (controller.MoveSpeed > 0.0001f)
+            {
+                normalizedPlanarSpeed = planarVelocity.magnitude / controller.MoveSpeed;
+            }
+
+            return Mathf.Clamp01(Mathf.Max(inputMagnitude, normalizedPlanarSpeed));
+        }
 
         private static float ResolveCurrentVerticalVelocity(CharacterController characterController, float groundedGravity)
         {
