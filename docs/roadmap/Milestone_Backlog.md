@@ -145,7 +145,8 @@
 - [x] 2인 gameplay scene spawn 동기화
     - [x] refactoring: PlayerController multiplayer부분 떼기.
     - [x] Host screen에서 Client player 애니메이션 움직이게 하기
-- [ ] boss aggro + spectator + retry consensus 구현
+- [ ] boss 구현
+    - [ ] player multi authority 구현
     - [ ] boss authority host에 연동. 
     - [ ] boss 공격 및 피격 구현
     - [ ] boss aggro 구현
@@ -181,6 +182,8 @@
 - [x] 🟡**(보스, AoE) 반경 기반 데미지 판정 수정**: Projectile 충돌이 아니라 AoE Circle의 반경 기준으로 플레이어 데미지를 적용한다. Circle이 fully red(텔레그래프 종료 시점) 상태가 되면 반경 내 플레이어에게 데미지가 들어가야 한다.
 - [x] 🟡**(플레이어, 카메라) 리팩토링**: 좌우 이동할 때 카메라 턱턱 걸리지 않고 부드럽게 움직이게 하기.
 - [x] 🟡**(플레이어) Attack3 넉백 거리 수정**: Projectile로 스턴생기면 stun distance보다 멀리 나간다. 넉백길이 일정하게 수정
+- [ ] 🟡**(플레이어, 애니메이션) locomotion 수정**: 반대방향으로 돌리면 속도가 줄어들 때 idle상태가 되어서 한프레임 때 서 있게 된다. 부드럽게 돌려서 계속 달리는 모션을 보여주자.
+- [ ] 🟡**(플레이어, 애니메이션) client 공격 우선순위 고치기**: 이동 또는 대쉬 때 공격을 하면 공격이 우선적으로 실행된다. 이동은 상관없지만 대쉬는 캔슬이 되면 안된다. 대쉬 캔슬이 되지 않게 만들기.
 - [ ] 🟡**(보스, 애니메이션) 2페이즈 생략**: 페이즈 변환할 때 때려도 페이즈변환 무시 안되게 하기.
 - [x] 🟢**(리포지토리) 보스 모델 공유 누락 수정**: `FourEvilDragonsPBR/DragonUsurper`의 `Red.prefab(.meta)`와 `UNI VFX`의 `Crushing Pull Gold.prefab(.meta)`만 `.gitignore` 예외로 허용하도록 규칙을 조정
 - [x] 🟢**(보스, 공격범위)**: Attack1 editable range source를 `HeadDamageCaster.radius`로 단일화하고, `BossController.basicAttackRange`는 인스펙터에서 숨김 + legacy fallback으로만 유지.

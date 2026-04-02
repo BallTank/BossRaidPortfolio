@@ -1,5 +1,6 @@
-﻿using Core.Combat;
+using Core.Combat;
 using Core.GameFlow;
+using System;
 using Core.Player;
 using Unity.Netcode;
 using Unity.Netcode.Components;
@@ -19,14 +20,10 @@ namespace Core.Multiplayer
         private const float FallbackFixedDeltaTime = 1f / 30f;
         private const float OwnerPositionCorrectionDeadzone = 0.03f;
         private const float OwnerYawCorrectionDeadzone = 1.25f;
+        private const float DisconnectProfileMoveThresholdSqr = 0.0001f;
 
-        [Header("Prediction Debug")]
-        [SerializeField] private bool _enableClientPredictionTrace = true;
-        [SerializeField] private bool _tracePredictionTicks = true;
-        [SerializeField] private bool _traceDeadzonePackets;
-        [SerializeField] private bool _traceDuplicatePackets;
-        [SerializeField, Min(0.02f)] private float _clientPredictionTraceLogInterval = 0.08f;
-        [SerializeField, Min(0f)] private float _clientPredictionTraceErrorThreshold = 0.05f;
+        [Header("Action Authority Debug")]
+        [SerializeField] private bool _enableActionAuthorityTrace = true;
 
         private struct ClientInputHistoryEntry
         {
@@ -54,6 +51,8 @@ namespace Core.Multiplayer
         private CharacterController _characterController;
         private Health _health;
         private NetworkTransform _networkTransform;
+        private readonly HostPlayerActionValidator _hostPlayerActionValidator = new HostPlayerActionValidator();
+        private readonly HostPlayerReactionResolver _hostPlayerReactionResolver = new HostPlayerReactionResolver();
         private readonly ClientInputHistoryEntry[] _clientInputHistory = new ClientInputHistoryEntry[PredictionBufferSize];
         private readonly ClientPredictedStateHistoryEntry[] _clientPredictedStateHistory = new ClientPredictedStateHistoryEntry[PredictionBufferSize];
         private readonly ServerInputBufferEntry[] _serverInputBuffer = new ServerInputBufferEntry[PredictionBufferSize];
@@ -72,9 +71,20 @@ namespace Core.Multiplayer
         private int _serverLatestReceivedInputSequence;
         private int _serverLastProcessedInputSequence;
         private int _serverNextInputSequenceToProcess = 1;
+        private int _nextLocalActionSequence;
+        private HostPlayerState _hostPlayerState;
+        private HostToClientPlayerReactionSnapshot _latestHostReactionSnapshot;
+        private bool _hasLatestHostReactionSnapshot;
+        private bool _hasBoundHostAuthorityHooks;
         private bool _hasReceivedInitialAuthoritativeBaseline;
-        private float _nextClientPredictionTraceLogTime;
-        private float _nextClientAuthoritativeTraceLogTime;
+        private byte _lastObservedActionButtons;
+        private byte _lastBufferedActionButtons;
+        private bool _disconnectProfileSawMoveInput;
+        private bool _disconnectProfileSawActionButtons;
+        private int _disconnectProfileLastInputSequence;
+        private string _disconnectProfileLastSourceLabel = "none";
+        private bool _hasLoggedDisconnectProfileBaseline;
+        private string _lastLoggedDisconnectProfileLabel = string.Empty;
 
         private void Awake()
         {
@@ -83,6 +93,7 @@ namespace Core.Multiplayer
 
         public override void OnDestroy()
         {
+            UnbindHostAuthorityHooks();
             UnregisterNetworkTick();
             base.OnDestroy();
         }
@@ -104,10 +115,12 @@ namespace Core.Multiplayer
             MultiplayerGameplaySceneCoordinator.EnsureCurrentGameplayScenePrepared();
             RefreshAvatarDebugName();
             ConfigureRuntimeRole();
+            ConfigureHostAuthorityContracts();
         }
 
         public override void OnNetworkDespawn()
         {
+            UnbindHostAuthorityHooks();
             UnregisterNetworkTick();
 
             if (_localInputProvider != null)
@@ -132,9 +145,18 @@ namespace Core.Multiplayer
                 return;
             }
 
+            PlayerInputPacket input = locomotionInput.ToPlayerInputPacket();
+            ProcessBufferedActionIntentEdges(locomotionInput, input);
             _bufferedInputProvider.SetInput(locomotionInput);
             _serverLatestReceivedInputSequence = Mathf.Max(_serverLatestReceivedInputSequence, locomotionInput.InputSequence);
             StoreServerInput(locomotionInput);
+        }
+
+        [ServerRpc(Delivery = RpcDelivery.Reliable)]
+        private void SubmitOwnerActionIntentServerRpc(ClientToHostPlayerActionIntent actionIntent, ServerRpcParams rpcParams = default)
+        {
+            ulong senderClientId = rpcParams.Receive.SenderClientId;
+            LogActionIntentRpcReceived(actionIntent, senderClientId, "client-owner");
         }
 
         [ClientRpc(Delivery = RpcDelivery.Unreliable)]
@@ -154,55 +176,30 @@ namespace Core.Multiplayer
             if (!_hasReceivedInitialAuthoritativeBaseline)
             {
                 _playerController.ApplyLocomotionState(state);
-                ApplyLocomotionAnimator(state.PlanarVelocity.magnitude);
+                ApplyLocomotionAnimator(ResolveLocomotionAnimatorMagnitude(state));
                 _clientPredictedState = state;
                 _hasClientPredictedState = true;
                 _hasReceivedInitialAuthoritativeBaseline = true;
                 _clientAllowsPrediction = state.AllowsPrediction;
                 _lastAppliedAuthoritativeInputSequence = Mathf.Max(_lastAppliedAuthoritativeInputSequence, state.InputSequence);
                 StoreClientPredictedState(state.InputSequence, state);
-                LogClientAuthoritativeTrace("baseline", state, state, 0f, 0f, true, 0);
                 return;
             }
 
             _clientAllowsPrediction = state.AllowsPrediction;
             _hasClientPredictedState = true;
 
-            bool hasPredictedComparison = TryGetClientPredictedState(state.InputSequence, out MultiplayerLocomotionState predictedStateForLog);
-            float positionErrorForLog = hasPredictedComparison
-                ? Vector3.Distance(predictedStateForLog.Position, state.Position)
-                : 0f;
-            float yawErrorForLog = hasPredictedComparison
-                ? Mathf.Abs(Mathf.DeltaAngle(predictedStateForLog.Yaw, state.Yaw))
-                : 0f;
-
             if (state.AllowsPrediction && state.InputSequence <= _lastAppliedAuthoritativeInputSequence)
             {
-                LogClientAuthoritativeTrace(
-                    "duplicate",
-                    state,
-                    hasPredictedComparison ? predictedStateForLog : _clientPredictedState,
-                    positionErrorForLog,
-                    yawErrorForLog,
-                    false,
-                    0);
                 return;
             }
 
             if (!state.AllowsPrediction)
             {
                 _playerController.ApplyLocomotionState(state);
-                ApplyLocomotionAnimator(state.PlanarVelocity.magnitude);
+                ApplyLocomotionAnimator(ResolveLocomotionAnimatorMagnitude(state));
                 _clientPredictedState = state;
                 _lastAppliedAuthoritativeInputSequence = Mathf.Max(_lastAppliedAuthoritativeInputSequence, state.InputSequence);
-                LogClientAuthoritativeTrace(
-                    "fallback",
-                    state,
-                    hasPredictedComparison ? predictedStateForLog : _clientPredictedState,
-                    positionErrorForLog,
-                    yawErrorForLog,
-                    true,
-                    0);
                 return;
             }
 
@@ -210,14 +207,6 @@ namespace Core.Multiplayer
                 && IsWithinOwnerCorrectionDeadzone(predictedState, state))
             {
                 _lastAppliedAuthoritativeInputSequence = Mathf.Max(_lastAppliedAuthoritativeInputSequence, state.InputSequence);
-                LogClientAuthoritativeTrace(
-                    "deadzone",
-                    state,
-                    predictedState,
-                    Vector3.Distance(predictedState.Position, state.Position),
-                    Mathf.Abs(Mathf.DeltaAngle(predictedState.Yaw, state.Yaw)),
-                    false,
-                    0);
                 return;
             }
 
@@ -225,8 +214,7 @@ namespace Core.Multiplayer
             _playerController.ApplyLocomotionState(state);
 
             MultiplayerLocomotionState replayState = state;
-            float replayInputMagnitude = state.PlanarVelocity.magnitude / Mathf.Max(_playerController.MoveSpeed, 0.0001f);
-            int replayCount = 0;
+            float replayInputMagnitude = ResolveLocomotionAnimatorMagnitude(state);
             for (int sequence = state.InputSequence + 1; sequence <= _nextLocalInputSequence; sequence++)
             {
                 if (!TryGetClientInput(sequence, out ClientInputHistoryEntry inputEntry) || !inputEntry.WasPredicted)
@@ -243,20 +231,13 @@ namespace Core.Multiplayer
                     true,
                     true);
 
-                replayInputMagnitude = inputEntry.Input.MoveDirection.magnitude;
-                replayCount++;
+                replayInputMagnitude = ResolveLocomotionAnimatorMagnitude(
+                    replayState,
+                    inputEntry.Input.MoveDirection.magnitude);
             }
 
             _clientPredictedState = replayState;
             ApplyLocomotionAnimator(replayInputMagnitude);
-            LogClientAuthoritativeTrace(
-                "reconcile",
-                state,
-                hasPredictedComparison ? predictedStateForLog : _clientPredictedState,
-                positionErrorForLog,
-                yawErrorForLog,
-                true,
-                replayCount);
         }
 
         private void CacheComponents()
@@ -307,6 +288,48 @@ namespace Core.Multiplayer
 
             ConfigureClientReplica();
             LogRuntimeRoleConfiguration();
+        }
+
+        private void ConfigureHostAuthorityContracts()
+        {
+            UnbindHostAuthorityHooks();
+            _hostPlayerReactionResolver.Reset();
+            _hostPlayerState = default;
+            _latestHostReactionSnapshot = default;
+            _hasLatestHostReactionSnapshot = false;
+
+            if (!IsServer || _playerController == null)
+            {
+                return;
+            }
+
+            BindHostAuthorityHooks();
+            _hostPlayerReactionResolver.SeedFromRuntime(_playerController, _health, ResolveCurrentServerTick(), ref _hostPlayerState);
+        }
+
+        private void BindHostAuthorityHooks()
+        {
+            if (_hasBoundHostAuthorityHooks || _playerController == null)
+            {
+                return;
+            }
+
+            _playerController.AttackDamageResolved += HandleAttackDamageResolved;
+            _playerController.BossAttackResolved += HandleBossAttackResolved;
+            _hasBoundHostAuthorityHooks = true;
+        }
+
+        private void UnbindHostAuthorityHooks()
+        {
+            if (!_hasBoundHostAuthorityHooks || _playerController == null)
+            {
+                _hasBoundHostAuthorityHooks = false;
+                return;
+            }
+
+            _playerController.AttackDamageResolved -= HandleAttackDamageResolved;
+            _playerController.BossAttackResolved -= HandleBossAttackResolved;
+            _hasBoundHostAuthorityHooks = false;
         }
 
         private void ConfigureHostOwnedPlayer()
@@ -406,6 +429,16 @@ namespace Core.Multiplayer
                 return;
             }
 
+            if (IsServer)
+            {
+                HandleHostAuthorityStateTick();
+            }
+
+            if (IsServer && IsOwner)
+            {
+                HandleHostOwnedActionIntentTick();
+            }
+
             if (IsServer && !IsOwner)
             {
                 HandleServerAuthorityTick();
@@ -415,6 +448,16 @@ namespace Core.Multiplayer
             {
                 HandleClientPredictionTick();
             }
+        }
+
+        private void HandleHostAuthorityStateTick()
+        {
+            if (_playerController == null)
+            {
+                return;
+            }
+
+            _hostPlayerReactionResolver.SyncRuntimeState(_playerController, _health, ResolveCurrentServerTick(), ref _hostPlayerState);
         }
 
         private void HandleClientPredictionTick()
@@ -432,6 +475,7 @@ namespace Core.Multiplayer
 
             PlayerInputPacket input = _localInputProvider.GetInput();
             MultiplayerLocomotionInput locomotionInput = MultiplayerLocomotionInput.FromPlayerInputPacket(input, ++_nextLocalInputSequence);
+            ObserveActionIntentEdges(input, submitToServer: true, sourceLabel: "client-owner");
             bool canPredictThisTick = _hasReceivedInitialAuthoritativeBaseline && ShouldPredictLocomotionThisTick(input);
 
             StoreClientInput(locomotionInput, canPredictThisTick);
@@ -464,9 +508,19 @@ namespace Core.Multiplayer
             }
 
             StoreClientPredictedState(locomotionInput.InputSequence, _clientPredictedState);
-            LogClientPredictionTrace(locomotionInput, _clientPredictedState, canPredictThisTick);
 
             SubmitOwnerInputServerRpc(locomotionInput);
+        }
+
+        private void HandleHostOwnedActionIntentTick()
+        {
+            if (_localInputProvider == null || _playerController == null)
+            {
+                return;
+            }
+
+            PlayerInputPacket input = _localInputProvider.GetInput();
+            ObserveActionIntentEdges(input, submitToServer: false, sourceLabel: "host-owner");
         }
 
         private void HandleServerAuthorityTick()
@@ -528,14 +582,18 @@ namespace Core.Multiplayer
             }
             else
             {
+                PlayerInputPacket latestInput = _bufferedInputProvider != null
+                    ? _bufferedInputProvider.GetInput()
+                    : default;
                 int latestAuthoritativeSequence = _bufferedInputProvider != null
                     ? _bufferedInputProvider.LatestInputSequence
                     : _serverLastProcessedInputSequence;
+                bool allowsOwnerPrediction = ShouldAllowFallbackPrediction(latestInput);
 
                 _serverAuthoritativeState = _playerController.CaptureCurrentLocomotionState(
                     latestAuthoritativeSequence,
                     currentServerTick,
-                    false);
+                    allowsOwnerPrediction);
 
                 _serverLastProcessedInputSequence = Mathf.Max(_serverLastProcessedInputSequence, latestAuthoritativeSequence);
                 _serverNextInputSequenceToProcess = _serverLastProcessedInputSequence + 1;
@@ -574,7 +632,7 @@ namespace Core.Multiplayer
                 ? _bufferedInputProvider.GetInput()
                 : default;
 
-            return latestInput.buttons == 0;
+            return CanUsePredictedLocomotionButtons(latestInput.buttons);
         }
 
         private void EnterAuthoritativeLocomotionMode()
@@ -601,7 +659,9 @@ namespace Core.Multiplayer
             float inputMagnitude = _bufferedInputProvider != null
                 ? _bufferedInputProvider.GetInput().moveDir.magnitude
                 : 0f;
-            ApplyLocomotionAnimator(inputMagnitude, forceLocomotionState: true);
+            ApplyLocomotionAnimator(
+                ResolveLocomotionAnimatorMagnitude(_serverAuthoritativeState, inputMagnitude),
+                forceLocomotionState: true);
         }
 
         private void EnterFullAuthoritativeFallbackMode()
@@ -622,7 +682,7 @@ namespace Core.Multiplayer
             _serverAuthoritativeState = _playerController.CaptureCurrentLocomotionState(
                 _serverLastProcessedInputSequence,
                 ResolveCurrentServerTick(),
-                false);
+                ShouldAllowFallbackPrediction(_bufferedInputProvider != null ? _bufferedInputProvider.GetInput() : default));
             _hasServerAuthoritativeState = true;
         }
 
@@ -707,6 +767,169 @@ namespace Core.Multiplayer
             PushAuthoritativeLocomotionStateClientRpc(state, _authoritativeStateClientRpcParams);
         }
 
+        private void ObserveActionIntentEdges(in PlayerInputPacket input, bool submitToServer, string sourceLabel)
+        {
+            byte currentActionButtons = (byte)(input.buttons & (byte)(InputFlag.Dash | InputFlag.Attack));
+            byte pressedActionEdges = (byte)(currentActionButtons & ~_lastObservedActionButtons);
+            _lastObservedActionButtons = currentActionButtons;
+
+            if (pressedActionEdges == 0)
+            {
+                return;
+            }
+
+            EmitActionIntentIfPressed(pressedActionEdges, InputFlag.Dash, submitToServer, sourceLabel);
+            EmitActionIntentIfPressed(pressedActionEdges, InputFlag.Attack, submitToServer, sourceLabel);
+        }
+
+        private void EmitActionIntentIfPressed(byte pressedActionEdges, InputFlag requestedFlag, bool submitToServer, string sourceLabel)
+        {
+            if ((pressedActionEdges & (byte)requestedFlag) == 0)
+            {
+                return;
+            }
+
+            ClientToHostPlayerActionIntent actionIntent = ClientToHostPlayerActionIntent.Create(
+                requestedFlag,
+                ++_nextLocalActionSequence,
+                ResolveCurrentServerTick());
+
+            LogObservedActionIntent(actionIntent, sourceLabel, submitToServer);
+
+            if (submitToServer)
+            {
+                SubmitOwnerActionIntentServerRpc(actionIntent);
+                return;
+            }
+
+            ProcessHostValidatedActionIntent(actionIntent, OwnerClientId, sourceLabel);
+        }
+
+        private void ProcessBufferedActionIntentEdges(in MultiplayerLocomotionInput locomotionInput, in PlayerInputPacket input)
+        {
+            byte currentActionButtons = (byte)(input.buttons & (byte)(InputFlag.Dash | InputFlag.Attack));
+            byte pressedActionEdges = (byte)(currentActionButtons & ~_lastBufferedActionButtons);
+            _lastBufferedActionButtons = currentActionButtons;
+
+            if (pressedActionEdges == 0 || locomotionInput.InputSequence <= 0)
+            {
+                return;
+            }
+
+            ProcessBufferedActionIntentIfPressed(pressedActionEdges, InputFlag.Dash, locomotionInput);
+            ProcessBufferedActionIntentIfPressed(pressedActionEdges, InputFlag.Attack, locomotionInput);
+        }
+
+        // remote action edge는 latest buffer snapshot이 아니라 Host receive 시점에서 바로 잡아야 덮어쓰기로 사라지지 않는다.
+        private void ProcessBufferedActionIntentIfPressed(byte pressedActionEdges, InputFlag requestedFlag, in MultiplayerLocomotionInput locomotionInput)
+        {
+            if ((pressedActionEdges & (byte)requestedFlag) == 0)
+            {
+                return;
+            }
+
+            LogBufferedActionIntentEdge(requestedFlag, locomotionInput.InputSequence, locomotionInput.Buttons);
+
+            ClientToHostPlayerActionIntent actionIntent = ClientToHostPlayerActionIntent.Create(
+                requestedFlag,
+                locomotionInput.InputSequence,
+                locomotionInput.InputSequence);
+
+            ProcessHostValidatedActionIntent(actionIntent, OwnerClientId, "server-buffer");
+        }
+
+        private void LogBufferedActionIntentEdge(InputFlag requestedFlag, int inputSequence, byte buttons)
+        {
+            if (!_enableActionAuthorityTrace)
+            {
+                return;
+            }
+
+            Debug.Log(
+                $"[MultiplayerActionIntentTrace] " +
+                $"phase=buffer-observe " +
+                $"name={gameObject.name} " +
+                $"source=server-buffer " +
+                $"owner={OwnerClientId} " +
+                $"objectId={NetworkObjectId} " +
+                $"inputSeq={inputSequence} " +
+                $"serverTick={ResolveCurrentServerTick()} " +
+                $"flag={requestedFlag} " +
+                $"buttons={buttons}");
+        }
+
+        private void ProcessHostValidatedActionIntent(in ClientToHostPlayerActionIntent actionIntent, ulong senderClientId, string sourceLabel)
+        {
+            if (!IsServer)
+            {
+                return;
+            }
+
+            bool isAccepted = false;
+            string rejectionReason;
+
+            if (senderClientId != OwnerClientId)
+            {
+                rejectionReason = "sender-owner-mismatch";
+            }
+            else
+            {
+                isAccepted = _hostPlayerActionValidator.TryValidate(actionIntent, _playerController, out rejectionReason);
+            }
+
+            LogValidatedActionIntent(actionIntent, senderClientId, sourceLabel, isAccepted, rejectionReason);
+
+            if (!isAccepted)
+            {
+                return;
+            }
+
+            int currentServerTick = ResolveCurrentServerTick();
+            _hostPlayerState.RecordAcceptedAction(actionIntent, _health, currentServerTick);
+            LogHostAuthoritativeState(actionIntent, _hostPlayerState);
+        }
+
+        private void HandleAttackDamageResolved(int totalDamage)
+        {
+            if (!IsSpawned || !IsServer)
+            {
+                return;
+            }
+
+            int currentServerTick = ResolveCurrentServerTick();
+            if (_hostPlayerReactionResolver.TryRecordDamageContribution(
+                    OwnerClientId,
+                    _hostPlayerState,
+                    totalDamage,
+                    currentServerTick,
+                    out HostPlayerReactionResolver.RawHitLogEntry rawHitLogEntry))
+            {
+                LogHostDamageContribution(rawHitLogEntry);
+            }
+        }
+
+        private void HandleBossAttackResolved(in BossAttackHitData hitData, BossAttackHitResolution resolution)
+        {
+            if (!IsSpawned || !IsServer || _playerController == null)
+            {
+                return;
+            }
+
+            if (_hostPlayerReactionResolver.TryResolveBossHit(
+                    hitData,
+                    resolution,
+                    _playerController,
+                    _health,
+                    ResolveCurrentServerTick(),
+                    ref _hostPlayerState,
+                    out HostToClientPlayerReactionSnapshot snapshot))
+            {
+                _latestHostReactionSnapshot = snapshot;
+                _hasLatestHostReactionSnapshot = snapshot.IsValid;
+                LogHostReactionSnapshot(snapshot);
+            }
+        }
+
         private void ApplyLocomotionAnimator(float inputMagnitude, bool forceLocomotionState = false)
         {
             if (_playerController == null || _playerController.Animator == null)
@@ -720,6 +943,20 @@ namespace Core.Multiplayer
             }
 
             _playerController.Animator.SetFloat(PlayerController.ANIM_PARAM_SPEED, Mathf.Clamp01(inputMagnitude));
+        }
+
+        private float ResolveLocomotionAnimatorMagnitude(in MultiplayerLocomotionState state, float inputMagnitude = 0f)
+        {
+            if (_playerController == null)
+            {
+                return Mathf.Clamp01(inputMagnitude);
+            }
+
+            float normalizedPlanarSpeed = _playerController.MoveSpeed > 0.0001f
+                ? state.PlanarVelocity.magnitude / _playerController.MoveSpeed
+                : 0f;
+
+            return Mathf.Clamp01(Mathf.Max(inputMagnitude, normalizedPlanarSpeed));
         }
 
         private MultiplayerLocomotionState SimulateNetworkLocomotionTick(
@@ -750,14 +987,24 @@ namespace Core.Multiplayer
             _clientAllowsPrediction = true;
             _serverUsingLocomotionAuthority = false;
             _nextLocalInputSequence = 0;
+            _nextLocalActionSequence = 0;
             _lastAppliedAuthoritativeInputSequence = 0;
             _lastReceivedAuthoritativeServerTick = 0;
             _serverLatestReceivedInputSequence = 0;
             _serverLastProcessedInputSequence = 0;
             _serverNextInputSequenceToProcess = 1;
             _hasReceivedInitialAuthoritativeBaseline = false;
-            _nextClientPredictionTraceLogTime = 0f;
-            _nextClientAuthoritativeTraceLogTime = 0f;
+            _hostPlayerState = default;
+            _latestHostReactionSnapshot = default;
+            _hasLatestHostReactionSnapshot = false;
+            _lastObservedActionButtons = 0;
+            _lastBufferedActionButtons = 0;
+            _disconnectProfileSawMoveInput = false;
+            _disconnectProfileSawActionButtons = false;
+            _disconnectProfileLastInputSequence = 0;
+            _disconnectProfileLastSourceLabel = "none";
+            _hasLoggedDisconnectProfileBaseline = false;
+            _lastLoggedDisconnectProfileLabel = string.Empty;
 
             for (int i = 0; i < _clientInputHistory.Length; i++)
             {
@@ -822,106 +1069,14 @@ namespace Core.Multiplayer
             gameObject.name = OwnerClientId == NetworkManager.ServerClientId
                 ? "hostPlayer"
                 : "clientPlayer";
-        }
-
-        private static int PositiveModulo(int value, int modulo)
+        }`r`n        private static int PositiveModulo(int value, int modulo)
         {
             int result = value % modulo;
             return result < 0 ? result + modulo : result;
-        }
-
-        private void LogRuntimeRoleConfiguration()
+        }`r`n        private void LogRuntimeRoleConfiguration()
         {
             Debug.Log(
                 $"MultiplayerPlayerAvatar: role configured name={gameObject.name} predictionPath=PredictionReconciliation server={IsServer} owner={IsOwner} mode={_playerController.SimulationMode}");
-        }
-
-        private void LogClientPredictionTrace(in MultiplayerLocomotionInput input, in MultiplayerLocomotionState predictedState, bool canPredictThisTick)
-        {
-            if (!_enableClientPredictionTrace
-                || !_tracePredictionTicks
-                || !IsOwner
-                || IsServer
-                || Time.time < _nextClientPredictionTraceLogTime)
-            {
-                return;
-            }
-
-            bool isMoveActive = input.MoveDirection.sqrMagnitude > 0.0001f;
-            if (!isMoveActive && input.Buttons == 0)
-            {
-                return;
-            }
-
-            _nextClientPredictionTraceLogTime = Time.time + _clientPredictionTraceLogInterval;
-            Debug.Log(
-                $"[MultiplayerClientMoveTrace] " +
-                $"phase=predict " +
-                $"name={gameObject.name} " +
-                $"seq={input.InputSequence} " +
-                $"allowsPrediction={canPredictThisTick} " +
-                $"mode={_playerController.SimulationMode} " +
-                $"inputMag={input.MoveDirection.magnitude:F3} " +
-                $"input=({input.MoveDirection.x:F3},{input.MoveDirection.y:F3}) " +
-                $"root=({transform.position.x:F3},{transform.position.y:F3},{transform.position.z:F3}) " +
-                $"predicted=({predictedState.Position.x:F3},{predictedState.Position.y:F3},{predictedState.Position.z:F3}) " +
-                $"yaw={predictedState.Yaw:F1} " +
-                $"planarSpeed={predictedState.PlanarVelocity.magnitude:F3} " +
-                $"vY={predictedState.VerticalVelocity:F3} " +
-                $"grounded={predictedState.IsGrounded} " +
-                $"buttons={input.Buttons}");
-        }
-
-        private void LogClientAuthoritativeTrace(
-            string phase,
-            in MultiplayerLocomotionState authoritativeState,
-            in MultiplayerLocomotionState comparedState,
-            float positionError,
-            float yawError,
-            bool corrected,
-            int replayCount)
-        {
-            if (!_enableClientPredictionTrace
-                || !IsOwner
-                || IsServer)
-            {
-                return;
-            }
-
-            if ((phase == "deadzone" && !_traceDeadzonePackets)
-                || (phase == "duplicate" && !_traceDuplicatePackets))
-            {
-                return;
-            }
-
-            bool shouldTrace = corrected
-                               || authoritativeState.PlanarVelocity.sqrMagnitude > 0.0001f
-                               || positionError >= _clientPredictionTraceErrorThreshold
-                               || yawError >= OwnerYawCorrectionDeadzone;
-            if (!shouldTrace || Time.time < _nextClientAuthoritativeTraceLogTime)
-            {
-                return;
-            }
-
-            _nextClientAuthoritativeTraceLogTime = Time.time + _clientPredictionTraceLogInterval;
-            Debug.Log(
-                $"[MultiplayerClientMoveTrace] " +
-                $"phase={phase} " +
-                $"name={gameObject.name} " +
-                $"seq={authoritativeState.InputSequence} " +
-                $"serverTick={authoritativeState.ServerTick} " +
-                $"allowsPrediction={authoritativeState.AllowsPrediction} " +
-                $"corrected={corrected} " +
-                $"replayCount={replayCount} " +
-                $"root=({transform.position.x:F3},{transform.position.y:F3},{transform.position.z:F3}) " +
-                $"authoritative=({authoritativeState.Position.x:F3},{authoritativeState.Position.y:F3},{authoritativeState.Position.z:F3}) " +
-                $"compared=({comparedState.Position.x:F3},{comparedState.Position.y:F3},{comparedState.Position.z:F3}) " +
-                $"posError={positionError:F3} " +
-                $"yawError={yawError:F2} " +
-                $"authYaw={authoritativeState.Yaw:F1} " +
-                $"predYaw={comparedState.Yaw:F1} " +
-                $"authPlanarSpeed={authoritativeState.PlanarVelocity.magnitude:F3} " +
-                $"predPlanarSpeed={comparedState.PlanarVelocity.magnitude:F3}");
         }
 
         private static bool IsWithinOwnerCorrectionDeadzone(in MultiplayerLocomotionState predictedState, in MultiplayerLocomotionState authoritativeState)
@@ -941,7 +1096,143 @@ namespace Core.Multiplayer
                 return false;
             }
 
-            return input.buttons == 0;
+            return CanUsePredictedLocomotionButtons(input.buttons);
+        }
+
+        private bool ShouldAllowFallbackPrediction(in PlayerInputPacket latestInput)
+        {
+            if (_playerController == null || _playerController.StateMachine == null)
+            {
+                return false;
+            }
+
+            if (_playerController.StateMachine.CurrentState == _playerController.DashState)
+            {
+                return true;
+            }
+
+            return _playerController.StateMachine.CurrentState == _playerController.MoveState
+                   && CanUsePredictedLocomotionButtons(latestInput.buttons);
+        }
+
+        private static bool CanUsePredictedLocomotionButtons(byte buttons)
+        {
+            return (buttons & (byte)(InputFlag.Attack | InputFlag.Jump)) == 0;
+        }
+
+        private void LogObservedActionIntent(in ClientToHostPlayerActionIntent actionIntent, string sourceLabel, bool submittedToServer)
+        {
+            if (!_enableActionAuthorityTrace)
+            {
+                return;
+            }
+
+            Debug.Log(
+                $"[MultiplayerActionIntentTrace] " +
+                $"phase=observe " +
+                $"name={gameObject.name} " +
+                $"source={sourceLabel} " +
+                $"submit={submittedToServer} " +
+                $"seq={actionIntent.ActionSequence} " +
+                $"tick={actionIntent.ClientTick} " +
+                $"flag={actionIntent.RequestedFlag}");
+        }
+
+        private void LogActionIntentRpcReceived(in ClientToHostPlayerActionIntent actionIntent, ulong senderClientId, string sourceLabel)
+        {
+            if (!_enableActionAuthorityTrace)
+            {
+                return;
+            }
+
+            Debug.Log(
+                $"[MultiplayerActionIntentTrace] " +
+                $"phase=rpc-received " +
+                $"name={gameObject.name} " +
+                $"source={sourceLabel} " +
+                $"sender={senderClientId} " +
+                $"owner={OwnerClientId} " +
+                $"objectId={NetworkObjectId} " +
+                $"seq={actionIntent.ActionSequence} " +
+                $"tick={actionIntent.ClientTick} " +
+                $"flag={actionIntent.RequestedFlag}");
+        }
+
+        private void LogValidatedActionIntent(in ClientToHostPlayerActionIntent actionIntent, ulong senderClientId, string sourceLabel, bool isAccepted, string rejectionReason)
+        {
+            if (!_enableActionAuthorityTrace)
+            {
+                return;
+            }
+
+            Debug.Log(
+                $"[MultiplayerActionIntentTrace] " +
+                $"phase=validate " +
+                $"name={gameObject.name} " +
+                $"source={sourceLabel} " +
+                $"sender={senderClientId} " +
+                $"accepted={isAccepted} " +
+                $"reason={(string.IsNullOrEmpty(rejectionReason) ? "none" : rejectionReason)} " +
+                $"seq={actionIntent.ActionSequence} " +
+                $"tick={actionIntent.ClientTick} " +
+                $"flag={actionIntent.RequestedFlag}");
+        }
+
+        private void LogHostAuthoritativeState(in ClientToHostPlayerActionIntent actionIntent, in HostPlayerState hostPlayerState)
+        {
+            if (!_enableActionAuthorityTrace)
+            {
+                return;
+            }
+
+            Debug.Log(
+                $"[MultiplayerActionIntentTrace] " +
+                $"phase=host-state " +
+                $"name={gameObject.name} " +
+                $"seq={actionIntent.ActionSequence} " +
+                $"flag={actionIntent.RequestedFlag} " +
+                $"active={hostPlayerState.ActiveActionFlag} " +
+                $"acceptedAction={hostPlayerState.LastAcceptedActionFlag} " +
+                $"startTick={hostPlayerState.LastAcceptedActionStartTick} " +
+                $"hp={hostPlayerState.CurrentHealth}/{hostPlayerState.MaxHealth}");
+        }
+
+        private void LogHostReactionSnapshot(in HostToClientPlayerReactionSnapshot snapshot)
+        {
+            if (!_enableActionAuthorityTrace)
+            {
+                return;
+            }
+
+            Debug.Log(
+                $"[MultiplayerActionIntentTrace] " +
+                $"phase=reaction-snapshot " +
+                $"name={gameObject.name} " +
+                $"reactionSeq={snapshot.ReactionSequence} " +
+                $"serverTick={snapshot.ServerTick} " +
+                $"flags={snapshot.ReactionFlags} " +
+                $"damage={snapshot.DamageAmount} " +
+                $"hp={snapshot.ResultHealth}/{snapshot.MaxHealth} " +
+                $"sourceHit={snapshot.SourceHitTypeValue} " +
+                $"interrupted={snapshot.InterruptedActionFlag}");
+        }
+
+        private void LogHostDamageContribution(in HostPlayerReactionResolver.RawHitLogEntry rawHitLogEntry)
+        {
+            if (!_enableActionAuthorityTrace)
+            {
+                return;
+            }
+
+            Debug.Log(
+                $"[MultiplayerActionIntentTrace] " +
+                $"phase=raw-hit-log " +
+                $"name={gameObject.name} " +
+                $"dealer={rawHitLogEntry.DealerClientId} " +
+                $"action={rawHitLogEntry.ActionFlag} " +
+                $"seq={rawHitLogEntry.ActionSequence} " +
+                $"damage={rawHitLogEntry.DamageAmount} " +
+                $"serverTick={rawHitLogEntry.ServerTick}");
         }
     }
 }

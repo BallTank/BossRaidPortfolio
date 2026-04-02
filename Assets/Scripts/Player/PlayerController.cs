@@ -1,5 +1,6 @@
-﻿using Core.Combat;
+using Core.Combat;
 using Core.Common;
+using System;
 using Core.Common.Interfaces;
 using Core.Common.Patterns;
 using Core.Multiplayer;
@@ -19,6 +20,8 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         PredictedLocomotion,
         AuthoritativeLocomotion
     }
+
+    public delegate void BossAttackResolvedHandler(in BossAttackHitData hitData, BossAttackHitResolution resolution);
 
     [Header("Movement Settings")]
     [SerializeField] private float moveSpeed = 6.0f;
@@ -78,12 +81,6 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     [SerializeField, Range(0.01f, 0.5f)] private float attack2DebugLogInterval = 0.05f;
     [SerializeField] private float attack2DebugNearDistance = 2.5f;
 
-    [Header("Multiplayer Predicted Render Debug")]
-    [SerializeField, HideInInspector] private bool enableMultiplayerPredictedRenderTrace = true;
-    [SerializeField, HideInInspector] private bool multiplayerPredictedRenderTraceLateralOnly = true;
-    [SerializeField, HideInInspector, Range(0.02f, 0.5f)] private float multiplayerPredictedRenderTraceLogInterval = 0.08f;
-    [SerializeField, HideInInspector] private float multiplayerPredictedRenderTraceOffsetThreshold = 0.01f;
-
     // Animation Constants
     public const string ANIM_PARAM_SPEED = "Speed";
     public const string ANIM_STATE_LOCOMOTION = "Locomotion";
@@ -113,6 +110,8 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     private CharacterController _characterController;
     private MultiplayerPlayerPresentationDriver _multiplayerPresentationDriver;
     private float _nextDashTime;
+    private float _networkDashTimerRemaining;
+    private float _networkDashCooldownRemaining;
 
     // Stun / Invul Runtime
     private bool _isStunned;
@@ -131,6 +130,9 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     private Core.Boss.BossController _attack2DebugBoss;
     private int _pendingComboHudStep;
 
+    public event Action<int> AttackDamageResolved;
+    public event BossAttackResolvedHandler BossAttackResolved;
+
     // Public Properties for States
     public float MoveSpeed => moveSpeed;
     public float RotationSpeed => rotationSpeed;
@@ -148,10 +150,6 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     internal bool IsLocalPresentationEnabled => _isLocalPresentationEnabled;
     internal float MultiplayerPredictedRenderSmoothTime => _multiplayerPredictedRenderSmoothTime;
     internal float MultiplayerPredictedRenderSnapDistance => _multiplayerPredictedRenderSnapDistance;
-    internal bool EnableMultiplayerPredictedRenderTrace => enableMultiplayerPredictedRenderTrace;
-    internal bool MultiplayerPredictedRenderTraceLateralOnly => multiplayerPredictedRenderTraceLateralOnly;
-    internal float MultiplayerPredictedRenderTraceLogInterval => multiplayerPredictedRenderTraceLogInterval;
-    internal float MultiplayerPredictedRenderTraceOffsetThreshold => multiplayerPredictedRenderTraceOffsetThreshold;
     public LayerMask MultiplayerLocomotionCollisionMask => ResolveMultiplayerLocomotionCollisionMask();
     public float MultiplayerLocomotionCollisionShell => _multiplayerLocomotionCollisionShell > 0f ? _multiplayerLocomotionCollisionShell : 0.02f;
     public float MultiplayerLocomotionGroundSnapDistance => _multiplayerLocomotionGroundSnapDistance > 0f ? _multiplayerLocomotionGroundSnapDistance : 0.15f;
@@ -160,11 +158,21 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
                                            && (_health == null || !_health.IsDead)
                                            && _stateMachine != null
                                            && _stateMachine.CurrentState == MoveState;
+    public bool IsDashStateActive => _networkDashTimerRemaining > 0f
+                                     || (_stateMachine != null && _stateMachine.CurrentState == DashState);
+    public float DashTimerRemaining => Mathf.Max(
+        _networkDashTimerRemaining,
+        _stateMachine != null && _stateMachine.CurrentState == DashState
+            ? DashState.RemainingTime
+            : 0f);
+    public byte CurrentInputButtons => _inputProvider != null ? _inputProvider.GetInput().buttons : (byte)0;
 
     // Dash Properties
     public float DashDuration => dashDuration;
     public float DashSpeedMultiplier => dashSpeedMultiplier;
-    public bool CanDash => Time.time >= _nextDashTime;
+    public float DashCooldown => dashCooldown;
+    public bool CanDash => Time.time >= _nextDashTime && _networkDashCooldownRemaining <= 0f;
+    public float DashCooldownRemaining => Mathf.Max(Mathf.Max(0f, _nextDashTime - Time.time), _networkDashCooldownRemaining);
 
     // Jump Properties
     public float JumpForce => jumpForce;
@@ -195,8 +203,6 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         if (_multiplayerLocomotionCollisionShell < 0f) _multiplayerLocomotionCollisionShell = 0f;
         if (_multiplayerLocomotionGroundSnapDistance < 0f) _multiplayerLocomotionGroundSnapDistance = 0f;
         if (_multiplayerLocomotionMaxSlideIterations < 1) _multiplayerLocomotionMaxSlideIterations = 1;
-        if (multiplayerPredictedRenderTraceLogInterval < 0.02f) multiplayerPredictedRenderTraceLogInterval = 0.02f;
-        if (multiplayerPredictedRenderTraceOffsetThreshold < 0f) multiplayerPredictedRenderTraceOffsetThreshold = 0f;
     }
 
     private void Awake()
@@ -340,6 +346,16 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
     public void SetSimulationMode(RuntimeSimulationMode simulationMode)
     {
+        if (simulationMode == RuntimeSimulationMode.Full && _networkDashCooldownRemaining > 0f)
+        {
+            _nextDashTime = Mathf.Max(_nextDashTime, Time.time + _networkDashCooldownRemaining);
+            SyncNetworkDashState(0f, 0f);
+        }
+        else if (simulationMode == RuntimeSimulationMode.Disabled)
+        {
+            SyncNetworkDashState(0f, 0f);
+        }
+
         _simulationMode = simulationMode;
         EnsureMultiplayerPresentationDriver().HandleSimulationModeChanged(_simulationMode);
     }
@@ -381,6 +397,12 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
             serverTick,
             allowsPrediction,
             updateAnimator);
+    }
+
+    public void SyncNetworkDashState(float dashTimerRemaining, float dashCooldownRemaining)
+    {
+        _networkDashTimerRemaining = Mathf.Max(0f, dashTimerRemaining);
+        _networkDashCooldownRemaining = Mathf.Max(0f, dashCooldownRemaining);
     }
 
     public void RefreshLocalPresentationBindings()
@@ -426,34 +448,46 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
     public BossAttackHitResolution ReceiveBossAttackHit(in BossAttackHitData hitData)
     {
+        BossAttackHitResolution resolution = BossAttackHitResolution.Ignored;
+
         if (_health == null || _health.IsDead)
         {
-            return BossAttackHitResolution.Ignored;
+            NotifyBossAttackResolved(hitData, resolution);
+            return resolution;
         }
 
         if (_isStunned || _isPostStunInvulnerable)
         {
-            return BossAttackHitResolution.Ignored;
+            NotifyBossAttackResolved(hitData, resolution);
+            return resolution;
         }
 
         switch (hitData.HitType)
         {
             case BossAttackHitType.Attack1:
-                return ApplyDamageAndHitReaction(hitData.Damage)
+                resolution = ApplyDamageAndHitReaction(hitData.Damage)
                     ? BossAttackHitResolution.Damaged
                     : BossAttackHitResolution.Ignored;
+                break;
 
             case BossAttackHitType.Attack2:
-                return HandleAttack2Hit(hitData);
+                resolution = HandleAttack2Hit(hitData);
+                break;
 
             case BossAttackHitType.Attack3Projectile:
             case BossAttackHitType.Attack4Projectile:
-                return HandleProjectileHit(hitData);
+                resolution = HandleProjectileHit(hitData);
+                break;
+
+            default:
+                resolution = ApplyDamageAndHitReaction(hitData.Damage)
+                    ? BossAttackHitResolution.Damaged
+                    : BossAttackHitResolution.Ignored;
+                break;
         }
 
-        return ApplyDamageAndHitReaction(hitData.Damage)
-            ? BossAttackHitResolution.Damaged
-            : BossAttackHitResolution.Ignored;
+        NotifyBossAttackResolved(hitData, resolution);
+        return resolution;
     }
 
     public void HandleStunFinished()
@@ -701,6 +735,11 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     private void HandleAttackWindowResolved(bool isHit, int totalDamage)
     {
         _combatHUD?.ShowDamageFeedback(isHit, totalDamage);
+
+        if (isHit && totalDamage > 0)
+        {
+            AttackDamageResolved?.Invoke(totalDamage);
+        }
     }
 
     private void HandleAttackHitConfirmed()
@@ -923,5 +962,10 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         attackCombos[0] = new AttackComboData { damage = 10f, duration = 0.5f, comboInputWindow = 0.3f, cancelStartTime = 0.3f };
         attackCombos[1] = new AttackComboData { damage = 15f, duration = 0.6f, comboInputWindow = 0.4f, cancelStartTime = 0.4f };
         attackCombos[2] = new AttackComboData { damage = 30f, duration = 1.0f, comboInputWindow = 0.0f, cancelStartTime = 0.6f };
+    }
+
+    private void NotifyBossAttackResolved(in BossAttackHitData hitData, BossAttackHitResolution resolution)
+    {
+        BossAttackResolved?.Invoke(hitData, resolution);
     }
 }
