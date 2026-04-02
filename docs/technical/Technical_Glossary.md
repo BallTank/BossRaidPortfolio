@@ -1,4 +1,4 @@
-# 📖 Technical Glossary: Boss Raid Portfolio
+﻿# 📖 Technical Glossary: Boss Raid Portfolio
 
 이 문서는 프로젝트 내에서 통용되는 주요 용어와 개념을 정의합니다.
 
@@ -52,7 +52,8 @@
 * **Disconnect Input Profile**: `MultiplayerPlayerAvatar`가 owner input / Host buffered input을 따라가며 누적하는 disconnect 전용 입력 요약. current label은 `idle-only`, `idle-walk-only`, `action-observed` 세 가지이며, `avatar-profile-baseline` / `avatar-profile-transition` event로 disconnect 이전부터 어떤 단계까지 갔는지 기록한다.
 * **Client Prediction Movement Trace (historical)**: real `PredictionReconciliation` owner path를 읽기 위해 쓰던 old runtime log. `[MultiplayerClientMoveTrace]` prefix로 `predict`, `fallback`, `boundarySync`, `hardFail`, `staleSync`, `idleSettle`, `shadow`, `defer` 등을 기록했지만, 2026-04-01 cleanup에서 current code path에서는 제거됐다. old console log나 investigation 문서를 읽을 때만 historical term으로 참고한다.
 * **Predicted Render Trace Hook (historical)**: owner free move visual이 raw root target과 얼마나 벌어지는지 확인하기 위해 쓰던 old local diagnostic log. `[MultiplayerPredictedRenderTrace]` prefix를 사용했지만, 2026-04-01 cleanup에서 제거됐다. current code에서는 `render proxy` presentation만 유지하고 trace hook은 남기지 않는다.
-* **Predicted Owner Tight Follow**: predicted owner camera path에서 render proxy orbit을 다시 부드럽게 늦게 쫓지 않도록, active position/rotation smoothing을 더 직접적으로 두는 follow-up 규칙. current 기본값은 `posSmooth=0`, `rotSmooth=0` direct orbit follow이다.
+* **Multiplayer Camera Follow Trace (historical)**: current owner 화면 jitter를 직접 읽기 위해 한때 `ThirdPersonCameraController` 에 추가했던 old runtime log. `[MultiplayerCameraFollowTrace]` prefix를 사용했지만, 2026-04-01 cleanup에서 제거됐다. old measurement read는 progress log와 jitter investigation 문서에서만 참고한다.
+* **Predicted Owner Tight Follow**: predicted owner camera path에서 render proxy orbit을 다시 부드럽게 늦게 쫓지 않도록, active position/rotation smoothing을 더 직접적으로 두는 follow-up 규칙. current 기본값은 `posSmooth=0`, `rotSmooth=0` direct orbit follow이며, old camera trace 자체는 2026-04-01 cleanup에서 제거됐다.
 * **Predicted Render Tick Interpolation**: 과거 `PredictedLocomotion` local owner visual child가 predicted tick state 사이를 render frame에서 보간하던 presentation rule. 2026-03-30 lazy correction 1차 이후 current free-move owner path에서는 active presentation rule로 사용하지 않고, 이전 튜닝 이력 용어로 남는다.
 * **Predicted Transition Snap**: `PredictedLocomotion` local owner visual child가 sharp move-angle change를 만났을 때만 한 번 current predicted target으로 바로 붙는 presentation rule. steady move는 tick interpolation을 유지하고, transition frame의 남은 slight strafe jitter만 줄이는 것이 목적이다.
 * **Predicted Render Lateral Lead**: pure `A / D` strafe one-tick offset을 줄이기 위해 시도했던 experiment rule. local predicted visual body가 current predicted target에서 predicted tick delta 방향으로 조금 앞서 그려지게 했지만, grouped trace에서는 `0.0`이 가장 낮은 `behindTicks`를 보였고 higher lead values가 더 나빴다. current active path에서는 이 branch를 사용하지 않는다.
