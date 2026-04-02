@@ -26,8 +26,6 @@ namespace Core.Multiplayer
         private bool _hasPredictedPresentationTargets;
         private Vector2 _lastPredictedPresentationMoveInput;
         private bool _hasLastPredictedPresentationMoveInput;
-        private float _nextMultiplayerPredictedRenderTraceLogTime;
-
         public MultiplayerPlayerPresentationDriver(PlayerController controller)
         {
             _controller = controller;
@@ -71,9 +69,9 @@ namespace Core.Multiplayer
                 return;
             }
 
-            bool shouldSnapPredictedTransition = ShouldSnapPredictedPresentationTransition(input.moveDir);
+            bool shouldSnapPredictedTransition = _controller.IsDashStateActive
+                                                || ShouldSnapPredictedPresentationTransition(input.moveDir);
             UpdatePredictedPresentationPosition(presentationTransform, shouldSnapPredictedTransition);
-            UpdatePredictedRenderTrace(presentationTransform, input);
 
             if (_hasPresentationDefaultTransform)
             {
@@ -259,86 +257,6 @@ namespace Core.Multiplayer
             presentationTransform.position = _presentationWorldPosition;
         }
 
-        private void UpdatePredictedRenderTrace(Transform presentationTransform, PlayerInputPacket input)
-        {
-            if (!_controller.EnableMultiplayerPredictedRenderTrace
-                || !ShouldUsePredictedRenderSmoothingPresentation()
-                || presentationTransform == null)
-            {
-                return;
-            }
-
-            bool isMoveActive = input.moveDir.sqrMagnitude > 0.0001f;
-            if (!isMoveActive)
-            {
-                return;
-            }
-
-            if (_controller.MultiplayerPredictedRenderTraceLateralOnly
-                && Mathf.Abs(input.moveDir.x) < Mathf.Abs(input.moveDir.y))
-            {
-                return;
-            }
-
-            Vector3 targetPosition = ResolvePresentationTargetPosition();
-            float visualToTargetOffset = Vector3.Distance(presentationTransform.position, targetPosition);
-            if (visualToTargetOffset < _controller.MultiplayerPredictedRenderTraceOffsetThreshold
-                && Time.time < _nextMultiplayerPredictedRenderTraceLogTime)
-            {
-                return;
-            }
-
-            if (Time.time < _nextMultiplayerPredictedRenderTraceLogTime)
-            {
-                return;
-            }
-
-            _nextMultiplayerPredictedRenderTraceLogTime = Time.time + _controller.MultiplayerPredictedRenderTraceLogInterval;
-            float visualToRootOffset = Vector3.Distance(presentationTransform.position, _controller.transform.position);
-            float tickInterval = ResolvePredictedPresentationTickInterval();
-            float interpolationWindow = tickInterval > 0f
-                ? Mathf.Min(_controller.MultiplayerPredictedRenderSmoothTime, tickInterval)
-                : _controller.MultiplayerPredictedRenderSmoothTime;
-            if (interpolationWindow <= 0f)
-            {
-                interpolationWindow = tickInterval > 0f ? tickInterval : 1f / 60f;
-            }
-
-            float linearInterpolationAlpha = EvaluatePredictedPresentationLinearAlpha(
-                Time.time - _predictedPresentationTargetSetTime,
-                interpolationWindow);
-            float interpolationAlpha = EvaluatePredictedPresentationInterpolationAlpha(linearInterpolationAlpha);
-            float tickStepDistance = _hasPredictedPresentationTargets
-                ? Vector3.Distance(_predictedPresentationPreviousTargetPosition, _predictedPresentationCurrentTargetPosition)
-                : 0f;
-            float behindTicks = tickStepDistance > 0.0001f
-                ? visualToTargetOffset / tickStepDistance
-                : 0f;
-            float targetSpeed = tickInterval > 0.0001f
-                ? tickStepDistance / tickInterval
-                : 0f;
-
-            Debug.Log(
-                $"[MultiplayerPredictedRenderTrace] " +
-                $"input=({input.moveDir.x:F3},{input.moveDir.y:F3}) " +
-                $"root=({_controller.transform.position.x:F3},{_controller.transform.position.y:F3},{_controller.transform.position.z:F3}) " +
-                $"target=({targetPosition.x:F3},{targetPosition.y:F3},{targetPosition.z:F3}) " +
-                $"visual=({presentationTransform.position.x:F3},{presentationTransform.position.y:F3},{presentationTransform.position.z:F3}) " +
-                $"visualTargetOffset={visualToTargetOffset:F3} " +
-                $"visualRootOffset={visualToRootOffset:F3} " +
-                $"behindTicks={behindTicks:F3} " +
-                $"tickStep={tickStepDistance:F3} " +
-                $"targetSpeed={targetSpeed:F3} " +
-                $"interpMode=easeOutPrevToCurrent " +
-                $"smoothWindow={interpolationWindow:F4} " +
-                $"alphaFloor={PredictedPresentationTickBoundaryHeadStartFraction:F3} " +
-                $"linearAlpha={linearInterpolationAlpha:F3} " +
-                $"interpAlpha={interpolationAlpha:F3} " +
-                $"supportSmooth={_controller.MultiplayerPredictedRenderSmoothTime:F4} " +
-                $"rootYaw={_controller.transform.eulerAngles.y:F1} " +
-                $"visualVelMag={_presentationWorldVelocity.magnitude:F3}");
-        }
-
         private bool ShouldSnapPredictedPresentationTransition(Vector2 currentMoveInput)
         {
             if (currentMoveInput.sqrMagnitude <= 0.0001f)
@@ -372,7 +290,6 @@ namespace Core.Multiplayer
             _hasPredictedPresentationTargets = true;
             _lastPredictedPresentationMoveInput = Vector2.zero;
             _hasLastPredictedPresentationMoveInput = false;
-            _nextMultiplayerPredictedRenderTraceLogTime = 0f;
         }
 
         private static float ResolvePredictedPresentationTickInterval()

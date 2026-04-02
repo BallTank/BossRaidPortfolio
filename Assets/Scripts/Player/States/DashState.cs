@@ -11,6 +11,9 @@ namespace Core.Player.States
         private Vector3 _dashDirection;
         private readonly IDashContext _dashContext;
 
+        public float RemainingTime => Mathf.Max(0f, _dashContext.DashDuration - _timer);
+        public Vector3 DashDirection => _dashDirection;
+
         public DashState(PlayerController controller, IDashContext dashContext) : base(controller)
         {
             _dashContext = dashContext;

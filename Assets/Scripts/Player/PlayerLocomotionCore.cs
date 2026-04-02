@@ -1,4 +1,4 @@
-﻿using Core.Multiplayer;
+using Core.Multiplayer;
 using UnityEngine;
 
 namespace Core.Player
@@ -11,6 +11,7 @@ namespace Core.Player
         public static MultiplayerLocomotionState CaptureCurrentState(PlayerController controller, int inputSequence, int serverTick, bool allowsPrediction)
         {
             CharacterController characterController = controller.CharController;
+            bool isDashActive = controller.IsDashStateActive;
             return new MultiplayerLocomotionState
             {
                 InputSequence = inputSequence,
@@ -20,8 +21,12 @@ namespace Core.Player
                 PlanarVelocity = ResolveCurrentPlanarVelocity(characterController),
                 VerticalVelocity = ResolveCurrentVerticalVelocity(characterController, controller.NetworkLocomotionGroundedGravityValue),
                 JumpTimer = 0f,
+                DashTimer = isDashActive ? controller.DashTimerRemaining : 0f,
+                DashCooldownTimer = controller.DashCooldownRemaining,
+                LastButtons = controller.CurrentInputButtons,
                 AllowsPrediction = allowsPrediction,
-                IsGrounded = characterController != null && characterController.isGrounded
+                IsGrounded = characterController != null && characterController.isGrounded,
+                IsDashActive = isDashActive
             };
         }
 
@@ -40,6 +45,8 @@ namespace Core.Player
             {
                 characterController.enabled = true;
             }
+
+            controller.SyncNetworkDashState(state.DashTimer, state.DashCooldownTimer);
         }
 
         public static MultiplayerLocomotionState SimulateTick(
@@ -58,6 +65,12 @@ namespace Core.Player
             Vector3 moveDirection = GetMovementDirectionFromLook(input.moveDir, input.lookYaw);
             float nextYaw = currentState.Yaw;
             Vector3 nextPlanarVelocity = currentState.PlanarVelocity;
+            bool wasDashActive = currentState.IsDashActive;
+            float nextDashTimer = Mathf.Max(0f, currentState.DashTimer);
+            float nextDashCooldownTimer = Mathf.Max(0f, currentState.DashCooldownTimer - deltaTime);
+            bool dashPressed = input.HasFlag(InputFlag.Dash);
+            bool previousDashPressed = (currentState.LastButtons & (byte)InputFlag.Dash) != 0;
+            bool dashStartedThisTick = false;
 
             if (moveDirection.sqrMagnitude > 0.0001f)
             {
@@ -67,34 +80,83 @@ namespace Core.Player
             }
 
             Vector3 previousPosition = controller.transform.position;
-            controller.transform.rotation = Quaternion.Euler(0f, nextYaw, 0f);
-
-            if (isGrounded && verticalVelocity < 0f)
+            if (wasDashActive)
             {
-                verticalVelocity = controller.NetworkLocomotionGroundedGravityValue;
-            }
+                controller.transform.rotation = Quaternion.Euler(0f, currentState.Yaw, 0f);
+                Vector3 dashDirection = ResolveForwardFromYaw(currentState.Yaw);
+                Vector3 dashVelocity = dashDirection * (controller.MoveSpeed * controller.DashSpeedMultiplier);
 
-            verticalVelocity += controller.Gravity * deltaTime;
+                if (characterController != null && characterController.enabled)
+                {
+                    characterController.Move(dashVelocity * deltaTime);
+                    isGrounded = characterController.isGrounded;
+                    Vector3 actualDelta = controller.transform.position - previousPosition;
+                    nextPlanarVelocity = new Vector3(actualDelta.x, 0f, actualDelta.z) / Mathf.Max(deltaTime, 0.0001f);
+                }
+                else
+                {
+                    nextPlanarVelocity = dashVelocity;
+                }
 
-            if (characterController != null && characterController.enabled)
-            {
-                Vector3 finalVelocity = (moveDirection * controller.MoveSpeed) + Vector3.up * verticalVelocity;
-                characterController.Move(finalVelocity * deltaTime);
-                isGrounded = characterController.isGrounded;
-                Vector3 actualDelta = controller.transform.position - previousPosition;
-                nextPlanarVelocity = new Vector3(actualDelta.x, 0f, actualDelta.z) / Mathf.Max(deltaTime, 0.0001f);
+                nextYaw = currentState.Yaw;
+                nextDashTimer = Mathf.Max(0f, currentState.DashTimer - deltaTime);
             }
             else
             {
-                nextPlanarVelocity = moveDirection * controller.MoveSpeed;
+                controller.transform.rotation = Quaternion.Euler(0f, nextYaw, 0f);
+
+                if (isGrounded && verticalVelocity < 0f)
+                {
+                    verticalVelocity = controller.NetworkLocomotionGroundedGravityValue;
+                }
+
+                verticalVelocity += controller.Gravity * deltaTime;
+
+                if (characterController != null && characterController.enabled)
+                {
+                    Vector3 finalVelocity = (moveDirection * controller.MoveSpeed) + Vector3.up * verticalVelocity;
+                    characterController.Move(finalVelocity * deltaTime);
+                    isGrounded = characterController.isGrounded;
+                    Vector3 actualDelta = controller.transform.position - previousPosition;
+                    nextPlanarVelocity = new Vector3(actualDelta.x, 0f, actualDelta.z) / Mathf.Max(deltaTime, 0.0001f);
+                }
+                else
+                {
+                    nextPlanarVelocity = moveDirection * controller.MoveSpeed;
+                }
+
+                if (nextDashCooldownTimer <= 0f && dashPressed && !previousDashPressed)
+                {
+                    Vector3 dashStartDirection = moveDirection.sqrMagnitude > 0.0001f
+                        ? moveDirection
+                        : ResolveForwardFromYaw(currentState.Yaw);
+
+                    if (dashStartDirection.sqrMagnitude > 0.0001f)
+                    {
+                        nextYaw = Quaternion.LookRotation(dashStartDirection).eulerAngles.y;
+                        controller.transform.rotation = Quaternion.Euler(0f, nextYaw, 0f);
+                    }
+
+                    nextDashTimer = controller.DashDuration;
+                    nextDashCooldownTimer = Mathf.Max(nextDashCooldownTimer, controller.DashCooldown);
+                    dashStartedThisTick = true;
+                }
             }
 
+            bool nextDashActive = dashStartedThisTick || nextDashTimer > 0f;
             if (updateAnimator && controller.Animator != null)
             {
-                controller.Animator.SetFloat(PlayerController.ANIM_PARAM_SPEED, input.moveDir.magnitude);
+                if (dashStartedThisTick)
+                {
+                    controller.Animator.CrossFade(PlayerController.ANIM_STATE_DASH, 0.05f);
+                }
+                else if (!nextDashActive)
+                {
+                    controller.Animator.SetFloat(PlayerController.ANIM_PARAM_SPEED, input.moveDir.magnitude);
+                }
             }
 
-            return new MultiplayerLocomotionState
+            MultiplayerLocomotionState nextState = new MultiplayerLocomotionState
             {
                 InputSequence = inputSequence,
                 ServerTick = serverTick,
@@ -103,9 +165,16 @@ namespace Core.Player
                 PlanarVelocity = nextPlanarVelocity,
                 VerticalVelocity = verticalVelocity,
                 JumpTimer = currentState.JumpTimer,
+                DashTimer = nextDashActive ? nextDashTimer : 0f,
+                DashCooldownTimer = nextDashCooldownTimer,
+                LastButtons = input.buttons,
                 AllowsPrediction = allowsPrediction,
-                IsGrounded = isGrounded
+                IsGrounded = isGrounded,
+                IsDashActive = nextDashActive
             };
+
+            controller.SyncNetworkDashState(nextState.DashTimer, nextState.DashCooldownTimer);
+            return nextState;
         }
 
         private static Vector3 GetMovementDirectionFromLook(Vector2 inputDir, float lookYaw)
@@ -120,6 +189,12 @@ namespace Core.Player
             Vector3 camRight = lookRotation * Vector3.right;
             return (camForward * inputDir.y + camRight * inputDir.x).normalized;
         }
+
+        private static Vector3 ResolveForwardFromYaw(float yaw)
+        {
+            return Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
+        }
+
 
         private static float ResolveCurrentVerticalVelocity(CharacterController characterController, float groundedGravity)
         {

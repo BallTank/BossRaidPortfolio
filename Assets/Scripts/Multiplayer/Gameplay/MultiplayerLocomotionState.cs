@@ -7,6 +7,7 @@ namespace Core.Multiplayer
     {
         private const byte GroundedFlag = 1 << 0;
         private const byte AllowPredictionFlag = 1 << 1;
+        private const byte DashActiveFlag = 1 << 2;
 
         public int InputSequence;
         public int ServerTick;
@@ -15,6 +16,9 @@ namespace Core.Multiplayer
         public Vector3 PlanarVelocity;
         public float VerticalVelocity;
         public float JumpTimer;
+        public float DashTimer;
+        public float DashCooldownTimer;
+        public byte LastButtons;
         public byte Flags;
 
         public bool IsGrounded
@@ -29,6 +33,12 @@ namespace Core.Multiplayer
             set => Flags = value ? (byte)(Flags | AllowPredictionFlag) : (byte)(Flags & ~AllowPredictionFlag);
         }
 
+        public bool IsDashActive
+        {
+            get => (Flags & DashActiveFlag) != 0;
+            set => Flags = value ? (byte)(Flags | DashActiveFlag) : (byte)(Flags & ~DashActiveFlag);
+        }
+
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
             serializer.SerializeValue(ref InputSequence);
@@ -38,6 +48,9 @@ namespace Core.Multiplayer
             serializer.SerializeValue(ref PlanarVelocity);
             serializer.SerializeValue(ref VerticalVelocity);
             serializer.SerializeValue(ref JumpTimer);
+            serializer.SerializeValue(ref DashTimer);
+            serializer.SerializeValue(ref DashCooldownTimer);
+            serializer.SerializeValue(ref LastButtons);
             serializer.SerializeValue(ref Flags);
         }
     }

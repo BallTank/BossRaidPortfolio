@@ -1,4 +1,4 @@
-using Core.Combat;
+﻿using Core.Combat;
 using Core.Player;
 using Unity.Netcode;
 
@@ -99,7 +99,7 @@ namespace Core.Multiplayer
                 return 0;
             }
 
-            if (controller.StateMachine.CurrentState == controller.DashState)
+            if (controller.IsDashStateActive)
             {
                 return InputFlag.Dash;
             }
