@@ -10,10 +10,17 @@ namespace Core.Combat
     /// </summary>
     public class Health : MonoBehaviour, IDamageable
     {
+        private enum RuntimeWriteAuthorityMode
+        {
+            LocalAuthority,
+            ReadOnlyReplica
+        }
+
         [Header("Status")]
         [SerializeField] private int _maxHealth = 100;
         [SerializeField] private int _currentHealth;
         [SerializeField] private bool _isInvincible = false;
+        [SerializeField, HideInInspector] private RuntimeWriteAuthorityMode _runtimeWriteAuthorityMode = RuntimeWriteAuthorityMode.LocalAuthority;
 
         public event Action<int> OnDamageTaken;
         public event Action OnDeath;
@@ -22,6 +29,7 @@ namespace Core.Combat
         public int MaxHealth => _maxHealth;
         public int CurrentHealth => _currentHealth;
         public float HealthRatio => _maxHealth > 0 ? (float)_currentHealth / _maxHealth : 0f;
+        public bool HasRuntimeWriteAuthority => _runtimeWriteAuthorityMode == RuntimeWriteAuthorityMode.LocalAuthority;
 
         private void Awake()
         {
@@ -30,6 +38,7 @@ namespace Core.Combat
 
         public void TakeDamage(int damage)
         {
+            if (!HasRuntimeWriteAuthority) return;
             if (IsDead || _isInvincible) return;
             if (damage <= 0) return;
 
@@ -51,10 +60,23 @@ namespace Core.Combat
 
         public void Heal(int amount)
         {
+            if (!HasRuntimeWriteAuthority) return;
             if (IsDead) return;
 
             _currentHealth = Mathf.Min(_currentHealth + amount, _maxHealth);
             Debug.Log($"💚 {gameObject.name} healed {amount}. HP: {_currentHealth}/{_maxHealth}");
+        }
+
+        public void SetRuntimeWriteAuthority(bool canWrite)
+        {
+            _runtimeWriteAuthorityMode = canWrite
+                ? RuntimeWriteAuthorityMode.LocalAuthority
+                : RuntimeWriteAuthorityMode.ReadOnlyReplica;
+        }
+
+        public void ResetRuntimeWriteAuthority()
+        {
+            _runtimeWriteAuthorityMode = RuntimeWriteAuthorityMode.LocalAuthority;
         }
 
         private void Die()

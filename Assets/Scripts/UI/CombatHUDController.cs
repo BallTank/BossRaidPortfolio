@@ -14,6 +14,8 @@ namespace Core.UI
     public class CombatHUDController : MonoBehaviour
     {
         private const string PartnerHudPanelName = "PartnerHUD_Panel";
+        private const string PartnerHpFillName = "Image_PartnerHP_Fill";
+        private const string PartnerNameTextName = "Text_PartnerName";
         private const string ComboRootName = "Text_Combo";
 
         [Header("플레이어 HUD")]
@@ -31,6 +33,9 @@ namespace Core.UI
 
         [Header("파트너 HUD")]
         [SerializeField] private GameObject _partnerHudRoot;
+        [SerializeField] private Image _partnerHpFill;
+        [SerializeField] private TMP_Text _partnerNameText;
+        [SerializeField] private string _partnerNameLabel = "Partner";
 
         [Header("고정형 데미지 피드백")]
         [SerializeField] private TMP_Text _damageFeedbackText;
@@ -55,6 +60,10 @@ namespace Core.UI
         private GameObject _comboRoot;
         private bool _isComboVisible;
         private int _currentComboStep = 1;
+        private int _lastObservedPlayerHealth = int.MinValue;
+        private int _lastObservedPlayerMaxHealth = int.MinValue;
+        private int _lastObservedBossHealth = int.MinValue;
+        private int _lastObservedBossMaxHealth = int.MinValue;
 
         public Health PlayerHealth => _playerHealth;
         public Health BossHealth => _bossHealth;
@@ -63,6 +72,7 @@ namespace Core.UI
         {
             ApplyNameLabels();
             ResolvePartnerHudRoot();
+            ResolvePartnerHudBindings();
             ApplyPartnerHudVisibility();
             ResolveComboText();
             HideComboImmediate();
@@ -96,6 +106,11 @@ namespace Core.UI
             HideComboImmediate();
         }
 
+        private void LateUpdate()
+        {
+            RefreshHealthBarsIfSourceChanged();
+        }
+
         /// <summary>
         /// 외부에서 체력 참조를 주입한다.
         /// 실제 이벤트 구독은 다음 단계에서 연결한다.
@@ -106,6 +121,10 @@ namespace Core.UI
 
             _playerHealth = playerHealth;
             _bossHealth = bossHealth;
+            _lastObservedPlayerHealth = int.MinValue;
+            _lastObservedPlayerMaxHealth = int.MinValue;
+            _lastObservedBossHealth = int.MinValue;
+            _lastObservedBossMaxHealth = int.MinValue;
 
             BindHealthEvents();
             RefreshAllHealthBars();
@@ -220,15 +239,36 @@ namespace Core.UI
             RefreshBossHealthBar();
         }
 
+        private void RefreshHealthBarsIfSourceChanged()
+        {
+            if (_playerHealth != null
+                && (_lastObservedPlayerHealth != _playerHealth.CurrentHealth
+                    || _lastObservedPlayerMaxHealth != _playerHealth.MaxHealth))
+            {
+                RefreshPlayerHealthBar();
+            }
+
+            if (_bossHealth != null
+                && (_lastObservedBossHealth != _bossHealth.CurrentHealth
+                    || _lastObservedBossMaxHealth != _bossHealth.MaxHealth))
+            {
+                RefreshBossHealthBar();
+            }
+        }
+
         private void RefreshPlayerHealthBar()
         {
             if (_playerHealth == null) return;
+            _lastObservedPlayerHealth = _playerHealth.CurrentHealth;
+            _lastObservedPlayerMaxHealth = _playerHealth.MaxHealth;
             SetPlayerHpNormalized(_playerHealth.HealthRatio, _playerHealth.CurrentHealth, _playerHealth.MaxHealth);
         }
 
         private void RefreshBossHealthBar()
         {
             if (_bossHealth == null) return;
+            _lastObservedBossHealth = _bossHealth.CurrentHealth;
+            _lastObservedBossMaxHealth = _bossHealth.MaxHealth;
             SetBossHpNormalized(_bossHealth.HealthRatio, _bossHealth.CurrentHealth, _bossHealth.MaxHealth);
         }
 
@@ -255,6 +295,37 @@ namespace Core.UI
             if (_bossNameText != null)
             {
                 _bossNameText.text = _bossNameLabel;
+            }
+        }
+
+        /// <summary>
+        /// 파트너 이름 라벨을 설정한다.
+        /// </summary>
+        public void SetPartnerName(string partnerName)
+        {
+            _partnerNameLabel = string.IsNullOrWhiteSpace(partnerName) ? "Partner" : partnerName.Trim();
+            ResolvePartnerHudBindings();
+
+            if (_partnerNameText != null)
+            {
+                _partnerNameText.text = _partnerNameLabel;
+            }
+        }
+
+        /// <summary>
+        /// 파트너 체력 UI를 갱신한다.
+        /// </summary>
+        public void SetPartnerHpNormalized(float ratio, int current, int max)
+        {
+            _ = current;
+            _ = max;
+
+            ResolvePartnerHudBindings();
+
+            float clampedRatio = Mathf.Clamp01(ratio);
+            if (_partnerHpFill != null)
+            {
+                _partnerHpFill.fillAmount = clampedRatio;
             }
         }
 
@@ -382,6 +453,12 @@ namespace Core.UI
             {
                 _bossNameText.text = string.IsNullOrWhiteSpace(_bossNameLabel) ? "Dragon" : _bossNameLabel;
             }
+
+            ResolvePartnerHudBindings();
+            if (_partnerNameText != null)
+            {
+                _partnerNameText.text = string.IsNullOrWhiteSpace(_partnerNameLabel) ? "Partner" : _partnerNameLabel;
+            }
         }
 
         private void ResolvePartnerHudRoot()
@@ -414,6 +491,66 @@ namespace Core.UI
             }
 
             _partnerHudRoot.SetActive(_isHudVisible && _isPartnerHudVisible);
+        }
+
+        private void ResolvePartnerHudBindings()
+        {
+            ResolvePartnerHudRoot();
+            if (_partnerHudRoot == null)
+            {
+                return;
+            }
+
+            if (_partnerHpFill == null)
+            {
+                Transform partnerHpFillTransform = _partnerHudRoot.transform.Find(PartnerHpFillName);
+                if (partnerHpFillTransform == null)
+                {
+                    partnerHpFillTransform = FindChildTransformByName(_partnerHudRoot.transform, PartnerHpFillName);
+                }
+
+                if (partnerHpFillTransform != null)
+                {
+                    _partnerHpFill = partnerHpFillTransform.GetComponent<Image>();
+                }
+            }
+
+            if (_partnerNameText == null)
+            {
+                Transform partnerNameTransform = _partnerHudRoot.transform.Find(PartnerNameTextName);
+                if (partnerNameTransform == null)
+                {
+                    partnerNameTransform = FindChildTransformByName(_partnerHudRoot.transform, PartnerNameTextName);
+                }
+
+                if (partnerNameTransform != null)
+                {
+                    _partnerNameText = partnerNameTransform.GetComponent<TMP_Text>();
+                }
+            }
+        }
+
+        private static Transform FindChildTransformByName(Transform root, string childName)
+        {
+            if (root == null || string.IsNullOrWhiteSpace(childName))
+            {
+                return null;
+            }
+
+            Transform[] childTransforms = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < childTransforms.Length; i++)
+            {
+                Transform childTransform = childTransforms[i];
+                if (childTransform == null
+                    || !string.Equals(childTransform.name, childName, System.StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                return childTransform;
+            }
+
+            return null;
         }
 
         private void ResolveComboText()

@@ -5,6 +5,7 @@ using Core.Combat;
 using Core.Common;
 using Core.Common.Attributes;
 using Core.Common.Patterns;
+using Core.Player;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -149,6 +150,8 @@ namespace Core.Boss
         private bool _hasAppliedPlayerCollisionIgnore;
         private int _ignoredPlayerRootInstanceId;
         private const float LungeRootMotionMinStep = 0.0001f;
+        private const float ClosestLiveTargetRefreshInterval = 0.1f;
+        private float _nextClosestLiveTargetRefreshTime;
 
         /// <summary>
         /// Unity 에디터에서 스크립트가 로드되거나 인스펙터의 값이 변경될 때 호출되어 데이터의 유효성을 검사합니다.
@@ -224,6 +227,18 @@ namespace Core.Boss
         public bool IsPhaseOneAttackWindow => _currentPhase == BossPhase.Phase1 && _phaseOneIntroCompleted && !_phaseIntroPlaying;
         public bool IsPhaseTwoAttackWindow => _currentPhase == BossPhase.Phase2 && _phaseTwoIntroCompleted && !_phaseIntroPlaying;
         public bool IsLocomotionVisualSuppressed => _suppressLocomotionVisual;
+
+        /// <summary>
+        /// 런타임에서 보스 추적 타겟을 다시 바꿀 때 사용한다.
+        /// 멀티플레이 씬에서는 legacy player 제거 후 network avatar로 재바인딩한다.
+        /// </summary>
+        public void SetTarget(Transform newTarget)
+        {
+            playerTransform = newTarget;
+            _hasAppliedPlayerCollisionIgnore = false;
+            _ignoredPlayerRootInstanceId = 0;
+            TryApplyPlayerCollisionIgnore();
+        }
 
         private void Awake()
         {
@@ -476,6 +491,58 @@ namespace Core.Boss
         {
             if (playerTransform == null) return false;
             return GetPlanarDistanceToTarget() <= detectionRange;
+        }
+
+        /// <summary>
+        /// 현재 씬에서 가장 가까운 살아있는 플레이어를 다시 추적 타겟으로 선택한다.
+        /// 솔로/멀티플레이 공통으로 동작하며, 멀티플레이 verify 단계에서는 임시 aggro 대체 규칙으로 사용한다.
+        /// </summary>
+        public void RefreshClosestLiveTarget(bool force = false)
+        {
+            if (!force && Time.time < _nextClosestLiveTargetRefreshTime)
+            {
+                return;
+            }
+
+            _nextClosestLiveTargetRefreshTime = Time.time + ClosestLiveTargetRefreshInterval;
+
+            PlayerController[] playerControllers = FindObjectsByType<PlayerController>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None);
+
+            Transform bestTarget = null;
+            float bestDistanceSqr = float.PositiveInfinity;
+
+            for (int i = 0; i < playerControllers.Length; i++)
+            {
+                PlayerController playerController = playerControllers[i];
+                if (playerController == null)
+                {
+                    continue;
+                }
+
+                Health playerHealth = playerController.GetComponent<Health>();
+                if (playerHealth != null && playerHealth.IsDead)
+                {
+                    continue;
+                }
+
+                Vector3 delta = playerController.transform.position - transform.position;
+                delta.y = 0f;
+                float planarDistanceSqr = delta.sqrMagnitude;
+                if (planarDistanceSqr >= bestDistanceSqr)
+                {
+                    continue;
+                }
+
+                bestDistanceSqr = planarDistanceSqr;
+                bestTarget = playerController.transform;
+            }
+
+            if (bestTarget != playerTransform)
+            {
+                SetTarget(bestTarget);
+            }
         }
 
         /// <summary>

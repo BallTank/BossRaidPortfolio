@@ -1,4 +1,4 @@
-using Core.Combat;
+﻿using Core.Combat;
 using Core.Common;
 using System;
 using Core.Common.Interfaces;
@@ -145,6 +145,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     public Animator Animator => playerVisual?.Animator;
     public CharacterController CharController => _characterController;
     public StateMachine<PlayerBaseState> StateMachine => _stateMachine;
+    public CombatHUDController CombatHUD => _combatHUD;
     public RuntimeSimulationMode SimulationMode => _simulationMode;
     public float NetworkLocomotionGroundedGravityValue => NetworkLocomotionGroundedGravity;
     internal bool IsLocalPresentationEnabled => _isLocalPresentationEnabled;
@@ -785,10 +786,11 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
             }
         }
 
-        _combatHUD.Initialize(_health, _bossHealthForHUD);
+        bool isMultiplayerSession = ShouldShowPartnerHud();
+        _combatHUD.Initialize(isMultiplayerSession ? null : _health, _bossHealthForHUD);
         _combatHUD.SetPlayerName(_playerDisplayName);
         _combatHUD.SetBossName(_bossDisplayName);
-        _combatHUD.SetPartnerHudVisible(ShouldShowPartnerHud());
+        _combatHUD.SetPartnerHudVisible(isMultiplayerSession);
         HideComboHud();
     }
 

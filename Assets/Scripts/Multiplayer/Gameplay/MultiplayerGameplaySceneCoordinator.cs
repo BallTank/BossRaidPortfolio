@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using Core.Boss;
+using Core.Combat;
+using Core.Player;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -98,6 +100,8 @@ namespace Core.Multiplayer
 
                 networkObject.SpawnAsPlayerObject(clientId, true);
             }
+
+            RebindServerBossTarget(networkManager, connectedClientIds);
         }
 
         private static bool ShouldPrepareCurrentScene()
@@ -156,6 +160,65 @@ namespace Core.Multiplayer
             if (bossController != null)
             {
                 bossController.enabled = false;
+
+                if (bossController.TryGetComponent(out CharacterController characterController))
+                {
+                    characterController.enabled = false;
+                }
+            }
+        }
+
+        private static void RebindServerBossTarget(NetworkManager networkManager, List<ulong> connectedClientIds)
+        {
+            if (networkManager == null || !networkManager.IsServer)
+            {
+                return;
+            }
+
+            BossController bossController = UnityEngine.Object.FindObjectOfType<BossController>();
+            if (bossController == null)
+            {
+                return;
+            }
+
+            Transform bestTarget = null;
+            float bestDistanceSqr = float.PositiveInfinity;
+
+            for (int i = 0; i < connectedClientIds.Count; i++)
+            {
+                NetworkObject playerObject = networkManager.SpawnManager.GetPlayerNetworkObject(connectedClientIds[i]);
+                if (playerObject == null)
+                {
+                    continue;
+                }
+
+                PlayerController playerController = playerObject.GetComponent<PlayerController>();
+                if (playerController == null)
+                {
+                    continue;
+                }
+
+                Health playerHealth = playerController.GetComponent<Health>();
+                if (playerHealth != null && playerHealth.IsDead)
+                {
+                    continue;
+                }
+
+                Vector3 delta = playerController.transform.position - bossController.transform.position;
+                delta.y = 0f;
+                float planarDistanceSqr = delta.sqrMagnitude;
+                if (planarDistanceSqr >= bestDistanceSqr)
+                {
+                    continue;
+                }
+
+                bestDistanceSqr = planarDistanceSqr;
+                bestTarget = playerController.transform;
+            }
+
+            if (bestTarget != null)
+            {
+                bossController.SetTarget(bestTarget);
             }
         }
 

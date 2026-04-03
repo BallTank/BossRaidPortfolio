@@ -477,7 +477,7 @@ classDiagram
 | `[x]` | 4 | `HostPlayerState` | Host가 가진 기준 상태 데이터를 따로 고정한다. | Host에서 action start 후 state 값이 갱신되는지, client가 직접 값을 바꿔도 gameplay truth로 쓰이지 않는지 확인한다. |
 | `[x]` | 5 | `HostToClientPlayerReactionSnapshot` | hit/damage/stun 같은 one-shot result packet을 분리한다. | 유효 타격 1회당 snapshot이 1회만 생성되는지, same event가 중복 재생되지 않는지 확인한다. |
 | `[x]` | 6 | `HostPlayerReactionResolver` | Host에서 `hit`, `damage`, `stun`, `death`와 `damage contribution record`를 `server tick` 기준 `raw hit log`로 판정한다. | 공격 적중 시 Host HP가 감소하는지, stun 조건이 맞을 때만 stun이 발생하는지, death도 같은 경로에서 처리되는지, `누가 언제 얼마의 damage를 넣었는가` server tick raw hit log가 남는지 확인한다. |
-| `[ ]` | 7 | `Health` | HP 기준값 쓰기 경로를 Host 쪽으로 고정한다. | client local에서 HP를 바꿔도 최종값이 바뀌지 않고, Host apply 결과만 최종 HP가 되는지 확인한다. |
+| `[x]` | 7 | `Health` | HP 기준값 쓰기 경로를 Host 쪽으로 고정한다. | solo에서는 기존 HP 동작이 그대로 유지되고, multiplayer에서는 client local에서 HP를 바꿔도 최종값이 바뀌지 않으며 Host apply 결과만 최종 HP/HUD에 반영되는지 확인한다. |
 | `[ ]` | 8 | `PlayerController` | Host 승인 결과를 실제 FSM 실행으로 연결한다. | Host 승인 후에만 dash/attack/hit/stun 상태 전환이 발생하는지, 승인 없이 local-only로 상태가 고정되지 않는지 확인한다. |
 | `[ ]` | 9 | `HostToClientPlayerStateReplicator` | Host가 state/snapshot을 owner와 peer에 보내는 전송 경로를 만든다. | Host에서 바뀐 상태가 owner client와 remote client에 모두 도착하는지, 필요한 값만 복제되는지 확인한다. |
 | `[ ]` | 10 | `HostToClientPlayerStateApplier` | owner client와 remote client가 모두 Host 결과를 받되, owner client는 runtime/HUD/reaction display를 반영하고 remote client는 display/HUD만 반영한다. 첫 구현 단계에서는 client `Health` 대신 HUD-only 경로를 사용한다. | owner client 화면은 Host 결과 기준으로 runtime/HUD/reaction이 갱신되고, remote client 화면은 partner의 `dash / Attack1 / hit / stun / death` display/HUD만 갱신되는지 확인한다. |
@@ -544,3 +544,24 @@ classDiagram
     validate accepted=false
     no new host-state
     no raw-hit-log
+
+- Test 4. Health Gate + HUD Sync (#7)
+
+    Open `Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity`.
+    First run solo.
+    Let the boss hit the player.
+    Expected:
+    inspector `Health` and player HUD fill both go down.
+    Then run `Editor = Host`, `Build = Client`.
+    Let the boss hit Host.
+    Expected:
+    Host screen main HP goes down.
+    Client screen partner HP goes down.
+    Let the boss hit Client.
+    Expected:
+    Client screen main HP goes down.
+    Host screen partner HP goes down.
+    Also check name labels.
+    Expected:
+    Host screen = `Host(me)` / `Client`
+    Client screen = `Client(me)` / `Host`

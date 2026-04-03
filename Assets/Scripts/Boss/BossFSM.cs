@@ -18,6 +18,8 @@ namespace Core.Boss
 
         public override void Update()
         {
+            Controller.RefreshClosestLiveTarget();
+
             if (Controller.Target == null) return;
 
             // 스크림(페이즈 인트로)은 시야 조건과 무관하게 감지 반경 진입 시 즉시 발동한다.
@@ -39,6 +41,7 @@ namespace Core.Boss
 
         public override void Enter()
         {
+            Controller.RefreshClosestLiveTarget(force: true);
             Controller.EnsurePhaseIntroForCurrentPhase();
 
             // 공격 종료 직후 경계 지터를 줄이기 위해 재진입 버퍼를 기준으로 추적 래치를 초기화한다.
@@ -49,6 +52,8 @@ namespace Core.Boss
 
         public override void Update()
         {
+            Controller.RefreshClosestLiveTarget();
+
             if (Controller.Target == null)
             {
                 Controller.StateMachine.ChangeState(Controller.IdleState);
@@ -313,6 +318,7 @@ namespace Core.Boss
 
         public override void Enter()
         {
+            Controller.RefreshClosestLiveTarget(force: true);
             Controller.Visual?.SetSearchingUI(true);
             _timer = Controller.SearchDuration;
             _lastKnownPos = Controller.Target != null ? Controller.Target.position : Controller.transform.position;
@@ -320,6 +326,7 @@ namespace Core.Boss
 
         public override void Update()
         {
+            Controller.RefreshClosestLiveTarget();
             _timer -= Time.deltaTime;
 
             // 재탐색 성공 시 Combat 복귀
@@ -372,6 +379,7 @@ namespace Core.Boss
 
         public override void Update()
         {
+            Controller.RefreshClosestLiveTarget();
             _timer -= Time.deltaTime;
 
             if (_timer <= 0)

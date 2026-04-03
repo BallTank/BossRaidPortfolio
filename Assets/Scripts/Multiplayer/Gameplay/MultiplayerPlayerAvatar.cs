@@ -1,7 +1,9 @@
 ﻿using Core.Combat;
+using Core.Boss;
 using Core.GameFlow;
 using System;
 using Core.Player;
+using Core.UI;
 using Unity.Netcode;
 using Unity.Netcode.Components;
 using UnityEngine;
@@ -21,6 +23,15 @@ namespace Core.Multiplayer
         private const float OwnerPositionCorrectionDeadzone = 0.03f;
         private const float OwnerYawCorrectionDeadzone = 1.25f;
         private const float DisconnectProfileMoveThresholdSqr = 0.0001f;
+        private static readonly int BossAnimatorSpeedParam = Animator.StringToHash("Speed");
+        private readonly NetworkVariable<int> _replicatedHudCurrentHealth = new NetworkVariable<int>(
+            0,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<int> _replicatedHudMaxHealth = new NetworkVariable<int>(
+            0,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
 
         [Header("Action Authority Debug")]
         [SerializeField] private bool _enableActionAuthorityTrace = true;
@@ -45,12 +56,34 @@ namespace Core.Multiplayer
             public bool IsSet;
         }
 
+        private struct BossPresentationSnapshot : INetworkSerializable
+        {
+            public Vector3 Position;
+            public Quaternion Rotation;
+            public int StateHash;
+            public float NormalizedTime;
+            public float SpeedParameter;
+            public float PlaybackSpeed;
+
+            public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+            {
+                serializer.SerializeValue(ref Position);
+                serializer.SerializeValue(ref Rotation);
+                serializer.SerializeValue(ref StateHash);
+                serializer.SerializeValue(ref NormalizedTime);
+                serializer.SerializeValue(ref SpeedParameter);
+                serializer.SerializeValue(ref PlaybackSpeed);
+            }
+        }
+
         private PlayerController _playerController;
         private LocalInputProvider _localInputProvider;
         private MultiplayerBufferedInputProvider _bufferedInputProvider;
         private CharacterController _characterController;
         private Health _health;
         private NetworkTransform _networkTransform;
+        private BossController _bossController;
+        private Animator _bossAnimator;
         private readonly HostPlayerActionValidator _hostPlayerActionValidator = new HostPlayerActionValidator();
         private readonly HostPlayerReactionResolver _hostPlayerReactionResolver = new HostPlayerReactionResolver();
         private readonly ClientInputHistoryEntry[] _clientInputHistory = new ClientInputHistoryEntry[PredictionBufferSize];
@@ -85,10 +118,19 @@ namespace Core.Multiplayer
         private string _disconnectProfileLastSourceLabel = "none";
         private bool _hasLoggedDisconnectProfileBaseline;
         private string _lastLoggedDisconnectProfileLabel = string.Empty;
+        private BossPresentationSnapshot _latestBossPresentationSnapshot;
+        private bool _hasLatestBossPresentationSnapshot;
+        private MultiplayerPlayerAvatar _hudPartnerAvatar;
+        private CombatHUDController _hudController;
 
         private void Awake()
         {
             CacheComponents();
+        }
+
+        private void LateUpdate()
+        {
+            RefreshLocalMultiplayerHud();
         }
 
         public override void OnDestroy()
@@ -116,6 +158,7 @@ namespace Core.Multiplayer
             RefreshAvatarDebugName();
             ConfigureRuntimeRole();
             ConfigureHostAuthorityContracts();
+            SyncReplicatedHudHealthState();
             TryLogDisconnectProfileBaseline("spawn");
         }
 
@@ -123,6 +166,7 @@ namespace Core.Multiplayer
         {
             UnbindHostAuthorityHooks();
             UnregisterNetworkTick();
+            _health?.ResetRuntimeWriteAuthority();
 
             if (_localInputProvider != null)
             {
@@ -242,6 +286,19 @@ namespace Core.Multiplayer
             ApplyLocomotionAnimator(replayInputMagnitude);
         }
 
+        [ClientRpc(Delivery = RpcDelivery.Unreliable)]
+        private void PushBossPresentationSnapshotClientRpc(BossPresentationSnapshot snapshot, ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsSpawned || IsServer || !IsOwner)
+            {
+                return;
+            }
+
+            _latestBossPresentationSnapshot = snapshot;
+            _hasLatestBossPresentationSnapshot = true;
+            ApplyBossPresentationSnapshot();
+        }
+
         private void CacheComponents()
         {
             _playerController = GetComponent<PlayerController>();
@@ -336,6 +393,7 @@ namespace Core.Multiplayer
 
         private void ConfigureHostOwnedPlayer()
         {
+            _health?.SetRuntimeWriteAuthority(true);
             _localInputProvider?.SetLookAngles(transform.eulerAngles.y, _playerController.LatestLookPitch);
             _localInputProvider?.SetRuntimeInputEnabled(true);
             _playerController.SetInputProviderOverride(_localInputProvider);
@@ -349,6 +407,7 @@ namespace Core.Multiplayer
 
         private void ConfigureHostAuthorityReplica()
         {
+            _health?.SetRuntimeWriteAuthority(true);
             _playerController.SetInputProviderOverride(_bufferedInputProvider);
             _playerController.SetLocalPresentationEnabled(false);
             _playerController.SetLookDrivenCameraRootEnabled(false);
@@ -359,6 +418,7 @@ namespace Core.Multiplayer
 
         private void ConfigureClientOwnedPlayer()
         {
+            _health?.SetRuntimeWriteAuthority(false);
             _localInputProvider?.SetLookAngles(transform.eulerAngles.y, _playerController.LatestLookPitch);
             _localInputProvider?.SetRuntimeInputEnabled(true);
             _playerController.SetInputProviderOverride(_localInputProvider);
@@ -376,6 +436,7 @@ namespace Core.Multiplayer
 
         private void ConfigureClientReplica()
         {
+            _health?.SetRuntimeWriteAuthority(false);
             _playerController.SetInputProviderOverride(null);
             _playerController.SetSimulationMode(PlayerController.RuntimeSimulationMode.Disabled);
             _playerController.SetLocalPresentationEnabled(false);
@@ -444,6 +505,7 @@ namespace Core.Multiplayer
             if (IsServer && !IsOwner)
             {
                 HandleServerAuthorityTick();
+                PushBossPresentationToOwnerClient();
             }
 
             if (IsOwner && !IsServer)
@@ -460,6 +522,7 @@ namespace Core.Multiplayer
             }
 
             _hostPlayerReactionResolver.SyncRuntimeState(_playerController, _health, ResolveCurrentServerTick(), ref _hostPlayerState);
+            SyncReplicatedHudHealthState();
         }
 
         private void HandleClientPredictionTick()
@@ -934,6 +997,251 @@ namespace Core.Multiplayer
             }
         }
 
+        private void PushBossPresentationToOwnerClient()
+        {
+            if (!TryCaptureBossPresentationSnapshot(out BossPresentationSnapshot snapshot))
+            {
+                return;
+            }
+
+            PushBossPresentationSnapshotClientRpc(snapshot, _authoritativeStateClientRpcParams);
+        }
+
+        private bool TryCaptureBossPresentationSnapshot(out BossPresentationSnapshot snapshot)
+        {
+            snapshot = default;
+
+            if (!TryResolveBossPresentationRuntime())
+            {
+                return false;
+            }
+
+            snapshot.Position = _bossController.transform.position;
+            snapshot.Rotation = _bossController.transform.rotation;
+            snapshot.PlaybackSpeed = _bossAnimator != null ? Mathf.Max(0.01f, _bossAnimator.speed) : 1f;
+            snapshot.SpeedParameter = _bossAnimator != null ? _bossAnimator.GetFloat(BossAnimatorSpeedParam) : 0f;
+
+            if (_bossAnimator == null)
+            {
+                return true;
+            }
+
+            AnimatorStateInfo stateInfo = _bossAnimator.GetCurrentAnimatorStateInfo(0);
+            if (_bossAnimator.IsInTransition(0))
+            {
+                AnimatorStateInfo nextStateInfo = _bossAnimator.GetNextAnimatorStateInfo(0);
+                if (nextStateInfo.shortNameHash != 0)
+                {
+                    stateInfo = nextStateInfo;
+                }
+            }
+
+            snapshot.StateHash = stateInfo.shortNameHash;
+            snapshot.NormalizedTime = Mathf.Repeat(stateInfo.normalizedTime, 1f);
+            return true;
+        }
+
+        private void ApplyBossPresentationSnapshot()
+        {
+            if (!_hasLatestBossPresentationSnapshot || !TryResolveBossPresentationRuntime())
+            {
+                return;
+            }
+
+            _bossController.transform.SetPositionAndRotation(
+                _latestBossPresentationSnapshot.Position,
+                _latestBossPresentationSnapshot.Rotation);
+
+            if (_bossAnimator == null)
+            {
+                return;
+            }
+
+            _bossAnimator.speed = Mathf.Max(0.01f, _latestBossPresentationSnapshot.PlaybackSpeed);
+            _bossAnimator.SetFloat(
+                BossAnimatorSpeedParam,
+                Mathf.Clamp01(_latestBossPresentationSnapshot.SpeedParameter));
+
+            if (_latestBossPresentationSnapshot.StateHash == 0
+                || !_bossAnimator.HasState(0, _latestBossPresentationSnapshot.StateHash))
+            {
+                return;
+            }
+
+            AnimatorStateInfo currentStateInfo = _bossAnimator.GetCurrentAnimatorStateInfo(0);
+            float normalizedTimeDelta = Mathf.Abs(
+                Mathf.Repeat(currentStateInfo.normalizedTime, 1f)
+                - _latestBossPresentationSnapshot.NormalizedTime);
+
+            if (currentStateInfo.shortNameHash != _latestBossPresentationSnapshot.StateHash
+                || normalizedTimeDelta > 0.15f)
+            {
+                _bossAnimator.Play(
+                    _latestBossPresentationSnapshot.StateHash,
+                    0,
+                    _latestBossPresentationSnapshot.NormalizedTime);
+            }
+        }
+
+        private bool TryResolveBossPresentationRuntime()
+        {
+            if (_bossController == null)
+            {
+                _bossController = FindObjectOfType<BossController>();
+            }
+
+            if (_bossController == null)
+            {
+                _bossAnimator = null;
+                return false;
+            }
+
+            if (_bossAnimator == null)
+            {
+                _bossAnimator = _bossController.Visual != null
+                    ? _bossController.Visual.Animator
+                    : null;
+            }
+
+            return true;
+        }
+
+        private void SyncReplicatedHudHealthState()
+        {
+            if (!IsServer || _health == null)
+            {
+                return;
+            }
+
+            _replicatedHudCurrentHealth.Value = Mathf.Max(0, _health.CurrentHealth);
+            _replicatedHudMaxHealth.Value = Mathf.Max(0, _health.MaxHealth);
+        }
+
+        private void RefreshLocalMultiplayerHud()
+        {
+            if (!IsSpawned
+                || !IsOwner
+                || _playerController == null
+                || !MultiplayerSessionService.HasInstance
+                || !MultiplayerSessionService.Instance.HasActiveSession)
+            {
+                return;
+            }
+
+            CombatHUDController hudController = ResolveCombatHudController();
+            if (hudController == null)
+            {
+                return;
+            }
+
+            if (TryResolveHudHealthValues(allowLocalFallback: true, out int localCurrentHealth, out int localMaxHealth))
+            {
+                hudController.SetPlayerHpNormalized(
+                    localMaxHealth > 0 ? (float)localCurrentHealth / localMaxHealth : 0f,
+                    localCurrentHealth,
+                    localMaxHealth);
+            }
+
+            hudController.SetPlayerName(ResolveHudPlayerLabel(isLocalPlayer: true));
+
+            MultiplayerPlayerAvatar partnerAvatar = ResolvePartnerAvatar();
+            int partnerCurrentHealth = 0;
+            int partnerMaxHealth = 0;
+            bool hasPartner = partnerAvatar != null
+                              && partnerAvatar.IsSpawned
+                              && partnerAvatar.TryResolveHudHealthValues(
+                                  allowLocalFallback: false,
+                                  out partnerCurrentHealth,
+                                  out partnerMaxHealth);
+
+            hudController.SetPartnerHudVisible(hasPartner);
+            if (!hasPartner)
+            {
+                return;
+            }
+
+            hudController.SetPartnerName(partnerAvatar.ResolveHudPlayerLabel(isLocalPlayer: false));
+            hudController.SetPartnerHpNormalized(
+                partnerMaxHealth > 0 ? (float)partnerCurrentHealth / partnerMaxHealth : 0f,
+                partnerCurrentHealth,
+                partnerMaxHealth);
+        }
+
+        private CombatHUDController ResolveCombatHudController()
+        {
+            if (_hudController != null)
+            {
+                return _hudController;
+            }
+
+            _hudController = _playerController.CombatHUD;
+            if (_hudController == null)
+            {
+                _hudController = FindObjectOfType<CombatHUDController>();
+            }
+
+            return _hudController;
+        }
+
+        private MultiplayerPlayerAvatar ResolvePartnerAvatar()
+        {
+            if (_hudPartnerAvatar != null
+                && _hudPartnerAvatar != this
+                && _hudPartnerAvatar.IsSpawned)
+            {
+                return _hudPartnerAvatar;
+            }
+
+            MultiplayerPlayerAvatar[] avatars = FindObjectsByType<MultiplayerPlayerAvatar>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None);
+
+            for (int i = 0; i < avatars.Length; i++)
+            {
+                MultiplayerPlayerAvatar avatar = avatars[i];
+                if (avatar == null || avatar == this || !avatar.IsSpawned)
+                {
+                    continue;
+                }
+
+                _hudPartnerAvatar = avatar;
+                return _hudPartnerAvatar;
+            }
+
+            _hudPartnerAvatar = null;
+            return null;
+        }
+
+        private bool TryResolveHudHealthValues(bool allowLocalFallback, out int currentHealth, out int maxHealth)
+        {
+            maxHealth = _replicatedHudMaxHealth.Value;
+            if (maxHealth > 0)
+            {
+                currentHealth = Mathf.Clamp(_replicatedHudCurrentHealth.Value, 0, maxHealth);
+                return true;
+            }
+
+            if (allowLocalFallback && _health != null && _health.MaxHealth > 0)
+            {
+                currentHealth = Mathf.Clamp(_health.CurrentHealth, 0, _health.MaxHealth);
+                maxHealth = _health.MaxHealth;
+                return true;
+            }
+
+            currentHealth = 0;
+            maxHealth = 0;
+            return false;
+        }
+
+        private string ResolveHudPlayerLabel(bool isLocalPlayer)
+        {
+            string baseLabel = OwnerClientId == NetworkManager.ServerClientId
+                ? "Host"
+                : "Client";
+
+            return isLocalPlayer ? $"{baseLabel}(me)" : baseLabel;
+        }
+
         private void ApplyLocomotionAnimator(float inputMagnitude, bool forceLocomotionState = false)
         {
             if (_playerController == null || _playerController.Animator == null)
@@ -1009,6 +1317,12 @@ namespace Core.Multiplayer
             _disconnectProfileLastSourceLabel = "none";
             _hasLoggedDisconnectProfileBaseline = false;
             _lastLoggedDisconnectProfileLabel = string.Empty;
+            _bossController = null;
+            _bossAnimator = null;
+            _latestBossPresentationSnapshot = default;
+            _hasLatestBossPresentationSnapshot = false;
+            _hudPartnerAvatar = null;
+            _hudController = null;
 
             for (int i = 0; i < _clientInputHistory.Length; i++)
             {
