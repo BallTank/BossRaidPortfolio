@@ -286,6 +286,7 @@ namespace Core.Boss
                 return;
             }
 
+            Controller.BeginAuthoritativeAttack(_currentPattern);
             _currentPattern.Enter(Controller);
         }
 
@@ -303,6 +304,7 @@ namespace Core.Boss
         public override void Exit()
         {
             _currentPattern?.Exit(Controller);
+            Controller.EndAuthoritativeAttack();
 
             // 공격 쿨다운 시작
             Controller.StartAttackCooldown();

@@ -306,29 +306,6 @@ namespace Core.Boss
             // 자식 Visual의 로컬 기준점을 유지해 부모/자식 좌표 불일치를 방지한다.
             RestoreVisualLocalPose();
             _previousVisualWorldPosition = transform.position;
-
-            if (!_owner.ShouldEmitLungeRootMotionDebugLog()) return;
-
-            AnimatorStateInfo stateInfo = _animator.GetCurrentAnimatorStateInfo(0);
-            bool isLungeState = stateInfo.IsName("Lunge Attack");
-            bool isClawState = stateInfo.IsName("Claw Attack");
-            Vector3 bossPos = _owner.transform.position;
-            float animatorDeltaXZMag = new Vector2(animatorDeltaPosition.x, animatorDeltaPosition.z).magnitude;
-            float appliedDeltaXZMag = new Vector2(appliedDeltaPosition.x, appliedDeltaPosition.z).magnitude;
-            Vector3 localOffset = transform.localPosition - _cachedLocalPosition;
-
-            Debug.Log(
-                $"[LungeDebug][RootMotion] " +
-                $"applyRootMotion={_animator.applyRootMotion} " +
-                $"state(Lunge={isLungeState},Claw={isClawState}) " +
-                $"nTime={stateInfo.normalizedTime:F3} " +
-                $"animDelta=({animatorDeltaPosition.x:F3},{animatorDeltaPosition.y:F3},{animatorDeltaPosition.z:F3}) " +
-                $"appliedDelta=({appliedDeltaPosition.x:F3},{appliedDeltaPosition.y:F3},{appliedDeltaPosition.z:F3}) " +
-                $"fallback={usedVisualFallback} " +
-                $"animDeltaXZMag={animatorDeltaXZMag:F3} " +
-                $"appliedDeltaXZMag={appliedDeltaXZMag:F3} " +
-                $"visualLocalOffset=({localOffset.x:F3},{localOffset.y:F3},{localOffset.z:F3}) " +
-                $"bossPos=({bossPos.x:F3},{bossPos.y:F3},{bossPos.z:F3})");
         }
 
         private Vector3 ResolveAppliedDeltaPosition(Vector3 animatorDeltaPosition, out bool usedVisualFallback)

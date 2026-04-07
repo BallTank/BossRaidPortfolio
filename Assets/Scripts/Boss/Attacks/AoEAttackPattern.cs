@@ -106,6 +106,54 @@ namespace Core.Boss.Attacks
             _hasLastTargetPosition = false;
         }
 
+        /// <summary>
+        /// multiplayer display replay에서 런타임 Instantiate를 줄이기 위해 장판 풀을 미리 준비한다.
+        /// </summary>
+        public void PrepareDisplayPool()
+        {
+            if (_settings == null || _settings.circlePrefab == null)
+            {
+                return;
+            }
+
+            EnsureCirclePool(Mathf.Max(1, _settings.circleCount));
+        }
+
+        /// <summary>
+        /// Remote client 화면에서 공격 4 장판과 낙하 이펙트를 표시 전용으로 재생한다.
+        /// </summary>
+        public void PlayReplicatedDisplayAoE(
+            BossController controller,
+            Vector3 projectileStartPosition,
+            Vector3 impactPosition,
+            float radius,
+            float warningDuration,
+            float activeDuration)
+        {
+            if (_settings == null || _settings.circlePrefab == null)
+            {
+                return;
+            }
+
+            EnsureCirclePool(1);
+
+            AoECircleController circle = AcquireCircle();
+            if (circle != null)
+            {
+                circle.StartWarning(
+                    impactPosition,
+                    radius,
+                    warningDuration,
+                    activeDuration,
+                    0,
+                    0,
+                    default,
+                    BossAttackHitType.Unknown);
+            }
+
+            SpawnImpactProjectile(controller, projectileStartPosition, impactPosition, warningDuration);
+        }
+
         private void UpdateTakeOff(BossController controller)
         {
             _phaseTimer += Time.deltaTime;
@@ -190,7 +238,14 @@ namespace Core.Boss.Attacks
                 BossAttackHitType.Attack4Projectile);
             _activeCircles.Add(circle);
 
-            SpawnImpactProjectile(controller, impactPoint);
+            Vector3 projectileStartPosition = ResolveImpactProjectileStartPosition(controller, impactPoint);
+            SpawnImpactProjectile(controller, projectileStartPosition, impactPoint, _warningDuration);
+            controller.EnqueueReplicatedAoESpawn(
+                projectileStartPosition,
+                impactPoint,
+                _settings.radius,
+                _warningDuration,
+                _settings.activeDuration);
         }
 
         private void EnterCastingPhase(BossController controller)
@@ -201,7 +256,11 @@ namespace Core.Boss.Attacks
             controller.Visual?.PlayFlyIdle();
         }
 
-        private void SpawnImpactProjectile(BossController controller, Vector3 impactPoint)
+        private void SpawnImpactProjectile(
+            BossController controller,
+            Vector3 startPosition,
+            Vector3 impactPoint,
+            float impactDuration)
         {
             BossProjectilePool pool = controller.ProjectilePool;
             if (pool == null)
@@ -215,26 +274,28 @@ namespace Core.Boss.Attacks
                 return;
             }
 
-            Vector3 startPos;
-            if (controller.ProjectileSpawnPoint != null)
-            {
-                startPos = controller.ProjectileSpawnPoint.position;
-                if (startPos.y <= impactPoint.y + 0.05f)
-                {
-                    startPos.y = impactPoint.y + Mathf.Max(0.5f, _settings.fallbackProjectileHeight);
-                }
-            }
-            else
-            {
-                startPos = impactPoint + Vector3.up * Mathf.Max(0.5f, _settings.fallbackProjectileHeight);
-            }
-
             projectile.gameObject.SetActive(true);
             projectile.InitializeImpactMarker(
-                startPos,
+                startPosition,
                 impactPoint,
-                _warningDuration,
+                impactDuration,
                 controller.gameObject.GetInstanceID());
+        }
+
+        private Vector3 ResolveImpactProjectileStartPosition(BossController controller, Vector3 impactPoint)
+        {
+            if (controller.ProjectileSpawnPoint != null)
+            {
+                Vector3 startPosition = controller.ProjectileSpawnPoint.position;
+                if (startPosition.y <= impactPoint.y + 0.05f)
+                {
+                    startPosition.y = impactPoint.y + Mathf.Max(0.5f, _settings.fallbackProjectileHeight);
+                }
+
+                return startPosition;
+            }
+
+            return impactPoint + Vector3.up * Mathf.Max(0.5f, _settings.fallbackProjectileHeight);
         }
 
         private Vector3 ResolveImpactPoint(BossController controller)

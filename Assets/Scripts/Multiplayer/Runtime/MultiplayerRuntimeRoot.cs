@@ -13,7 +13,6 @@ namespace Core.Multiplayer
         private static MultiplayerRuntimeRoot _instance;
         private bool _isPlayerAvatarPrefabRegistered;
         private bool _didWarnMissingPlayerAvatarPrefab;
-        private bool _didLogNetworkConfig;
 
         [Header("Network Tick")]
         [SerializeField] private uint _networkTickRate = DefaultNetworkTickRate;
@@ -24,6 +23,7 @@ namespace Core.Multiplayer
         public NetworkManager NetworkManager { get; private set; }
         public UnityTransport UnityTransport { get; private set; }
         public GameObject PlayerAvatarPrefab { get; private set; }
+        public MultiplayerBossAuthorityBridge BossAuthorityBridge { get; private set; }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
         private static void ResetStaticState()
@@ -85,6 +85,12 @@ namespace Core.Multiplayer
             {
                 NetworkManager = gameObject.AddComponent<NetworkManager>();
             }
+
+            BossAuthorityBridge = GetComponent<MultiplayerBossAuthorityBridge>();
+            if (BossAuthorityBridge == null)
+            {
+                BossAuthorityBridge = gameObject.AddComponent<MultiplayerBossAuthorityBridge>();
+            }
         }
 
         private void ConfigureNetworkManager()
@@ -100,7 +106,6 @@ namespace Core.Multiplayer
             NetworkManager.NetworkConfig.TickRate = _networkTickRate == 0 ? 1u : _networkTickRate;
             NetworkManager.RunInBackground = true;
             RegisterPlayerAvatarPrefab();
-            LogRuntimeConfiguration();
         }
 
         private void EnsurePlayerAvatarPrefabLoaded()
@@ -129,16 +134,5 @@ namespace Core.Multiplayer
             _isPlayerAvatarPrefabRegistered = true;
         }
 
-        private void LogRuntimeConfiguration()
-        {
-            if (_didLogNetworkConfig || NetworkManager == null || NetworkManager.NetworkConfig == null)
-            {
-                return;
-            }
-
-            _didLogNetworkConfig = true;
-            Debug.Log(
-                $"MultiplayerRuntimeRoot: configured TickRate={NetworkManager.NetworkConfig.TickRate} PlayerAvatarPrefab={(PlayerAvatarPrefab != null ? PlayerAvatarPrefab.name : "null")} SceneManagement={NetworkManager.NetworkConfig.EnableSceneManagement}");
-        }
     }
 }

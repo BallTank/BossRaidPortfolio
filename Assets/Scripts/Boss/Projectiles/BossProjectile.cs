@@ -42,6 +42,7 @@ namespace Core.Boss.Projectiles
         private float _impactElapsed;
         private bool _impactTriggered;
         private BossAttackHitType _bossAttackHitType = BossAttackHitType.Attack3Projectile;
+        private bool _isDisplayOnly;
 
         private void Awake()
         {
@@ -101,10 +102,64 @@ namespace Core.Boss.Projectiles
             _impactDuration = 0f;
             _impactTriggered = false;
             _bossAttackHitType = bossAttackHitType;
+            _isDisplayOnly = false;
 
             if (_projectileCollider != null)
             {
                 _projectileCollider.enabled = true;
+            }
+
+            RestartVfx();
+        }
+
+        /// <summary>
+        /// Remote client 표시 전용 투사체를 초기화한다.
+        /// 충돌/데미지 없이 동일한 비행 VFX만 재생한다.
+        /// </summary>
+        public void InitializeDisplayOnly(
+            Vector3 position,
+            Vector3 direction,
+            float speed,
+            float lifetime,
+            Transform target,
+            float homingStrength,
+            float homingDuration,
+            float verticalFollowSpeed)
+        {
+            direction.y = 0f;
+            _moveDirection = direction.sqrMagnitude > 0.0001f
+                ? direction.normalized
+                : transform.forward;
+            _moveDirection.y = 0f;
+            if (_moveDirection.sqrMagnitude <= 0.0001f)
+            {
+                _moveDirection = Vector3.forward;
+            }
+
+            transform.position = position;
+            transform.forward = _moveDirection.normalized;
+
+            _speed = Mathf.Max(0f, speed);
+            _damage = 0;
+            _lifetime = Mathf.Max(0f, lifetime);
+            _ownerInstanceID = 0;
+            _target = target;
+            _homingStrength = Mathf.Clamp01(homingStrength);
+            _homingTimer = Mathf.Max(0f, homingDuration);
+            _verticalFollowSpeed = Mathf.Max(0f, verticalFollowSpeed);
+            _pendingReturnTimer = -1f;
+            _isReturned = false;
+            _isActive = true;
+            _mode = ProjectileMode.Combat;
+            _impactElapsed = 0f;
+            _impactDuration = 0f;
+            _impactTriggered = false;
+            _bossAttackHitType = BossAttackHitType.Unknown;
+            _isDisplayOnly = true;
+
+            if (_projectileCollider != null)
+            {
+                _projectileCollider.enabled = false;
             }
 
             RestartVfx();
@@ -129,6 +184,7 @@ namespace Core.Boss.Projectiles
             _impactElapsed = 0f;
             _impactTriggered = false;
             _bossAttackHitType = BossAttackHitType.Unknown;
+            _isDisplayOnly = true;
 
             _pendingReturnTimer = -1f;
             _isReturned = false;
@@ -266,6 +322,7 @@ namespace Core.Boss.Projectiles
         private void TryProcessHit(Collider other)
         {
             if (!_isActive || other == null) return;
+            if (_isDisplayOnly) return;
             if (_mode != ProjectileMode.Combat) return;
             if (!IsLayerAllowed(other)) return;
 

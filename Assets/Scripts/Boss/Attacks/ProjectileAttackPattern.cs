@@ -79,6 +79,37 @@ namespace Core.Boss.Attacks
             // 투사체는 독립 수명으로 동작하므로 상태 종료 시 별도 정리 없음
         }
 
+        /// <summary>
+        /// Remote client 화면에서 공격 3 투사체를 표시 전용으로 재생한다.
+        /// </summary>
+        public void PlayReplicatedDisplayShot(
+            BossController controller,
+            Vector3 origin,
+            Vector3 direction,
+            float speed,
+            float lifetime,
+            Transform target,
+            float homingStrength,
+            float homingDuration,
+            float verticalFollowSpeed)
+        {
+            if (controller.ProjectilePool == null) return;
+
+            BossProjectile projectile = controller.ProjectilePool.TryGetProjectile();
+            if (projectile == null) return;
+
+            projectile.gameObject.SetActive(true);
+            projectile.InitializeDisplayOnly(
+                origin,
+                direction,
+                speed,
+                lifetime,
+                target,
+                homingStrength,
+                homingDuration,
+                verticalFollowSpeed);
+        }
+
         private void FireShot(BossController controller, int shotIndex)
         {
             if (controller.ProjectilePool == null) return;
@@ -119,6 +150,16 @@ namespace Core.Boss.Attacks
                 _settings.homingDuration,
                 _settings.verticalFollowSpeed,
                 BossAttackHitType.Attack3Projectile);
+
+            controller.EnqueueReplicatedProjectileShot(
+                origin,
+                shotDirection,
+                _settings.speed,
+                _settings.lifetime,
+                controller.Target,
+                _settings.homingStrength,
+                _settings.homingDuration,
+                _settings.verticalFollowSpeed);
         }
 
         private float GetSpreadAngle(int shotIndex)

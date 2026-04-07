@@ -11,7 +11,6 @@ namespace Core.Boss.Attacks
     {
         private readonly BossController.LungeAttackSettings _settings;
         private const float FixedExitPhaseRatio = 1.0f;
-        private Vector3 _lungeStartPosition;
         private bool _damageWindowActive;
         private bool _lungeStateObserved;
         private int _damagePayload;
@@ -24,8 +23,6 @@ namespace Core.Boss.Attacks
         public void Enter(BossController controller)
         {
             controller.StopMoving();
-            controller.ResetLungeRootMotionDebugLogWindow();
-            _lungeStartPosition = controller.transform.position;
             _damageWindowActive = false;
             _lungeStateObserved = false;
             _damagePayload = Mathf.RoundToInt(controller.AttackDamage * _settings.damageMultiplier);
@@ -46,12 +43,6 @@ namespace Core.Boss.Attacks
 
             // Lunge Attack 애니메이션 재생
             controller.Visual?.PlayLungeAttack();
-
-            if (controller.EnableLungeRootMotionDebugLog)
-            {
-                Vector3 pos = controller.transform.position;
-                Debug.Log($"[LungeDebug][Enter] pos=({pos.x:F3},{pos.y:F3},{pos.z:F3})");
-            }
         }
 
         /// <summary>
@@ -130,15 +121,6 @@ namespace Core.Boss.Attacks
             controller.Visual?.SetLungeRootMotionEnabled(false);
             CloseDamageWindow(controller);
             controller.StopMoving();
-
-            if (controller.EnableLungeRootMotionDebugLog)
-            {
-                Vector3 endPos = controller.transform.position;
-                Vector3 delta = endPos - _lungeStartPosition;
-                Debug.Log(
-                    $"[LungeDebug][Exit] pos=({endPos.x:F3},{endPos.y:F3},{endPos.z:F3}) " +
-                    $"deltaXZ=({delta.x:F3},{delta.z:F3})");
-            }
         }
     }
 }

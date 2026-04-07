@@ -5,7 +5,10 @@ using Core.Combat;
 using Core.Common;
 using Core.Common.Attributes;
 using Core.Common.Patterns;
+using Core.Multiplayer;
 using Core.Player;
+using System.Collections.Generic;
+using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.Serialization;
 
@@ -107,10 +110,6 @@ namespace Core.Boss
         [SerializeField] private bool enableAoEAttack = true;
         [SerializeField, Tooltip("보스 CharacterController와 플레이어 콜라이더 충돌을 무시한다.")]
         private bool ignorePlayerCollision = true;
-        [SerializeField, Tooltip("Lunge 루트 모션 디버그 로그 출력 여부")]
-        private bool enableLungeRootMotionDebugLog = false;
-        [SerializeField, Range(0.01f, 0.5f), Tooltip("Lunge 루트 모션 디버그 로그 출력 간격(초)")]
-        private float lungeRootMotionDebugLogInterval = 0.05f;
         [SerializeField] private bool showPhaseDebugLabel = true;
 
         // FSM (제네릭 StateMachine 사용)
@@ -135,6 +134,10 @@ namespace Core.Boss
         private CharacterController _characterController;
         private Health _health;
         private float _nextAttackTime;
+        private BossAuthoritativeAttackId _currentAuthoritativeAttackId;
+        private float _currentAttackStartTime = -1f;
+        private readonly Queue<BossReplicatedEffectEvent> _pendingReplicatedEffectEvents = new Queue<BossReplicatedEffectEvent>(8);
+        private int _nextReplicatedEffectSequenceId;
 
         // Phase Flow
         private BossPhase _currentPhase = BossPhase.Phase1;
@@ -144,7 +147,6 @@ namespace Core.Boss
         private bool _phaseIntroPlaying;
         private float _phaseIntroEndTime;
         private bool _suppressLocomotionVisual;
-        private float _nextLungeRootMotionDebugLogTime;
         private Vector3 _lungeTravelDirection = Vector3.forward;
         private bool _isLungeTravelDirectionLocked;
         private bool _hasAppliedPlayerCollisionIgnore;
@@ -168,8 +170,6 @@ namespace Core.Boss
             if (projectileAttackRange < 0f) projectileAttackRange = 0f;
             if (aoeAttackRange < 0f) aoeAttackRange = 0f;
             if (chaseReengageBuffer < 0f) chaseReengageBuffer = 0f;
-            if (lungeRootMotionDebugLogInterval < 0.01f) lungeRootMotionDebugLogInterval = 0.01f;
-
             if (basicAttackSettings == null)
             {
                 basicAttackSettings = new BasicAttackSettings();
@@ -218,8 +218,6 @@ namespace Core.Boss
         public bool EnableLungeAttack => enableLungeAttack;
         public bool EnableProjectileAttack => enableProjectileAttack;
         public bool EnableAoEAttack => enableAoEAttack;
-        public bool EnableLungeRootMotionDebugLog => enableLungeRootMotionDebugLog;
-        public float LungeRootMotionDebugLogInterval => Mathf.Max(0.01f, lungeRootMotionDebugLogInterval);
         public BossProjectilePool ProjectilePool => projectilePool;
         public Transform ProjectileSpawnPoint => projectileSpawnPoint;
         public BossPhase CurrentPhase => _currentPhase;
@@ -227,6 +225,120 @@ namespace Core.Boss
         public bool IsPhaseOneAttackWindow => _currentPhase == BossPhase.Phase1 && _phaseOneIntroCompleted && !_phaseIntroPlaying;
         public bool IsPhaseTwoAttackWindow => _currentPhase == BossPhase.Phase2 && _phaseTwoIntroCompleted && !_phaseIntroPlaying;
         public bool IsLocomotionVisualSuppressed => _suppressLocomotionVisual;
+
+        /// <summary>
+        /// Host authority가 현재 boss truth를 dedicated DTO로 캡처한다.
+        /// </summary>
+        public BossAuthoritativeState CaptureAuthoritativeState(int currentServerTick, float networkFixedDeltaTime)
+        {
+            EnsureRuntimeReferences();
+
+            BossAuthoritativeState state = default;
+            state.Position = transform.position;
+            state.Rotation = transform.rotation;
+            state.LocomotionState = ResolveAuthoritativeLocomotionState();
+            state.CurrentAttackId = _currentAuthoritativeAttackId;
+            state.AttackStartServerTick = ResolveAuthoritativeAttackStartServerTick(
+                currentServerTick,
+                networkFixedDeltaTime);
+            state.CurrentHealth = _health != null ? _health.CurrentHealth : 0;
+            state.MaxHealth = _health != null ? _health.MaxHealth : 0;
+            state.Phase = ResolveAuthoritativePhase();
+            state.IsDead = (_health != null && _health.IsDead)
+                           || (_stateMachine != null && _stateMachine.CurrentState == DeadState);
+            return state;
+        }
+
+        /// <summary>
+        /// 공격 진입 시 attack id와 시작 시각을 한 번만 기록한다.
+        /// </summary>
+        public void BeginAuthoritativeAttack(IBossAttackPattern pattern)
+        {
+            _currentAuthoritativeAttackId = ResolveAuthoritativeAttackId(pattern);
+            _currentAttackStartTime = Time.time;
+        }
+
+        /// <summary>
+        /// 공격 종료 또는 사망 시 active attack bookkeeping을 비운다.
+        /// </summary>
+        public void EndAuthoritativeAttack()
+        {
+            _currentAuthoritativeAttackId = BossAuthoritativeAttackId.None;
+            _currentAttackStartTime = -1f;
+        }
+
+        /// <summary>
+        /// Host가 공격 3 투사체 표시 이벤트를 remote client용으로 큐에 적재한다.
+        /// </summary>
+        public void EnqueueReplicatedProjectileShot(
+            Vector3 startPosition,
+            Vector3 direction,
+            float speed,
+            float lifetime,
+            Transform target,
+            float homingStrength,
+            float homingDuration,
+            float verticalFollowSpeed)
+        {
+            BossReplicatedEffectEvent effect = default;
+            effect.EffectKind = BossReplicatedEffectKind.ProjectileShot;
+            effect.SequenceId = ++_nextReplicatedEffectSequenceId;
+            effect.StartPosition = startPosition;
+            effect.Direction = direction.sqrMagnitude > 0.0001f
+                ? direction.normalized
+                : transform.forward;
+            effect.Speed = Mathf.Max(0f, speed);
+            effect.Lifetime = Mathf.Max(0f, lifetime);
+            effect.TargetNetworkObjectId = ResolveTargetNetworkObjectId(target);
+            effect.HomingStrength = Mathf.Clamp01(homingStrength);
+            effect.HomingDuration = Mathf.Max(0f, homingDuration);
+            effect.VerticalFollowSpeed = Mathf.Max(0f, verticalFollowSpeed);
+            _pendingReplicatedEffectEvents.Enqueue(effect);
+        }
+
+        /// <summary>
+        /// Host가 공격 4 장판/낙하 표시 이벤트를 remote client용으로 큐에 적재한다.
+        /// </summary>
+        public void EnqueueReplicatedAoESpawn(
+            Vector3 projectileStartPosition,
+            Vector3 impactPosition,
+            float radius,
+            float warningDuration,
+            float activeDuration)
+        {
+            BossReplicatedEffectEvent effect = default;
+            effect.EffectKind = BossReplicatedEffectKind.AoESpawn;
+            effect.SequenceId = ++_nextReplicatedEffectSequenceId;
+            effect.StartPosition = projectileStartPosition;
+            effect.ImpactPosition = impactPosition;
+            effect.Radius = Mathf.Max(0f, radius);
+            effect.WarningDuration = Mathf.Max(0f, warningDuration);
+            effect.ActiveDuration = Mathf.Max(0f, activeDuration);
+            _pendingReplicatedEffectEvents.Enqueue(effect);
+        }
+
+        /// <summary>
+        /// Bridge가 Host에서 적재된 이펙트 이벤트를 순서대로 꺼낸다.
+        /// </summary>
+        public bool TryDequeueReplicatedEffectEvent(out BossReplicatedEffectEvent effect)
+        {
+            if (_pendingReplicatedEffectEvents.Count > 0)
+            {
+                effect = _pendingReplicatedEffectEvents.Dequeue();
+                return true;
+            }
+
+            effect = default;
+            return false;
+        }
+
+        /// <summary>
+        /// remote receiver가 없을 때 쌓인 표시 이벤트를 비운다.
+        /// </summary>
+        public void ClearPendingReplicatedEffectEvents()
+        {
+            _pendingReplicatedEffectEvents.Clear();
+        }
 
         /// <summary>
         /// 런타임에서 보스 추적 타겟을 다시 바꿀 때 사용한다.
@@ -273,6 +385,7 @@ namespace Core.Boss
             LungeAttackPattern = new LungeAttackPattern(lungeAttackSettings);
             ProjectileAttackPattern = new ProjectileAttackPattern(projectileAttackSettings);
             AoEAttackPattern = new AoEAttackPattern(aoeAttackSettings);
+            AoEAttackPattern.PrepareDisplayPool();
 
             if (_health != null)
             {
@@ -338,6 +451,7 @@ namespace Core.Boss
         private void HandleDeath()
         {
             damageBlinkEffect?.StopBlink();
+            EndAuthoritativeAttack();
             _stateMachine.ChangeState(DeadState);
         }
 
@@ -371,6 +485,126 @@ namespace Core.Boss
             {
                 damageBlinkEffect = GetComponent<BlinkWhiteEffect>();
             }
+        }
+
+        private void EnsureRuntimeReferences()
+        {
+            if (_characterController == null)
+            {
+                _characterController = GetComponent<CharacterController>();
+            }
+
+            if (_health == null)
+            {
+                _health = GetComponent<Health>();
+            }
+        }
+
+        private static ulong ResolveTargetNetworkObjectId(Transform target)
+        {
+            if (target == null)
+            {
+                return 0;
+            }
+
+            NetworkObject networkObject = target.GetComponentInParent<NetworkObject>();
+            return networkObject != null ? networkObject.NetworkObjectId : 0;
+        }
+
+        private BossAuthoritativeLocomotionState ResolveAuthoritativeLocomotionState()
+        {
+            if (_health != null && _health.IsDead)
+            {
+                return BossAuthoritativeLocomotionState.Dead;
+            }
+
+            if (_stateMachine == null || _stateMachine.CurrentState == null)
+            {
+                return BossAuthoritativeLocomotionState.Unknown;
+            }
+
+            if (_phaseIntroPlaying)
+            {
+                return BossAuthoritativeLocomotionState.PhaseIntro;
+            }
+
+            BossBaseState currentState = _stateMachine.CurrentState;
+            if (currentState == DeadState)
+            {
+                return BossAuthoritativeLocomotionState.Dead;
+            }
+
+            if (currentState == HitState)
+            {
+                return BossAuthoritativeLocomotionState.Hit;
+            }
+
+            if (currentState == AttackState)
+            {
+                return BossAuthoritativeLocomotionState.Attack;
+            }
+
+            if (currentState == SearchingState)
+            {
+                return BossAuthoritativeLocomotionState.Search;
+            }
+
+            float planarSpeed = ResolvePlanarSpeed();
+            if (planarSpeed > 0.01f)
+            {
+                return BossAuthoritativeLocomotionState.Move;
+            }
+
+            return BossAuthoritativeLocomotionState.Idle;
+        }
+
+        private float ResolvePlanarSpeed()
+        {
+            if (_characterController == null)
+            {
+                return 0f;
+            }
+
+            Vector3 velocity = _characterController.velocity;
+            velocity.y = 0f;
+            return velocity.magnitude;
+        }
+
+        private BossAuthoritativePhase ResolveAuthoritativePhase()
+        {
+            return _currentPhase switch
+            {
+                BossPhase.Phase1 => BossAuthoritativePhase.Phase1,
+                BossPhase.Phase2 => BossAuthoritativePhase.Phase2,
+                _ => BossAuthoritativePhase.None
+            };
+        }
+
+        private int ResolveAuthoritativeAttackStartServerTick(int currentServerTick, float networkFixedDeltaTime)
+        {
+            if (_currentAuthoritativeAttackId == BossAuthoritativeAttackId.None
+                || _currentAttackStartTime < 0f
+                || networkFixedDeltaTime <= 0f)
+            {
+                return 0;
+            }
+
+            // 공격 시작 프레임 직후 캡처되더라도 미래 tick으로 밀리지 않게 약간 보수적으로 환산한다.
+            float elapsedSeconds = Mathf.Max(0f, Time.time - _currentAttackStartTime);
+            int elapsedTicks = Mathf.CeilToInt(elapsedSeconds / networkFixedDeltaTime);
+            return Mathf.Max(0, currentServerTick - elapsedTicks);
+        }
+
+        private static BossAuthoritativeAttackId ResolveAuthoritativeAttackId(IBossAttackPattern pattern)
+        {
+            return pattern switch
+            {
+                Core.Boss.Attacks.BasicAttackPattern => BossAuthoritativeAttackId.Basic,
+                Core.Boss.Attacks.LungeAttackPattern => BossAuthoritativeAttackId.Lunge,
+                Core.Boss.Attacks.ProjectileAttackPattern => BossAuthoritativeAttackId.Projectile,
+                Core.Boss.Attacks.AoEAttackPattern => BossAuthoritativeAttackId.AoE,
+                _ => BossAuthoritativeAttackId.None
+            };
         }
 
         #region Phase Methods
@@ -670,28 +904,6 @@ namespace Core.Boss
             }
 
             _characterController.Move(deltaPosition);
-        }
-
-        /// <summary>
-        /// Lunge 루트 모션 디버그 로그의 샘플링 타이머를 초기화한다.
-        /// </summary>
-        public void ResetLungeRootMotionDebugLogWindow()
-        {
-            _nextLungeRootMotionDebugLogTime = 0f;
-        }
-
-        /// <summary>
-        /// Lunge 루트 모션 디버그 로그 출력 시점인지 판정한다.
-        /// </summary>
-        public bool ShouldEmitLungeRootMotionDebugLog()
-        {
-            if (!enableLungeRootMotionDebugLog) return false;
-
-            float interval = Mathf.Max(0.01f, lungeRootMotionDebugLogInterval);
-            if (Time.time < _nextLungeRootMotionDebugLogTime) return false;
-
-            _nextLungeRootMotionDebugLogTime = Time.time + interval;
-            return true;
         }
 
         public void StopMoving()
