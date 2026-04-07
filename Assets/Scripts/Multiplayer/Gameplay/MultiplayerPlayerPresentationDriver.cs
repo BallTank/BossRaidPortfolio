@@ -5,7 +5,8 @@ using UnityEngine;
 namespace Core.Multiplayer
 {
     /// <summary>
-    /// 멀티플레이 전용 시각 보정과 디버그 추적을 PlayerController 밖으로 분리한다.
+    /// 멀티플레이 로컬 owner 화면의 visual child와 camera follow surface만 다룬다.
+    /// gameplay truth, FSM authority, HP/result apply는 이 클래스 책임이 아니다.
     /// </summary>
     public sealed class MultiplayerPlayerPresentationDriver
     {
@@ -18,7 +19,6 @@ namespace Core.Multiplayer
         private bool _hasPresentationDefaultTransform;
         private Transform _cachedPresentationTransform;
         private Vector3 _presentationWorldPosition;
-        private Vector3 _presentationWorldVelocity;
         private bool _hasPresentationWorldPosition;
         private Vector3 _predictedPresentationPreviousTargetPosition;
         private Vector3 _predictedPresentationCurrentTargetPosition;
@@ -26,6 +26,7 @@ namespace Core.Multiplayer
         private bool _hasPredictedPresentationTargets;
         private Vector2 _lastPredictedPresentationMoveInput;
         private bool _hasLastPredictedPresentationMoveInput;
+        private bool _wasDashPresentationActive;
         public MultiplayerPlayerPresentationDriver(PlayerController controller)
         {
             _controller = controller;
@@ -57,7 +58,7 @@ namespace Core.Multiplayer
 
         public void UpdatePredictedLocomotionPresentation(PlayerInputPacket input)
         {
-            if (!_controller.IsLocalPresentationEnabled)
+            if (!ShouldUseVisualOnlyPredictedPresentation())
             {
                 ResetPresentationRotationToRoot();
                 return;
@@ -69,9 +70,12 @@ namespace Core.Multiplayer
                 return;
             }
 
-            bool shouldSnapPredictedTransition = _controller.IsDashStateActive
+            bool isDashActive = _controller.IsDashStateActive;
+            bool dashStartedThisFrame = isDashActive && !_wasDashPresentationActive;
+            bool shouldSnapPredictedTransition = dashStartedThisFrame
                                                 || ShouldSnapPredictedPresentationTransition(input.moveDir);
             UpdatePredictedPresentationPosition(presentationTransform, shouldSnapPredictedTransition);
+            _wasDashPresentationActive = isDashActive;
 
             if (_hasPresentationDefaultTransform)
             {
@@ -85,7 +89,7 @@ namespace Core.Multiplayer
 
         public Vector3 GetPreferredCameraFollowPosition()
         {
-            if (ShouldUsePredictedRenderSmoothingPresentation() && _hasPresentationWorldPosition)
+            if (ShouldUseVisualOnlyPredictedPresentation() && _hasPresentationWorldPosition)
             {
                 return ResolvePresentationRootProxyPosition();
             }
@@ -141,9 +145,10 @@ namespace Core.Multiplayer
             _hasPresentationDefaultTransform = true;
         }
 
-        private bool ShouldUsePredictedRenderSmoothingPresentation()
+        private bool ShouldUseVisualOnlyPredictedPresentation()
         {
             return _controller.SimulationMode == PlayerController.RuntimeSimulationMode.PredictedLocomotion
+                   && _controller.CurrentActionAuthorityMode == PlayerController.ActionAuthorityMode.ClientOwnerProxy
                    && _controller.IsLocalPresentationEnabled;
         }
 
@@ -180,7 +185,7 @@ namespace Core.Multiplayer
 
         private void UpdatePredictedPresentationPosition(Transform presentationTransform, bool shouldSnapPredictedTransition)
         {
-            if (!ShouldUsePredictedRenderSmoothingPresentation())
+            if (!ShouldUseVisualOnlyPredictedPresentation())
             {
                 return;
             }
@@ -192,7 +197,6 @@ namespace Core.Multiplayer
                 || (targetPosition - _presentationWorldPosition).sqrMagnitude >= snapDistance * snapDistance)
             {
                 _presentationWorldPosition = targetPosition;
-                _presentationWorldVelocity = Vector3.zero;
                 _hasPresentationWorldPosition = true;
                 _predictedPresentationPreviousTargetPosition = targetPosition;
                 _predictedPresentationCurrentTargetPosition = targetPosition;
@@ -233,21 +237,11 @@ namespace Core.Multiplayer
                     _predictedPresentationCurrentTargetPosition,
                     interpolationAlpha);
 
-                if (Time.deltaTime > 0f)
-                {
-                    _presentationWorldVelocity = (renderPosition - _presentationWorldPosition) / Time.deltaTime;
-                }
-                else
-                {
-                    _presentationWorldVelocity = Vector3.zero;
-                }
-
                 _presentationWorldPosition = renderPosition;
             }
             else
             {
                 _presentationWorldPosition = targetPosition;
-                _presentationWorldVelocity = Vector3.zero;
                 _predictedPresentationPreviousTargetPosition = targetPosition;
                 _predictedPresentationCurrentTargetPosition = targetPosition;
                 _predictedPresentationTargetSetTime = Time.time;
@@ -282,7 +276,6 @@ namespace Core.Multiplayer
         private void ResetPresentationState()
         {
             _presentationWorldPosition = ResolvePresentationTargetPosition();
-            _presentationWorldVelocity = Vector3.zero;
             _hasPresentationWorldPosition = true;
             _predictedPresentationPreviousTargetPosition = _presentationWorldPosition;
             _predictedPresentationCurrentTargetPosition = _presentationWorldPosition;
@@ -290,6 +283,7 @@ namespace Core.Multiplayer
             _hasPredictedPresentationTargets = true;
             _lastPredictedPresentationMoveInput = Vector2.zero;
             _hasLastPredictedPresentationMoveInput = false;
+            _wasDashPresentationActive = false;
         }
 
         private static float ResolvePredictedPresentationTickInterval()

@@ -1,7 +1,7 @@
 ﻿using Core.Combat;
+using System.Collections.Generic;
 using Core.Boss;
 using Core.GameFlow;
-using System;
 using Core.Player;
 using Core.UI;
 using Unity.Netcode;
@@ -22,8 +22,7 @@ namespace Core.Multiplayer
         private const float FallbackFixedDeltaTime = 1f / 30f;
         private const float OwnerPositionCorrectionDeadzone = 0.03f;
         private const float OwnerYawCorrectionDeadzone = 1.25f;
-        private const float DisconnectProfileMoveThresholdSqr = 0.0001f;
-        private static readonly int BossAnimatorSpeedParam = Animator.StringToHash("Speed");
+        private static readonly List<MultiplayerPlayerAvatar> _activeAvatars = new List<MultiplayerPlayerAvatar>(2);
         private readonly NetworkVariable<int> _replicatedHudCurrentHealth = new NetworkVariable<int>(
             0,
             NetworkVariableReadPermission.Everyone,
@@ -32,9 +31,10 @@ namespace Core.Multiplayer
             0,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
-
-        [Header("Action Authority Debug")]
-        [SerializeField] private bool _enableActionAuthorityTrace = true;
+        private readonly NetworkVariable<bool> _replicatedRetryReady = new NetworkVariable<bool>(
+            false,
+            NetworkVariableReadPermission.Everyone,
+            NetworkVariableWritePermission.Server);
 
         private struct ClientInputHistoryEntry
         {
@@ -56,34 +56,12 @@ namespace Core.Multiplayer
             public bool IsSet;
         }
 
-        private struct BossPresentationSnapshot : INetworkSerializable
-        {
-            public Vector3 Position;
-            public Quaternion Rotation;
-            public int StateHash;
-            public float NormalizedTime;
-            public float SpeedParameter;
-            public float PlaybackSpeed;
-
-            public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
-            {
-                serializer.SerializeValue(ref Position);
-                serializer.SerializeValue(ref Rotation);
-                serializer.SerializeValue(ref StateHash);
-                serializer.SerializeValue(ref NormalizedTime);
-                serializer.SerializeValue(ref SpeedParameter);
-                serializer.SerializeValue(ref PlaybackSpeed);
-            }
-        }
-
         private PlayerController _playerController;
         private LocalInputProvider _localInputProvider;
         private MultiplayerBufferedInputProvider _bufferedInputProvider;
         private CharacterController _characterController;
         private Health _health;
         private NetworkTransform _networkTransform;
-        private BossController _bossController;
-        private Animator _bossAnimator;
         private readonly HostPlayerActionValidator _hostPlayerActionValidator = new HostPlayerActionValidator();
         private readonly HostPlayerReactionResolver _hostPlayerReactionResolver = new HostPlayerReactionResolver();
         private readonly ClientInputHistoryEntry[] _clientInputHistory = new ClientInputHistoryEntry[PredictionBufferSize];
@@ -101,6 +79,8 @@ namespace Core.Multiplayer
         private int _nextLocalInputSequence;
         private int _lastAppliedAuthoritativeInputSequence;
         private int _lastReceivedAuthoritativeServerTick;
+        private int _lastAppliedClientAuthoritativeActionSequence;
+        private int _lastAppliedClientReactionSequence;
         private int _serverLatestReceivedInputSequence;
         private int _serverLastProcessedInputSequence;
         private int _serverNextInputSequenceToProcess = 1;
@@ -109,19 +89,25 @@ namespace Core.Multiplayer
         private HostToClientPlayerReactionSnapshot _latestHostReactionSnapshot;
         private bool _hasLatestHostReactionSnapshot;
         private bool _hasBoundHostAuthorityHooks;
+        private ClientToHostPlayerActionIntent _pendingApprovedComboActionIntent;
+        private bool _hasPendingApprovedComboActionIntent;
         private bool _hasReceivedInitialAuthoritativeBaseline;
         private byte _lastObservedActionButtons;
         private byte _lastBufferedActionButtons;
-        private bool _disconnectProfileSawMoveInput;
-        private bool _disconnectProfileSawActionButtons;
-        private int _disconnectProfileLastInputSequence;
-        private string _disconnectProfileLastSourceLabel = "none";
-        private bool _hasLoggedDisconnectProfileBaseline;
-        private string _lastLoggedDisconnectProfileLabel = string.Empty;
-        private BossPresentationSnapshot _latestBossPresentationSnapshot;
-        private bool _hasLatestBossPresentationSnapshot;
         private MultiplayerPlayerAvatar _hudPartnerAvatar;
         private CombatHUDController _hudController;
+
+        public bool HasReplicatedHealthState => TryGetReplicatedHealth(out _, out _);
+        public bool IsReplicatedDead => TryGetReplicatedHealth(out int currentHealth, out int maxHealth)
+                                        && maxHealth > 0
+                                        && currentHealth <= 0;
+        public bool IsRetryReady => IsSpawned && _replicatedRetryReady.Value;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void ResetActiveAvatarRegistry()
+        {
+            _activeAvatars.Clear();
+        }
 
         private void Awake()
         {
@@ -135,6 +121,7 @@ namespace Core.Multiplayer
 
         public override void OnDestroy()
         {
+            UnregisterActiveAvatar(this);
             UnbindHostAuthorityHooks();
             UnregisterNetworkTick();
             base.OnDestroy();
@@ -154,16 +141,17 @@ namespace Core.Multiplayer
 
             RegisterNetworkTick();
             ResetRuntimeState();
+            RegisterActiveAvatar(this);
             MultiplayerGameplaySceneCoordinator.EnsureCurrentGameplayScenePrepared();
             RefreshAvatarDebugName();
             ConfigureRuntimeRole();
             ConfigureHostAuthorityContracts();
             SyncReplicatedHudHealthState();
-            TryLogDisconnectProfileBaseline("spawn");
         }
 
         public override void OnNetworkDespawn()
         {
+            UnregisterActiveAvatar(this);
             UnbindHostAuthorityHooks();
             UnregisterNetworkTick();
             _health?.ResetRuntimeWriteAuthority();
@@ -178,6 +166,7 @@ namespace Core.Multiplayer
                 MultiplayerLocalPlayerRegistry.Clear();
             }
 
+            _playerController?.SetActionAuthorityMode(PlayerController.ActionAuthorityMode.SoloLocal);
             SetOwnerTransformSyncEnabled(true);
         }
 
@@ -191,7 +180,6 @@ namespace Core.Multiplayer
             }
 
             PlayerInputPacket input = locomotionInput.ToPlayerInputPacket();
-            TrackDisconnectInputProfile(input, locomotionInput.InputSequence, "server-buffer");
             ProcessBufferedActionIntentEdges(locomotionInput, input);
             _bufferedInputProvider.SetInput(locomotionInput);
             _serverLatestReceivedInputSequence = Mathf.Max(_serverLatestReceivedInputSequence, locomotionInput.InputSequence);
@@ -201,8 +189,19 @@ namespace Core.Multiplayer
         [ServerRpc(Delivery = RpcDelivery.Reliable)]
         private void SubmitOwnerActionIntentServerRpc(ClientToHostPlayerActionIntent actionIntent, ServerRpcParams rpcParams = default)
         {
-            ulong senderClientId = rpcParams.Receive.SenderClientId;
-            LogActionIntentRpcReceived(actionIntent, senderClientId, "client-owner");
+            _ = actionIntent;
+            _ = rpcParams;
+        }
+
+        [ServerRpc(Delivery = RpcDelivery.Reliable)]
+        private void SubmitRetryReadyServerRpc()
+        {
+            if (!IsSpawned)
+            {
+                return;
+            }
+
+            _replicatedRetryReady.Value = true;
         }
 
         [ClientRpc(Delivery = RpcDelivery.Unreliable)]
@@ -286,17 +285,31 @@ namespace Core.Multiplayer
             ApplyLocomotionAnimator(replayInputMagnitude);
         }
 
-        [ClientRpc(Delivery = RpcDelivery.Unreliable)]
-        private void PushBossPresentationSnapshotClientRpc(BossPresentationSnapshot snapshot, ClientRpcParams clientRpcParams = default)
+        [ClientRpc(Delivery = RpcDelivery.Reliable)]
+        private void PushApprovedActionStartClientRpc(
+            ClientToHostPlayerActionIntent actionIntent,
+            HostPlayerState hostPlayerState,
+            ClientRpcParams clientRpcParams = default)
         {
-            if (!IsSpawned || IsServer || !IsOwner)
+            if (!IsSpawned || IsServer || !IsOwner || _playerController == null)
             {
                 return;
             }
 
-            _latestBossPresentationSnapshot = snapshot;
-            _hasLatestBossPresentationSnapshot = true;
-            ApplyBossPresentationSnapshot();
+            ApplyAuthoritativeActionStartLocally(actionIntent, hostPlayerState);
+        }
+
+        [ClientRpc(Delivery = RpcDelivery.Reliable)]
+        private void PushReactionSnapshotClientRpc(
+            HostToClientPlayerReactionSnapshot snapshot,
+            ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsSpawned || IsServer || !IsOwner || _playerController == null)
+            {
+                return;
+            }
+
+            ApplyAuthoritativeReactionLocally(snapshot);
         }
 
         private void CacheComponents()
@@ -327,26 +340,22 @@ namespace Core.Multiplayer
             if (IsServer && IsOwner)
             {
                 ConfigureHostOwnedPlayer();
-                LogRuntimeRoleConfiguration();
                 return;
             }
 
             if (IsServer)
             {
                 ConfigureHostAuthorityReplica();
-                LogRuntimeRoleConfiguration();
                 return;
             }
 
             if (IsOwner)
             {
                 ConfigureClientOwnedPlayer();
-                LogRuntimeRoleConfiguration();
                 return;
             }
 
             ConfigureClientReplica();
-            LogRuntimeRoleConfiguration();
         }
 
         private void ConfigureHostAuthorityContracts()
@@ -374,6 +383,7 @@ namespace Core.Multiplayer
             }
 
             _playerController.AttackDamageResolved += HandleAttackDamageResolved;
+            _playerController.AuthoritativeAttackStepStarted += HandleAuthoritativeAttackStepStarted;
             _playerController.BossAttackResolved += HandleBossAttackResolved;
             _hasBoundHostAuthorityHooks = true;
         }
@@ -387,6 +397,7 @@ namespace Core.Multiplayer
             }
 
             _playerController.AttackDamageResolved -= HandleAttackDamageResolved;
+            _playerController.AuthoritativeAttackStepStarted -= HandleAuthoritativeAttackStepStarted;
             _playerController.BossAttackResolved -= HandleBossAttackResolved;
             _hasBoundHostAuthorityHooks = false;
         }
@@ -398,6 +409,7 @@ namespace Core.Multiplayer
             _localInputProvider?.SetRuntimeInputEnabled(true);
             _playerController.SetInputProviderOverride(_localInputProvider);
             _playerController.SetSimulationMode(PlayerController.RuntimeSimulationMode.Full);
+            _playerController.SetActionAuthorityMode(PlayerController.ActionAuthorityMode.HostAuthoritative);
             _playerController.SetLocalPresentationEnabled(true);
             _playerController.SetLookDrivenCameraRootEnabled(false);
             SetCharacterControllerEnabled(true);
@@ -409,6 +421,7 @@ namespace Core.Multiplayer
         {
             _health?.SetRuntimeWriteAuthority(true);
             _playerController.SetInputProviderOverride(_bufferedInputProvider);
+            _playerController.SetActionAuthorityMode(PlayerController.ActionAuthorityMode.HostAuthoritative);
             _playerController.SetLocalPresentationEnabled(false);
             _playerController.SetLookDrivenCameraRootEnabled(false);
             SetCharacterControllerEnabled(true);
@@ -423,6 +436,7 @@ namespace Core.Multiplayer
             _localInputProvider?.SetRuntimeInputEnabled(true);
             _playerController.SetInputProviderOverride(_localInputProvider);
             _playerController.SetSimulationMode(PlayerController.RuntimeSimulationMode.PredictedLocomotion);
+            _playerController.SetActionAuthorityMode(PlayerController.ActionAuthorityMode.ClientOwnerProxy);
             _playerController.SetLocalPresentationEnabled(true);
             _playerController.SetLookDrivenCameraRootEnabled(false);
             SetCharacterControllerEnabled(true);
@@ -439,6 +453,7 @@ namespace Core.Multiplayer
             _health?.SetRuntimeWriteAuthority(false);
             _playerController.SetInputProviderOverride(null);
             _playerController.SetSimulationMode(PlayerController.RuntimeSimulationMode.Disabled);
+            _playerController.SetActionAuthorityMode(PlayerController.ActionAuthorityMode.RemoteDisplayOnly);
             _playerController.SetLocalPresentationEnabled(false);
             _playerController.SetLookDrivenCameraRootEnabled(false);
             SetCharacterControllerEnabled(false);
@@ -505,7 +520,6 @@ namespace Core.Multiplayer
             if (IsServer && !IsOwner)
             {
                 HandleServerAuthorityTick();
-                PushBossPresentationToOwnerClient();
             }
 
             if (IsOwner && !IsServer)
@@ -540,7 +554,6 @@ namespace Core.Multiplayer
 
             PlayerInputPacket input = _localInputProvider.GetInput();
             MultiplayerLocomotionInput locomotionInput = MultiplayerLocomotionInput.FromPlayerInputPacket(input, ++_nextLocalInputSequence);
-            TrackDisconnectInputProfile(input, locomotionInput.InputSequence, "client-owner");
             ObserveActionIntentEdges(input, submitToServer: true, sourceLabel: "client-owner");
             bool canPredictThisTick = _hasReceivedInitialAuthoritativeBaseline && ShouldPredictLocomotionThisTick(input);
 
@@ -586,7 +599,6 @@ namespace Core.Multiplayer
             }
 
             PlayerInputPacket input = _localInputProvider.GetInput();
-            TrackDisconnectInputProfile(input, ResolveCurrentServerTick(), "host-owner");
             ObserveActionIntentEdges(input, submitToServer: false, sourceLabel: "host-owner");
         }
 
@@ -845,11 +857,21 @@ namespace Core.Multiplayer
                 return;
             }
 
-            EmitActionIntentIfPressed(pressedActionEdges, InputFlag.Dash, submitToServer, sourceLabel);
-            EmitActionIntentIfPressed(pressedActionEdges, InputFlag.Attack, submitToServer, sourceLabel);
+            EmitActionIntentIfPressed(
+                pressedActionEdges,
+                ResolveActionIntentFacingYaw(input, InputFlag.Dash),
+                InputFlag.Dash,
+                submitToServer,
+                sourceLabel);
+            EmitActionIntentIfPressed(
+                pressedActionEdges,
+                ResolveActionIntentFacingYaw(input, InputFlag.Attack),
+                InputFlag.Attack,
+                submitToServer,
+                sourceLabel);
         }
 
-        private void EmitActionIntentIfPressed(byte pressedActionEdges, InputFlag requestedFlag, bool submitToServer, string sourceLabel)
+        private void EmitActionIntentIfPressed(byte pressedActionEdges, float facingYaw, InputFlag requestedFlag, bool submitToServer, string sourceLabel)
         {
             if ((pressedActionEdges & (byte)requestedFlag) == 0)
             {
@@ -859,9 +881,8 @@ namespace Core.Multiplayer
             ClientToHostPlayerActionIntent actionIntent = ClientToHostPlayerActionIntent.Create(
                 requestedFlag,
                 ++_nextLocalActionSequence,
-                ResolveCurrentServerTick());
-
-            LogObservedActionIntent(actionIntent, sourceLabel, submitToServer);
+                ResolveCurrentServerTick(),
+                facingYaw);
 
             if (submitToServer)
             {
@@ -895,34 +916,16 @@ namespace Core.Multiplayer
                 return;
             }
 
-            LogBufferedActionIntentEdge(requestedFlag, locomotionInput.InputSequence, locomotionInput.Buttons);
+            PlayerInputPacket input = locomotionInput.ToPlayerInputPacket();
+            float facingYaw = ResolveActionIntentFacingYaw(input, requestedFlag);
 
             ClientToHostPlayerActionIntent actionIntent = ClientToHostPlayerActionIntent.Create(
                 requestedFlag,
                 locomotionInput.InputSequence,
-                locomotionInput.InputSequence);
+                locomotionInput.InputSequence,
+                facingYaw);
 
             ProcessHostValidatedActionIntent(actionIntent, OwnerClientId, "server-buffer");
-        }
-
-        private void LogBufferedActionIntentEdge(InputFlag requestedFlag, int inputSequence, byte buttons)
-        {
-            if (!_enableActionAuthorityTrace)
-            {
-                return;
-            }
-
-            Debug.Log(
-                $"[MultiplayerActionIntentTrace] " +
-                $"phase=buffer-observe " +
-                $"name={gameObject.name} " +
-                $"source=server-buffer " +
-                $"owner={OwnerClientId} " +
-                $"objectId={NetworkObjectId} " +
-                $"inputSeq={inputSequence} " +
-                $"serverTick={ResolveCurrentServerTick()} " +
-                $"flag={requestedFlag} " +
-                $"buttons={buttons}");
         }
 
         private void ProcessHostValidatedActionIntent(in ClientToHostPlayerActionIntent actionIntent, ulong senderClientId, string sourceLabel)
@@ -933,6 +936,8 @@ namespace Core.Multiplayer
             }
 
             bool isAccepted = false;
+            bool isQueuedComboContinuation = false;
+            bool isExecutedDashCancel = false;
             string rejectionReason;
 
             if (senderClientId != OwnerClientId)
@@ -944,16 +949,99 @@ namespace Core.Multiplayer
                 isAccepted = _hostPlayerActionValidator.TryValidate(actionIntent, _playerController, out rejectionReason);
             }
 
-            LogValidatedActionIntent(actionIntent, senderClientId, sourceLabel, isAccepted, rejectionReason);
+            if (isAccepted
+                && actionIntent.RequestedFlag == InputFlag.Attack)
+            {
+                bool isComboContinuationRequest = _playerController != null
+                                                 && _playerController.StateMachine != null
+                                                 && _playerController.StateMachine.CurrentState == _playerController.AttackState;
+
+                if (isComboContinuationRequest)
+                {
+                    if (_playerController.TryQueueAuthoritativeAttackCombo(actionIntent.FacingYaw, out _))
+                    {
+                        _pendingApprovedComboActionIntent = actionIntent;
+                        _hasPendingApprovedComboActionIntent = true;
+                        isQueuedComboContinuation = true;
+                    }
+                    else
+                    {
+                        isAccepted = false;
+                        rejectionReason = "combo-queue-failed";
+                    }
+                }
+                else if (!_playerController.TryStartAuthoritativeAttackComboStep(0, 0f, actionIntent.FacingYaw))
+                {
+                    isAccepted = false;
+                    rejectionReason = "attack-execute-failed";
+                }
+            }
+            else if (isAccepted
+                     && actionIntent.RequestedFlag == InputFlag.Dash
+                     && _playerController != null
+                     && _playerController.StateMachine != null
+                     && _playerController.StateMachine.CurrentState == _playerController.AttackState)
+            {
+                ClearPendingApprovedComboActionIntent();
+                if (!_playerController.TryStartAuthoritativeDash(0f, actionIntent.FacingYaw))
+                {
+                    isAccepted = false;
+                    rejectionReason = "dash-execute-failed";
+                }
+                else
+                {
+                    isExecutedDashCancel = true;
+                }
+            }
 
             if (!isAccepted)
             {
                 return;
             }
 
+            if (isQueuedComboContinuation)
+            {
+                return;
+            }
+
             int currentServerTick = ResolveCurrentServerTick();
-            _hostPlayerState.RecordAcceptedAction(actionIntent, _health, currentServerTick);
-            LogHostAuthoritativeState(actionIntent, _hostPlayerState);
+            if (actionIntent.RequestedFlag == InputFlag.Attack)
+            {
+                ClearPendingApprovedComboActionIntent();
+                _hostPlayerState.RecordAcceptedAction(actionIntent, _health, currentServerTick, 0);
+            }
+            else
+            {
+                _hostPlayerState.RecordAcceptedAction(actionIntent, _health, currentServerTick);
+            }
+
+            _hostPlayerReactionResolver.SyncRuntimeState(_playerController, _health, currentServerTick, ref _hostPlayerState);
+
+            if (!IsOwner
+                && (actionIntent.RequestedFlag == InputFlag.Attack
+                    || isExecutedDashCancel))
+            {
+                PushApprovedActionStartClientRpc(actionIntent, _hostPlayerState, _authoritativeStateClientRpcParams);
+            }
+        }
+
+        private void HandleAuthoritativeAttackStepStarted(int comboIndex)
+        {
+            if (!IsServer || !_hasPendingApprovedComboActionIntent || comboIndex <= 0)
+            {
+                return;
+            }
+
+            int currentServerTick = ResolveCurrentServerTick();
+            _hostPlayerState.RecordAcceptedAction(_pendingApprovedComboActionIntent, _health, currentServerTick, comboIndex);
+            _hostPlayerReactionResolver.SyncRuntimeState(_playerController, _health, currentServerTick, ref _hostPlayerState);
+
+            if (!IsOwner)
+            {
+                PushApprovedActionStartClientRpc(_pendingApprovedComboActionIntent, _hostPlayerState, _authoritativeStateClientRpcParams);
+            }
+
+            ClearPendingApprovedComboActionIntent();
         }
 
         private void HandleAttackDamageResolved(int totalDamage)
@@ -971,7 +1059,7 @@ namespace Core.Multiplayer
                     currentServerTick,
                     out HostPlayerReactionResolver.RawHitLogEntry rawHitLogEntry))
             {
-                LogHostDamageContribution(rawHitLogEntry);
+                _ = rawHitLogEntry;
             }
         }
 
@@ -993,117 +1081,19 @@ namespace Core.Multiplayer
             {
                 _latestHostReactionSnapshot = snapshot;
                 _hasLatestHostReactionSnapshot = snapshot.IsValid;
-                LogHostReactionSnapshot(snapshot);
-            }
-        }
 
-        private void PushBossPresentationToOwnerClient()
-        {
-            if (!TryCaptureBossPresentationSnapshot(out BossPresentationSnapshot snapshot))
-            {
-                return;
-            }
-
-            PushBossPresentationSnapshotClientRpc(snapshot, _authoritativeStateClientRpcParams);
-        }
-
-        private bool TryCaptureBossPresentationSnapshot(out BossPresentationSnapshot snapshot)
-        {
-            snapshot = default;
-
-            if (!TryResolveBossPresentationRuntime())
-            {
-                return false;
-            }
-
-            snapshot.Position = _bossController.transform.position;
-            snapshot.Rotation = _bossController.transform.rotation;
-            snapshot.PlaybackSpeed = _bossAnimator != null ? Mathf.Max(0.01f, _bossAnimator.speed) : 1f;
-            snapshot.SpeedParameter = _bossAnimator != null ? _bossAnimator.GetFloat(BossAnimatorSpeedParam) : 0f;
-
-            if (_bossAnimator == null)
-            {
-                return true;
-            }
-
-            AnimatorStateInfo stateInfo = _bossAnimator.GetCurrentAnimatorStateInfo(0);
-            if (_bossAnimator.IsInTransition(0))
-            {
-                AnimatorStateInfo nextStateInfo = _bossAnimator.GetNextAnimatorStateInfo(0);
-                if (nextStateInfo.shortNameHash != 0)
+                if (snapshot.HasFlag(HostPlayerReactionFlags.InterruptedAction)
+                    || snapshot.HasFlag(HostPlayerReactionFlags.Stun)
+                    || snapshot.HasFlag(HostPlayerReactionFlags.Death))
                 {
-                    stateInfo = nextStateInfo;
+                    ClearPendingApprovedComboActionIntent();
+                }
+
+                if (!IsOwner)
+                {
+                    PushReactionSnapshotClientRpc(snapshot, _authoritativeStateClientRpcParams);
                 }
             }
-
-            snapshot.StateHash = stateInfo.shortNameHash;
-            snapshot.NormalizedTime = Mathf.Repeat(stateInfo.normalizedTime, 1f);
-            return true;
-        }
-
-        private void ApplyBossPresentationSnapshot()
-        {
-            if (!_hasLatestBossPresentationSnapshot || !TryResolveBossPresentationRuntime())
-            {
-                return;
-            }
-
-            _bossController.transform.SetPositionAndRotation(
-                _latestBossPresentationSnapshot.Position,
-                _latestBossPresentationSnapshot.Rotation);
-
-            if (_bossAnimator == null)
-            {
-                return;
-            }
-
-            _bossAnimator.speed = Mathf.Max(0.01f, _latestBossPresentationSnapshot.PlaybackSpeed);
-            _bossAnimator.SetFloat(
-                BossAnimatorSpeedParam,
-                Mathf.Clamp01(_latestBossPresentationSnapshot.SpeedParameter));
-
-            if (_latestBossPresentationSnapshot.StateHash == 0
-                || !_bossAnimator.HasState(0, _latestBossPresentationSnapshot.StateHash))
-            {
-                return;
-            }
-
-            AnimatorStateInfo currentStateInfo = _bossAnimator.GetCurrentAnimatorStateInfo(0);
-            float normalizedTimeDelta = Mathf.Abs(
-                Mathf.Repeat(currentStateInfo.normalizedTime, 1f)
-                - _latestBossPresentationSnapshot.NormalizedTime);
-
-            if (currentStateInfo.shortNameHash != _latestBossPresentationSnapshot.StateHash
-                || normalizedTimeDelta > 0.15f)
-            {
-                _bossAnimator.Play(
-                    _latestBossPresentationSnapshot.StateHash,
-                    0,
-                    _latestBossPresentationSnapshot.NormalizedTime);
-            }
-        }
-
-        private bool TryResolveBossPresentationRuntime()
-        {
-            if (_bossController == null)
-            {
-                _bossController = FindObjectOfType<BossController>();
-            }
-
-            if (_bossController == null)
-            {
-                _bossAnimator = null;
-                return false;
-            }
-
-            if (_bossAnimator == null)
-            {
-                _bossAnimator = _bossController.Visual != null
-                    ? _bossController.Visual.Animator
-                    : null;
-            }
-
-            return true;
         }
 
         private void SyncReplicatedHudHealthState()
@@ -1233,6 +1223,92 @@ namespace Core.Multiplayer
             return false;
         }
 
+        public bool TryGetReplicatedHealth(out int currentHealth, out int maxHealth)
+        {
+            return TryResolveHudHealthValues(allowLocalFallback: IsServer, out currentHealth, out maxHealth);
+        }
+
+        public bool TryGetResultDeathState(out bool isDead)
+        {
+            if (TryGetReplicatedHealth(out int currentHealth, out int maxHealth))
+            {
+                isDead = maxHealth > 0 && currentHealth <= 0;
+                return true;
+            }
+
+            if (_playerController != null
+                && _playerController.StateMachine != null
+                && _playerController.StateMachine.CurrentState == _playerController.DeadState)
+            {
+                isDead = true;
+                return true;
+            }
+
+            if (IsServer && _health != null && _health.MaxHealth > 0)
+            {
+                isDead = _health.IsDead;
+                return true;
+            }
+
+            isDead = false;
+            return false;
+        }
+
+        public void SubmitRetryReadyIfOwner()
+        {
+            if (!IsSpawned || !IsOwner || _replicatedRetryReady.Value)
+            {
+                return;
+            }
+
+            if (IsServer)
+            {
+                _replicatedRetryReady.Value = true;
+                return;
+            }
+
+            SubmitRetryReadyServerRpc();
+        }
+
+        public static int GetActiveAvatarCount()
+        {
+            PruneActiveAvatarRegistry();
+            return _activeAvatars.Count;
+        }
+
+        public static bool TryGetActiveAvatar(int index, out MultiplayerPlayerAvatar avatar)
+        {
+            PruneActiveAvatarRegistry();
+            if (index >= 0 && index < _activeAvatars.Count)
+            {
+                avatar = _activeAvatars[index];
+                return avatar != null;
+            }
+
+            avatar = null;
+            return false;
+        }
+
+        public static bool TryGetLocalAvatar(out MultiplayerPlayerAvatar avatar)
+        {
+            PruneActiveAvatarRegistry();
+
+            for (int i = 0; i < _activeAvatars.Count; i++)
+            {
+                MultiplayerPlayerAvatar candidate = _activeAvatars[i];
+                if (candidate == null || !candidate.IsSpawned || !candidate.IsOwner)
+                {
+                    continue;
+                }
+
+                avatar = candidate;
+                return true;
+            }
+
+            avatar = null;
+            return false;
+        }
+
         private string ResolveHudPlayerLabel(bool isLocalPlayer)
         {
             string baseLabel = OwnerClientId == NetworkManager.ServerClientId
@@ -1302,6 +1378,8 @@ namespace Core.Multiplayer
             _nextLocalActionSequence = 0;
             _lastAppliedAuthoritativeInputSequence = 0;
             _lastReceivedAuthoritativeServerTick = 0;
+            _lastAppliedClientAuthoritativeActionSequence = 0;
+            _lastAppliedClientReactionSequence = 0;
             _serverLatestReceivedInputSequence = 0;
             _serverLastProcessedInputSequence = 0;
             _serverNextInputSequenceToProcess = 1;
@@ -1309,20 +1387,17 @@ namespace Core.Multiplayer
             _hostPlayerState = default;
             _latestHostReactionSnapshot = default;
             _hasLatestHostReactionSnapshot = false;
+            _pendingApprovedComboActionIntent = default;
+            _hasPendingApprovedComboActionIntent = false;
             _lastObservedActionButtons = 0;
             _lastBufferedActionButtons = 0;
-            _disconnectProfileSawMoveInput = false;
-            _disconnectProfileSawActionButtons = false;
-            _disconnectProfileLastInputSequence = 0;
-            _disconnectProfileLastSourceLabel = "none";
-            _hasLoggedDisconnectProfileBaseline = false;
-            _lastLoggedDisconnectProfileLabel = string.Empty;
-            _bossController = null;
-            _bossAnimator = null;
-            _latestBossPresentationSnapshot = default;
-            _hasLatestBossPresentationSnapshot = false;
             _hudPartnerAvatar = null;
             _hudController = null;
+
+            if (IsServer)
+            {
+                _replicatedRetryReady.Value = false;
+            }
 
             for (int i = 0; i < _clientInputHistory.Length; i++)
             {
@@ -1335,6 +1410,87 @@ namespace Core.Multiplayer
             }
 
             ClearServerInputBuffer();
+        }
+
+        private static void RegisterActiveAvatar(MultiplayerPlayerAvatar avatar)
+        {
+            if (avatar == null || _activeAvatars.Contains(avatar))
+            {
+                return;
+            }
+
+            _activeAvatars.Add(avatar);
+        }
+
+        private static void UnregisterActiveAvatar(MultiplayerPlayerAvatar avatar)
+        {
+            if (avatar == null)
+            {
+                return;
+            }
+
+            _activeAvatars.Remove(avatar);
+        }
+
+        private static void PruneActiveAvatarRegistry()
+        {
+            for (int i = _activeAvatars.Count - 1; i >= 0; i--)
+            {
+                MultiplayerPlayerAvatar avatar = _activeAvatars[i];
+                if (avatar != null && avatar.IsSpawned)
+                {
+                    continue;
+                }
+
+                _activeAvatars.RemoveAt(i);
+            }
+        }
+
+        private void ApplyAuthoritativeActionStartLocally(in ClientToHostPlayerActionIntent actionIntent, in HostPlayerState hostPlayerState)
+        {
+            if (actionIntent.ActionSequence <= _lastAppliedClientAuthoritativeActionSequence)
+            {
+                return;
+            }
+
+            _lastAppliedClientAuthoritativeActionSequence = actionIntent.ActionSequence;
+
+            if (actionIntent.RequestedFlag != InputFlag.Attack)
+            {
+                if (actionIntent.RequestedFlag != InputFlag.Dash)
+                {
+                    return;
+                }
+            }
+
+            float authoritativeElapsedTime = 0f;
+            if (hostPlayerState.LastAcceptedActionStartTick > 0)
+            {
+                int elapsedTicks = Mathf.Max(0, ResolveCurrentServerTick() - hostPlayerState.LastAcceptedActionStartTick);
+                authoritativeElapsedTime = elapsedTicks * ResolveFixedDeltaTime();
+            }
+
+            if (actionIntent.RequestedFlag == InputFlag.Attack)
+            {
+                int approvedComboIndex = hostPlayerState.LastAcceptedComboIndex >= 0
+                    ? hostPlayerState.LastAcceptedComboIndex
+                    : 0;
+                _playerController.TryStartAuthoritativeAttackComboStep(approvedComboIndex, authoritativeElapsedTime, actionIntent.FacingYaw);
+                return;
+            }
+
+            _playerController.TryStartAuthoritativeDash(authoritativeElapsedTime, actionIntent.FacingYaw);
+        }
+
+        private void ApplyAuthoritativeReactionLocally(in HostToClientPlayerReactionSnapshot snapshot)
+        {
+            if (!snapshot.IsValid || snapshot.ReactionSequence <= _lastAppliedClientReactionSequence)
+            {
+                return;
+            }
+
+            _lastAppliedClientReactionSequence = snapshot.ReactionSequence;
+            _playerController.ApplyAuthoritativeReactionSnapshot(snapshot);
         }
 
         private float ResolveFixedDeltaTime()
@@ -1389,116 +1545,10 @@ namespace Core.Multiplayer
                 : "clientPlayer";
         }
 
-        public bool HasNoActionDisconnectProfile
-        {
-            get { return !_disconnectProfileSawActionButtons; }
-        }
-
-        public string BuildConnectionDebugProfile()
-        {
-            return
-                $"name={gameObject.name} " +
-                $"owner={OwnerClientId} " +
-                $"objectId={NetworkObjectId} " +
-                $"server={IsServer} " +
-                $"ownerLocal={IsOwner} " +
-                $"inputProfile={ResolveDisconnectInputProfileLabel()} " +
-                $"lastInputSeq={_disconnectProfileLastInputSequence} " +
-                $"lastSource={_disconnectProfileLastSourceLabel}";
-        }
-
         private static int PositiveModulo(int value, int modulo)
         {
             int result = value % modulo;
             return result < 0 ? result + modulo : result;
-        }
-
-        private void TrackDisconnectInputProfile(in PlayerInputPacket input, int inputSequence, string sourceLabel)
-        {
-            TryLogDisconnectProfileBaseline(sourceLabel);
-            string previousProfile = ResolveDisconnectInputProfileLabel();
-
-            if (inputSequence < _disconnectProfileLastInputSequence)
-            {
-                return;
-            }
-
-            _disconnectProfileLastInputSequence = inputSequence;
-            _disconnectProfileLastSourceLabel = sourceLabel;
-
-            if (input.moveDir.sqrMagnitude > DisconnectProfileMoveThresholdSqr)
-            {
-                _disconnectProfileSawMoveInput = true;
-            }
-
-            if ((input.buttons & (byte)(InputFlag.Dash | InputFlag.Attack | InputFlag.Jump)) != 0)
-            {
-                _disconnectProfileSawActionButtons = true;
-            }
-
-            TryLogDisconnectProfileTransition(previousProfile, ResolveDisconnectInputProfileLabel(), sourceLabel, inputSequence);
-        }
-
-        private string ResolveDisconnectInputProfileLabel()
-        {
-            if (_disconnectProfileSawActionButtons)
-            {
-                return "action-observed";
-            }
-
-            return _disconnectProfileSawMoveInput ? "idle-walk-only" : "idle-only";
-        }
-
-        private void TryLogDisconnectProfileBaseline(string sourceLabel)
-        {
-            if (_hasLoggedDisconnectProfileBaseline)
-            {
-                return;
-            }
-
-            string currentProfile = ResolveDisconnectInputProfileLabel();
-            if (!MultiplayerSessionService.TryLogAvatarConnectionProfileBaseline(
-                this,
-                currentProfile,
-                sourceLabel,
-                _disconnectProfileLastInputSequence))
-            {
-                return;
-            }
-
-            _hasLoggedDisconnectProfileBaseline = true;
-            _lastLoggedDisconnectProfileLabel = currentProfile;
-        }
-
-        private void TryLogDisconnectProfileTransition(
-            string previousProfile,
-            string currentProfile,
-            string sourceLabel,
-            int inputSequence)
-        {
-            if (string.Equals(previousProfile, currentProfile, StringComparison.Ordinal)
-                || string.Equals(_lastLoggedDisconnectProfileLabel, currentProfile, StringComparison.Ordinal))
-            {
-                return;
-            }
-
-            if (!MultiplayerSessionService.TryLogAvatarConnectionProfileTransition(
-                this,
-                previousProfile,
-                currentProfile,
-                sourceLabel,
-                inputSequence))
-            {
-                return;
-            }
-
-            _lastLoggedDisconnectProfileLabel = currentProfile;
-        }
-
-        private void LogRuntimeRoleConfiguration()
-        {
-            Debug.Log(
-                $"MultiplayerPlayerAvatar: role configured name={gameObject.name} predictionPath=PredictionReconciliation server={IsServer} owner={IsOwner} mode={_playerController.SimulationMode}");
         }
 
         private static bool IsWithinOwnerCorrectionDeadzone(in MultiplayerLocomotionState predictedState, in MultiplayerLocomotionState authoritativeState)
@@ -1542,119 +1592,35 @@ namespace Core.Multiplayer
             return (buttons & (byte)(InputFlag.Attack | InputFlag.Jump)) == 0;
         }
 
-        private void LogObservedActionIntent(in ClientToHostPlayerActionIntent actionIntent, string sourceLabel, bool submittedToServer)
+        private static float ResolveActionIntentFacingYaw(in PlayerInputPacket input, InputFlag requestedFlag)
         {
-            if (!_enableActionAuthorityTrace)
+            if (requestedFlag != InputFlag.Dash || input.moveDir.sqrMagnitude <= 0.0001f)
             {
-                return;
+                return input.lookYaw;
             }
 
-            Debug.Log(
-                $"[MultiplayerActionIntentTrace] " +
-                $"phase=observe " +
-                $"name={gameObject.name} " +
-                $"source={sourceLabel} " +
-                $"submit={submittedToServer} " +
-                $"seq={actionIntent.ActionSequence} " +
-                $"tick={actionIntent.ClientTick} " +
-                $"flag={actionIntent.RequestedFlag}");
+            Quaternion lookRotation = Quaternion.Euler(0f, input.lookYaw, 0f);
+            Vector3 camForward = lookRotation * Vector3.forward;
+            camForward.y = 0f;
+            camForward.Normalize();
+
+            Vector3 camRight = lookRotation * Vector3.right;
+            camRight.y = 0f;
+            camRight.Normalize();
+
+            Vector3 moveDirection = (camForward * input.moveDir.y + camRight * input.moveDir.x).normalized;
+            if (moveDirection.sqrMagnitude <= 0.0001f)
+            {
+                return input.lookYaw;
+            }
+
+            return Quaternion.LookRotation(moveDirection).eulerAngles.y;
         }
 
-        private void LogActionIntentRpcReceived(in ClientToHostPlayerActionIntent actionIntent, ulong senderClientId, string sourceLabel)
+        private void ClearPendingApprovedComboActionIntent()
         {
-            if (!_enableActionAuthorityTrace)
-            {
-                return;
-            }
-
-            Debug.Log(
-                $"[MultiplayerActionIntentTrace] " +
-                $"phase=rpc-received " +
-                $"name={gameObject.name} " +
-                $"source={sourceLabel} " +
-                $"sender={senderClientId} " +
-                $"owner={OwnerClientId} " +
-                $"objectId={NetworkObjectId} " +
-                $"seq={actionIntent.ActionSequence} " +
-                $"tick={actionIntent.ClientTick} " +
-                $"flag={actionIntent.RequestedFlag}");
-        }
-
-        private void LogValidatedActionIntent(in ClientToHostPlayerActionIntent actionIntent, ulong senderClientId, string sourceLabel, bool isAccepted, string rejectionReason)
-        {
-            if (!_enableActionAuthorityTrace)
-            {
-                return;
-            }
-
-            Debug.Log(
-                $"[MultiplayerActionIntentTrace] " +
-                $"phase=validate " +
-                $"name={gameObject.name} " +
-                $"source={sourceLabel} " +
-                $"sender={senderClientId} " +
-                $"accepted={isAccepted} " +
-                $"reason={(string.IsNullOrEmpty(rejectionReason) ? "none" : rejectionReason)} " +
-                $"seq={actionIntent.ActionSequence} " +
-                $"tick={actionIntent.ClientTick} " +
-                $"flag={actionIntent.RequestedFlag}");
-        }
-
-        private void LogHostAuthoritativeState(in ClientToHostPlayerActionIntent actionIntent, in HostPlayerState hostPlayerState)
-        {
-            if (!_enableActionAuthorityTrace)
-            {
-                return;
-            }
-
-            Debug.Log(
-                $"[MultiplayerActionIntentTrace] " +
-                $"phase=host-state " +
-                $"name={gameObject.name} " +
-                $"seq={actionIntent.ActionSequence} " +
-                $"flag={actionIntent.RequestedFlag} " +
-                $"active={hostPlayerState.ActiveActionFlag} " +
-                $"acceptedAction={hostPlayerState.LastAcceptedActionFlag} " +
-                $"startTick={hostPlayerState.LastAcceptedActionStartTick} " +
-                $"hp={hostPlayerState.CurrentHealth}/{hostPlayerState.MaxHealth}");
-        }
-
-        private void LogHostReactionSnapshot(in HostToClientPlayerReactionSnapshot snapshot)
-        {
-            if (!_enableActionAuthorityTrace)
-            {
-                return;
-            }
-
-            Debug.Log(
-                $"[MultiplayerActionIntentTrace] " +
-                $"phase=reaction-snapshot " +
-                $"name={gameObject.name} " +
-                $"reactionSeq={snapshot.ReactionSequence} " +
-                $"serverTick={snapshot.ServerTick} " +
-                $"flags={snapshot.ReactionFlags} " +
-                $"damage={snapshot.DamageAmount} " +
-                $"hp={snapshot.ResultHealth}/{snapshot.MaxHealth} " +
-                $"sourceHit={snapshot.SourceHitTypeValue} " +
-                $"interrupted={snapshot.InterruptedActionFlag}");
-        }
-
-        private void LogHostDamageContribution(in HostPlayerReactionResolver.RawHitLogEntry rawHitLogEntry)
-        {
-            if (!_enableActionAuthorityTrace)
-            {
-                return;
-            }
-
-            Debug.Log(
-                $"[MultiplayerActionIntentTrace] " +
-                $"phase=raw-hit-log " +
-                $"name={gameObject.name} " +
-                $"dealer={rawHitLogEntry.DealerClientId} " +
-                $"action={rawHitLogEntry.ActionFlag} " +
-                $"seq={rawHitLogEntry.ActionSequence} " +
-                $"damage={rawHitLogEntry.DamageAmount} " +
-                $"serverTick={rawHitLogEntry.ServerTick}");
+            _pendingApprovedComboActionIntent = default;
+            _hasPendingApprovedComboActionIntent = false;
         }
     }
 }

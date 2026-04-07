@@ -45,15 +45,14 @@ namespace Core.Multiplayer
             switch (actionIntent.RequestedFlag)
             {
                 case InputFlag.Dash:
+                    if (controller.StateMachine.CurrentState == controller.AttackState)
+                    {
+                        return controller.CanCancelAttackIntoAuthoritativeDash(out rejectionReason);
+                    }
+
                     if (!controller.CanDash)
                     {
                         rejectionReason = "dash-cooldown";
-                        return false;
-                    }
-
-                    if (controller.StateMachine.CurrentState == controller.AttackState)
-                    {
-                        rejectionReason = "attack-active";
                         return false;
                     }
 
@@ -69,8 +68,7 @@ namespace Core.Multiplayer
 
                     if (controller.StateMachine.CurrentState == controller.AttackState)
                     {
-                        rejectionReason = "attack-active";
-                        return false;
+                        return controller.CanQueueAuthoritativeAttackCombo(out rejectionReason);
                     }
 
                     if (controller.StateMachine.CurrentState == controller.DashState)

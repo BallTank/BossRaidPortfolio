@@ -11,22 +11,43 @@ namespace Core.Player.States
         private bool _reserveNextCombo;
         private bool _wasAttackPressed;
         private float _currentVerticalVelocity;
+        private float _pendingAuthoritativeElapsedTime;
+        private bool _hasExplicitEntryComboIndex;
 
         // 캐싱된 공격 데이터 (매 프레임 배열 접근 방지)
         private AttackComboData _currentAttackData;
+
+        public int CurrentComboIndex => _comboIndex;
+        public bool HasNextComboStep => Controller.AttackCombos != null && _comboIndex + 1 < Controller.AttackCombos.Length;
+        public bool HasReservedNextCombo => _reserveNextCombo;
+        public bool CanAcceptNextComboInput => Controller.AttackCombos != null
+                                               && Controller.AttackCombos.Length > 0
+                                               && _timer <= _currentAttackData.comboInputWindow;
+        public bool CanCancelIntoDashNow => _timer >= _currentAttackData.cancelStartTime;
 
         public AttackState(PlayerController controller) : base(controller) { }
 
         public void SetComboIndex(int index)
         {
             _comboIndex = index;
+            _hasExplicitEntryComboIndex = true;
+        }
+
+        public void SetAuthoritativeElapsedTime(float elapsedTime)
+        {
+            _pendingAuthoritativeElapsedTime = Mathf.Max(0f, elapsedTime);
         }
 
         // FSM 진입 (최초 1회만 호출됨)
         public override void Enter()
         {
             // 콤보 시작 시점
-            _comboIndex = 0;
+            if (!_hasExplicitEntryComboIndex)
+            {
+                _comboIndex = 0;
+            }
+
+            _hasExplicitEntryComboIndex = false;
             _currentVerticalVelocity = 0f;
 
             StartComboStep();
@@ -53,7 +74,8 @@ namespace Core.Player.States
             Controller.CurrentAttackDamage = _currentAttackData.damage;
 
             // 상태 리셋
-            _timer = 0f;
+            _timer = Mathf.Min(_pendingAuthoritativeElapsedTime, _currentAttackData.duration);
+            _pendingAuthoritativeElapsedTime = 0f;
             _reserveNextCombo = false;
             _wasAttackPressed = true; // 진입 시점 버튼 눌림 가정 (Edge Trigger 준비)
 
@@ -70,6 +92,7 @@ namespace Core.Player.States
             // 방향 보정
             RotateToCamera();
             Controller.SetPendingComboHudStep(_comboIndex + 1);
+            Controller.NotifyAuthoritativeAttackStepStarted(_comboIndex);
         }
 
         public override void Update(PlayerInputPacket input)
@@ -90,6 +113,12 @@ namespace Core.Player.States
 
         private void HandleInput(PlayerInputPacket input)
         {
+            if (!Controller.CanQueueAttackComboFromInput)
+            {
+                _wasAttackPressed = input.HasFlag(InputFlag.Attack);
+                return;
+            }
+
             // 선입력 구간 체크
             if (_timer <= _currentAttackData.comboInputWindow)
             {
@@ -104,6 +133,11 @@ namespace Core.Player.States
 
         private bool CheckDashCancel(PlayerInputPacket input)
         {
+            if (!Controller.CanCancelAttackIntoDashFromInput)
+            {
+                return false;
+            }
+
             if (_timer >= _currentAttackData.cancelStartTime)
             {
                 if (input.HasFlag(InputFlag.Dash) && Controller.CanDash)
@@ -138,6 +172,49 @@ namespace Core.Player.States
             return false;
         }
 
+        public bool TryQueueAuthoritativeNextCombo(float? authoritativeFacingYaw, out int nextComboIndex)
+        {
+            nextComboIndex = _comboIndex + 1;
+
+            if (_reserveNextCombo || !HasNextComboStep || !CanAcceptNextComboInput)
+            {
+                return false;
+            }
+
+            if (authoritativeFacingYaw.HasValue)
+            {
+                Controller.SetPendingAuthoritativeAttackFacingYaw(authoritativeFacingYaw.Value);
+            }
+
+            _reserveNextCombo = true;
+            return true;
+        }
+
+        public bool TryApplyAuthoritativeComboStep(int comboIndex, float elapsedTime = 0f, float? authoritativeFacingYaw = null)
+        {
+            if (Controller.AttackCombos == null
+                || comboIndex < 0
+                || comboIndex >= Controller.AttackCombos.Length)
+            {
+                return false;
+            }
+
+            if (authoritativeFacingYaw.HasValue)
+            {
+                Controller.SetPendingAuthoritativeAttackFacingYaw(authoritativeFacingYaw.Value);
+            }
+            else
+            {
+                Controller.ClearPendingAuthoritativeAttackFacingYaw();
+            }
+
+            _comboIndex = comboIndex;
+            _pendingAuthoritativeElapsedTime = Mathf.Max(0f, elapsedTime);
+            _hasExplicitEntryComboIndex = false;
+            StartComboStep();
+            return true;
+        }
+
         private void HandlePhysics()
         {
             if (Controller.CharController.isGrounded)
@@ -160,14 +237,15 @@ namespace Core.Player.States
             Controller.HideComboHud();
             _comboIndex = 0;
             _reserveNextCombo = false;
+            _hasExplicitEntryComboIndex = false;
+            Controller.ClearPendingAuthoritativeAttackFacingYaw();
+            Controller.ClearPendingAuthoritativeDashFacingYaw();
         }
 
         private void RotateToCamera()
         {
-            Transform cameraRoot = Controller.CameraRoot;
-            Vector3 lookDir = cameraRoot.forward;
-            lookDir.y = 0;
-            if (lookDir != Vector3.zero)
+            Vector3 lookDir = Controller.GetAttackFacingDirection();
+            if (lookDir.sqrMagnitude > 0.0001f)
             {
                 Controller.transform.rotation = Quaternion.LookRotation(lookDir);
             }

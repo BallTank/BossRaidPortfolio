@@ -50,7 +50,7 @@ namespace Core.Player.States
 
             // Attack Transition (지면/공중 모두 가능)
             bool attackPressed = input.HasFlag(InputFlag.Attack);
-            if (attackPressed && !_wasAttackPressed)
+            if (attackPressed && !_wasAttackPressed && Controller.CanStartAttackFromInput)
             {
                 Controller.StateMachine.ChangeState(Controller.AttackState);
                 return;

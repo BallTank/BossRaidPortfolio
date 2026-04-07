@@ -144,6 +144,13 @@ namespace Core.Player
             }
 
             bool nextDashActive = dashStartedThisTick || nextDashTimer > 0f;
+            bool dashEndedThisTick = wasDashActive && !nextDashActive;
+            if (dashEndedThisTick && input.moveDir.sqrMagnitude <= 0.0001f)
+            {
+                // 대시 종료 직후 입력이 없으면 마지막 대시 속도를 보행 블렌드에 넘기지 않는다.
+                nextPlanarVelocity = Vector3.zero;
+            }
+
             float locomotionBlendSpeed = ResolveLocomotionBlendSpeed(controller, input.moveDir.magnitude, nextPlanarVelocity);
 
             if (updateAnimator && controller.Animator != null)
@@ -152,7 +159,7 @@ namespace Core.Player
                 {
                     controller.Animator.CrossFade(PlayerController.ANIM_STATE_DASH, 0.05f);
                 }
-                else if (wasDashActive && !nextDashActive)
+                else if (dashEndedThisTick)
                 {
                     controller.Animator.CrossFade(PlayerController.ANIM_STATE_LOCOMOTION, 0.05f);
                     controller.Animator.SetFloat(PlayerController.ANIM_PARAM_SPEED, locomotionBlendSpeed);

@@ -10,6 +10,7 @@ namespace Core.Multiplayer
         public int ActionSequence;
         public int ClientTick;
         public byte RequestedAction;
+        public float FacingYaw;
 
         public InputFlag RequestedFlag => (InputFlag)RequestedAction;
 
@@ -27,13 +28,14 @@ namespace Core.Multiplayer
             }
         }
 
-        public static ClientToHostPlayerActionIntent Create(InputFlag requestedFlag, int actionSequence, int clientTick)
+        public static ClientToHostPlayerActionIntent Create(InputFlag requestedFlag, int actionSequence, int clientTick, float facingYaw)
         {
             return new ClientToHostPlayerActionIntent
             {
                 ActionSequence = actionSequence,
                 ClientTick = clientTick,
-                RequestedAction = (byte)requestedFlag
+                RequestedAction = (byte)requestedFlag,
+                FacingYaw = facingYaw
             };
         }
 
@@ -42,6 +44,7 @@ namespace Core.Multiplayer
             serializer.SerializeValue(ref ActionSequence);
             serializer.SerializeValue(ref ClientTick);
             serializer.SerializeValue(ref RequestedAction);
+            serializer.SerializeValue(ref FacingYaw);
         }
     }
 }

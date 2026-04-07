@@ -21,6 +21,14 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         AuthoritativeLocomotion
     }
 
+    public enum ActionAuthorityMode
+    {
+        SoloLocal,
+        HostAuthoritative,
+        ClientOwnerProxy,
+        RemoteDisplayOnly
+    }
+
     public delegate void BossAttackResolvedHandler(in BossAttackHitData hitData, BossAttackHitResolution resolution);
 
     [Header("Movement Settings")]
@@ -62,6 +70,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
     [Header("Runtime Multiplayer")]
     [SerializeField] private RuntimeSimulationMode _simulationMode = RuntimeSimulationMode.Full;
+    [SerializeField, HideInInspector] private ActionAuthorityMode _actionAuthorityMode = ActionAuthorityMode.SoloLocal;
     [SerializeField] private bool _isLocalPresentationEnabled = true;
     [SerializeField] private bool _driveCameraRootFromLookInput;
 
@@ -122,6 +131,8 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     private bool _suppressDamageTakenReaction;
     private float _latestLookYaw;
     private float _latestLookPitch;
+    private bool _hasPendingAuthoritativeDashFacingYaw;
+    private float _pendingAuthoritativeDashFacingYaw;
     private BossAttackHitType _activeStunSourceHitType;
     private float _attack2DebugTraceTimer;
     private float _nextAttack2DebugLogTime;
@@ -129,8 +140,11 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     private bool _wasAttack2NearLastFrame;
     private Core.Boss.BossController _attack2DebugBoss;
     private int _pendingComboHudStep;
+    private bool _hasPendingAuthoritativeAttackFacingYaw;
+    private float _pendingAuthoritativeAttackFacingYaw;
 
     public event Action<int> AttackDamageResolved;
+    public event Action<int> AuthoritativeAttackStepStarted;
     public event BossAttackResolvedHandler BossAttackResolved;
 
     // Public Properties for States
@@ -147,8 +161,21 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     public StateMachine<PlayerBaseState> StateMachine => _stateMachine;
     public CombatHUDController CombatHUD => _combatHUD;
     public RuntimeSimulationMode SimulationMode => _simulationMode;
+    public ActionAuthorityMode CurrentActionAuthorityMode => _actionAuthorityMode;
+    public int CurrentAttackComboIndex => AttackState != null && _stateMachine != null && _stateMachine.CurrentState == AttackState
+        ? AttackState.CurrentComboIndex
+        : -1;
     public float NetworkLocomotionGroundedGravityValue => NetworkLocomotionGroundedGravity;
     internal bool IsLocalPresentationEnabled => _isLocalPresentationEnabled;
+    public bool CanStartAttackFromInput => _actionAuthorityMode == ActionAuthorityMode.SoloLocal;
+    public bool CanQueueAttackComboFromInput => _actionAuthorityMode == ActionAuthorityMode.SoloLocal;
+    public bool CanCancelAttackIntoDashFromInput => _actionAuthorityMode == ActionAuthorityMode.SoloLocal;
+    public bool CanEmitAttackHitbox => _actionAuthorityMode == ActionAuthorityMode.SoloLocal
+                                       || _actionAuthorityMode == ActionAuthorityMode.HostAuthoritative;
+    public bool CanApplyLocalDamageReaction => _actionAuthorityMode == ActionAuthorityMode.SoloLocal
+                                               || _actionAuthorityMode == ActionAuthorityMode.HostAuthoritative;
+    public bool CanResolveBossHitLocally => _actionAuthorityMode == ActionAuthorityMode.SoloLocal
+                                            || _actionAuthorityMode == ActionAuthorityMode.HostAuthoritative;
     internal float MultiplayerPredictedRenderSmoothTime => _multiplayerPredictedRenderSmoothTime;
     internal float MultiplayerPredictedRenderSnapDistance => _multiplayerPredictedRenderSnapDistance;
     public LayerMask MultiplayerLocomotionCollisionMask => ResolveMultiplayerLocomotionCollisionMask();
@@ -288,7 +315,15 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         }
         else if (_simulationMode == RuntimeSimulationMode.PredictedLocomotion)
         {
-            EnsureMultiplayerPresentationDriver().UpdatePredictedLocomotionPresentation(input);
+            if (ShouldDriveAuthoritativeActionStateInPredictedLocomotion())
+            {
+                EnsureMultiplayerPresentationDriver().ResetPresentationRotationToRoot();
+                _stateMachine.CurrentState?.Update(input);
+            }
+            else
+            {
+                EnsureMultiplayerPresentationDriver().UpdatePredictedLocomotionPresentation(input);
+            }
         }
         else
         {
@@ -318,6 +353,50 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         camRight.Normalize();
 
         return (camForward * inputDir.y + camRight * inputDir.x).normalized;
+    }
+
+    public Vector3 GetAttackFacingDirection()
+    {
+        if (_hasPendingAuthoritativeAttackFacingYaw)
+        {
+            _hasPendingAuthoritativeAttackFacingYaw = false;
+            Vector3 authoritativeForward = Quaternion.Euler(0f, _pendingAuthoritativeAttackFacingYaw, 0f) * Vector3.forward;
+            authoritativeForward.y = 0f;
+            if (authoritativeForward.sqrMagnitude > 0.0001f)
+            {
+                return authoritativeForward.normalized;
+            }
+        }
+
+        if (_actionAuthorityMode == ActionAuthorityMode.ClientOwnerProxy)
+        {
+            // 클라이언트 오너 프록시는 cameraRoot가 늦게 갱신될 수 있으므로 최신 lookYaw를 우선 사용한다.
+            Vector3 lookForward = Quaternion.Euler(0f, _latestLookYaw, 0f) * Vector3.forward;
+            lookForward.y = 0f;
+            if (lookForward.sqrMagnitude > 0.0001f)
+            {
+                return lookForward.normalized;
+            }
+        }
+
+        if (cameraRoot != null)
+        {
+            Vector3 cameraForward = cameraRoot.forward;
+            cameraForward.y = 0f;
+            if (cameraForward.sqrMagnitude > 0.0001f)
+            {
+                return cameraForward.normalized;
+            }
+        }
+
+        Vector3 fallbackForward = transform.forward;
+        fallbackForward.y = 0f;
+        if (fallbackForward.sqrMagnitude > 0.0001f)
+        {
+            return fallbackForward.normalized;
+        }
+
+        return Vector3.forward;
     }
 
     /// <summary>
@@ -359,6 +438,18 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
         _simulationMode = simulationMode;
         EnsureMultiplayerPresentationDriver().HandleSimulationModeChanged(_simulationMode);
+    }
+
+    public void SetActionAuthorityMode(ActionAuthorityMode actionAuthorityMode)
+    {
+        _actionAuthorityMode = actionAuthorityMode;
+
+        if (actionAuthorityMode == ActionAuthorityMode.ClientOwnerProxy
+            || actionAuthorityMode == ActionAuthorityMode.RemoteDisplayOnly)
+        {
+            // 클라이언트 프록시는 공격 판정 소유권이 없으므로 남은 히트박스를 즉시 정리한다.
+            OnHitEnd();
+        }
     }
 
     public void SetLocalPresentationEnabled(bool enabled)
@@ -425,13 +516,19 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     private void HandleDamage(int damage)
     {
         if (_health == null || _health.IsDead) return;
+        if (!CanApplyLocalDamageReaction) return;
         if (_suppressDamageTakenReaction) return;
         if (_isStunned || _isPostStunInvulnerable) return;
 
-        _stateMachine.ChangeState(HitState);
+        EnterHitReactionState();
     }
 
     private void HandleDeath()
+    {
+        EnterDeadState();
+    }
+
+    private void EnterDeadState()
     {
         _isStunned = false;
         _isPostStunInvulnerable = false;
@@ -450,6 +547,12 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     public BossAttackHitResolution ReceiveBossAttackHit(in BossAttackHitData hitData)
     {
         BossAttackHitResolution resolution = BossAttackHitResolution.Ignored;
+
+        if (!CanResolveBossHitLocally)
+        {
+            NotifyBossAttackResolved(hitData, resolution);
+            return resolution;
+        }
 
         if (_health == null || _health.IsDead)
         {
@@ -569,10 +672,224 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         bool didDamage = TryApplyDamage(damage);
         if (didDamage && !_health.IsDead)
         {
-            _stateMachine.ChangeState(HitState);
+            EnterHitReactionState();
         }
 
         return didDamage;
+    }
+
+    private void EnterHitReactionState()
+    {
+        if (_stateMachine == null
+            || _health == null
+            || _health.IsDead
+            || _stateMachine.CurrentState == DeadState)
+        {
+            return;
+        }
+
+        _stateMachine.ChangeState(HitState);
+    }
+
+    private bool ShouldDriveAuthoritativeActionStateInPredictedLocomotion()
+    {
+        if (_actionAuthorityMode != ActionAuthorityMode.ClientOwnerProxy
+            || _stateMachine == null
+            || _stateMachine.CurrentState == null)
+        {
+            return false;
+        }
+
+        PlayerBaseState currentState = _stateMachine.CurrentState;
+        return currentState != MoveState
+               && currentState != JumpState;
+    }
+
+    public bool CanCancelAttackIntoAuthoritativeDash(out string rejectionReason)
+    {
+        if (_stateMachine == null
+            || AttackState == null
+            || _stateMachine.CurrentState != AttackState)
+        {
+            rejectionReason = "attack-inactive";
+            return false;
+        }
+
+        if (!CanDash)
+        {
+            rejectionReason = "dash-cooldown";
+            return false;
+        }
+
+        if (!AttackState.CanCancelIntoDashNow)
+        {
+            rejectionReason = "attack-cancel-window-closed";
+            return false;
+        }
+
+        rejectionReason = null;
+        return true;
+    }
+
+    public bool CanQueueAuthoritativeAttackCombo(out string rejectionReason)
+    {
+        if (_stateMachine == null
+            || AttackState == null
+            || _stateMachine.CurrentState != AttackState)
+        {
+            rejectionReason = "attack-inactive";
+            return false;
+        }
+
+        if (AttackState.HasReservedNextCombo)
+        {
+            rejectionReason = "combo-already-reserved";
+            return false;
+        }
+
+        if (!AttackState.HasNextComboStep)
+        {
+            rejectionReason = "combo-finished";
+            return false;
+        }
+
+        if (!AttackState.CanAcceptNextComboInput)
+        {
+            rejectionReason = "combo-window-closed";
+            return false;
+        }
+
+        rejectionReason = null;
+        return true;
+    }
+
+    public bool TryQueueAuthoritativeAttackCombo(float? authoritativeFacingYaw, out int queuedComboIndex)
+    {
+        queuedComboIndex = -1;
+
+        if (_stateMachine == null
+            || AttackState == null
+            || _stateMachine.CurrentState != AttackState)
+        {
+            return false;
+        }
+
+        return AttackState.TryQueueAuthoritativeNextCombo(authoritativeFacingYaw, out queuedComboIndex);
+    }
+
+    public bool TryStartAuthoritativeAttackComboStep(int comboIndex, float elapsedTime = 0f, float? authoritativeFacingYaw = null)
+    {
+        if (_stateMachine == null
+            || AttackState == null
+            || _health == null
+            || _health.IsDead)
+        {
+            return false;
+        }
+
+        PlayerBaseState currentState = _stateMachine.CurrentState;
+        if (currentState == null
+            || currentState == DashState
+            || currentState == HitState
+            || currentState == StunState
+            || currentState == DeadState)
+        {
+            return false;
+        }
+
+        if (authoritativeFacingYaw.HasValue)
+        {
+            SetPendingAuthoritativeAttackFacingYaw(authoritativeFacingYaw.Value);
+        }
+        else
+        {
+            ClearPendingAuthoritativeAttackFacingYaw();
+        }
+
+        if (currentState == AttackState)
+        {
+            return AttackState.TryApplyAuthoritativeComboStep(comboIndex, elapsedTime, authoritativeFacingYaw);
+        }
+
+        AttackState.SetComboIndex(comboIndex);
+        AttackState.SetAuthoritativeElapsedTime(elapsedTime);
+        _stateMachine.ChangeState(AttackState);
+        return true;
+    }
+
+    public bool TryStartAuthoritativeDash(float elapsedTime = 0f, float? authoritativeFacingYaw = null)
+    {
+        if (_stateMachine == null
+            || DashState == null
+            || _health == null
+            || _health.IsDead)
+        {
+            return false;
+        }
+
+        PlayerBaseState currentState = _stateMachine.CurrentState;
+        if (currentState == null
+            || currentState == DashState
+            || currentState == HitState
+            || currentState == StunState
+            || currentState == DeadState)
+        {
+            return false;
+        }
+
+        if (authoritativeFacingYaw.HasValue)
+        {
+            SetPendingAuthoritativeDashFacingYaw(authoritativeFacingYaw.Value);
+        }
+        else
+        {
+            ClearPendingAuthoritativeDashFacingYaw();
+        }
+
+        DashState.SetAuthoritativeElapsedTime(elapsedTime);
+        _stateMachine.ChangeState(DashState);
+        return true;
+    }
+
+    public bool TryStartAuthoritativeAttack1(float elapsedTime = 0f, float? authoritativeFacingYaw = null)
+    {
+        return TryStartAuthoritativeAttackComboStep(0, elapsedTime, authoritativeFacingYaw);
+    }
+
+    public bool ApplyAuthoritativeReactionSnapshot(in HostToClientPlayerReactionSnapshot snapshot)
+    {
+        if (!snapshot.IsValid || _stateMachine == null)
+        {
+            return false;
+        }
+
+        if (_isLocalPresentationEnabled && _combatHUD != null && snapshot.MaxHealth > 0)
+        {
+            _combatHUD.SetPlayerHpNormalized(
+                (float)Mathf.Clamp(snapshot.ResultHealth, 0, snapshot.MaxHealth) / snapshot.MaxHealth,
+                Mathf.Clamp(snapshot.ResultHealth, 0, snapshot.MaxHealth),
+                snapshot.MaxHealth);
+        }
+
+        if (snapshot.HasFlag(HostPlayerReactionFlags.Death))
+        {
+            EnterDeadState();
+            return true;
+        }
+
+        if (snapshot.HasFlag(HostPlayerReactionFlags.Stun))
+        {
+            BeginStun(Vector3.zero, snapshot.SourceHitTypeValue);
+            return true;
+        }
+
+        if (snapshot.HasFlag(HostPlayerReactionFlags.Hit))
+        {
+            EnterHitReactionState();
+            return true;
+        }
+
+        return false;
     }
 
     private void BeginStun(Vector3 forceDirection, BossAttackHitType sourceHitType)
@@ -787,7 +1104,10 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         }
 
         bool isMultiplayerSession = ShouldShowPartnerHud();
-        _combatHUD.Initialize(isMultiplayerSession ? null : _health, _bossHealthForHUD);
+        Health playerHudSource = isMultiplayerSession ? null : _health;
+        Health bossHudSource = isMultiplayerSession ? null : _bossHealthForHUD;
+
+        _combatHUD.Initialize(playerHudSource, bossHudSource);
         _combatHUD.SetPlayerName(_playerDisplayName);
         _combatHUD.SetBossName(_bossDisplayName);
         _combatHUD.SetPartnerHudVisible(isMultiplayerSession);
@@ -808,6 +1128,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     public void OnHitStart()
     {
         if (_damageCaster == null) return;
+        if (!CanEmitAttackHitbox) return;
         if (_stateMachine == null || _stateMachine.CurrentState != AttackState) return;
 
         int damage = Mathf.RoundToInt(CurrentAttackDamage);
@@ -819,6 +1140,56 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     public void OnHitEnd()
     {
         if (_damageCaster != null) _damageCaster.DisableHitbox();
+    }
+
+    internal void SetPendingAuthoritativeAttackFacingYaw(float authoritativeFacingYaw)
+    {
+        _pendingAuthoritativeAttackFacingYaw = authoritativeFacingYaw;
+        _hasPendingAuthoritativeAttackFacingYaw = true;
+    }
+
+    internal void ClearPendingAuthoritativeAttackFacingYaw()
+    {
+        _hasPendingAuthoritativeAttackFacingYaw = false;
+    }
+
+    internal void SetPendingAuthoritativeDashFacingYaw(float authoritativeFacingYaw)
+    {
+        _pendingAuthoritativeDashFacingYaw = authoritativeFacingYaw;
+        _hasPendingAuthoritativeDashFacingYaw = true;
+    }
+
+    internal void ClearPendingAuthoritativeDashFacingYaw()
+    {
+        _hasPendingAuthoritativeDashFacingYaw = false;
+    }
+
+    internal bool TryConsumePendingAuthoritativeDashDirection(out Vector3 dashDirection)
+    {
+        if (_hasPendingAuthoritativeDashFacingYaw)
+        {
+            _hasPendingAuthoritativeDashFacingYaw = false;
+            dashDirection = Quaternion.Euler(0f, _pendingAuthoritativeDashFacingYaw, 0f) * Vector3.forward;
+            dashDirection.y = 0f;
+            if (dashDirection.sqrMagnitude > 0.0001f)
+            {
+                dashDirection = dashDirection.normalized;
+                return true;
+            }
+        }
+
+        dashDirection = Vector3.zero;
+        return false;
+    }
+
+    internal void NotifyAuthoritativeAttackStepStarted(int comboIndex)
+    {
+        if (_actionAuthorityMode != ActionAuthorityMode.HostAuthoritative)
+        {
+            return;
+        }
+
+        AuthoritativeAttackStepStarted?.Invoke(comboIndex);
     }
 
     public void StartDashCooldown()

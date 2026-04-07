@@ -42,7 +42,7 @@ namespace Core.Player.States
             }
 
             // Attack Transition
-            if (input.HasFlag(InputFlag.Attack))
+            if (input.HasFlag(InputFlag.Attack) && Controller.CanStartAttackFromInput)
             {
                 Controller.StateMachine.ChangeState(Controller.AttackState);
                 return;

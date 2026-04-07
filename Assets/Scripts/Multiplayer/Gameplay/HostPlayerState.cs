@@ -13,6 +13,8 @@ namespace Core.Multiplayer
         public int LastAcceptedActionSequence;
         public int LastAcceptedActionStartTick;
         public int LastConsumedReactionSequence;
+        public int ActiveComboIndex;
+        public int LastAcceptedComboIndex;
         public byte ActiveAction;
         public byte LastAcceptedAction;
         public bool IsHitReacting;
@@ -30,7 +32,7 @@ namespace Core.Multiplayer
             return state;
         }
 
-        public void RecordAcceptedAction(in ClientToHostPlayerActionIntent actionIntent, Health health, int serverTick)
+        public void RecordAcceptedAction(in ClientToHostPlayerActionIntent actionIntent, Health health, int serverTick, int comboIndex = -1)
         {
             IsInitialized = true;
             ActiveAction = actionIntent.RequestedAction;
@@ -38,6 +40,8 @@ namespace Core.Multiplayer
             LastAcceptedActionSequence = actionIntent.ActionSequence;
             LastAcceptedActionStartTick = serverTick;
             LastProcessedServerTick = serverTick;
+            ActiveComboIndex = actionIntent.RequestedFlag == InputFlag.Attack ? comboIndex : -1;
+            LastAcceptedComboIndex = actionIntent.RequestedFlag == InputFlag.Attack ? comboIndex : -1;
 
             if (health == null)
             {
@@ -66,6 +70,7 @@ namespace Core.Multiplayer
                 if (serverTick > LastAcceptedActionStartTick)
                 {
                     ActiveAction = 0;
+                    ActiveComboIndex = -1;
                 }
 
                 IsHitReacting = false;
@@ -85,10 +90,12 @@ namespace Core.Multiplayer
             if (observedAction != 0)
             {
                 ActiveAction = (byte)observedAction;
+                ActiveComboIndex = observedAction == InputFlag.Attack ? controller.CurrentAttackComboIndex : -1;
             }
             else if (serverTick > LastAcceptedActionStartTick)
             {
                 ActiveAction = 0;
+                ActiveComboIndex = -1;
             }
         }
 
@@ -121,6 +128,8 @@ namespace Core.Multiplayer
             serializer.SerializeValue(ref LastAcceptedActionSequence);
             serializer.SerializeValue(ref LastAcceptedActionStartTick);
             serializer.SerializeValue(ref LastConsumedReactionSequence);
+            serializer.SerializeValue(ref ActiveComboIndex);
+            serializer.SerializeValue(ref LastAcceptedComboIndex);
             serializer.SerializeValue(ref ActiveAction);
             serializer.SerializeValue(ref LastAcceptedAction);
             serializer.SerializeValue(ref IsHitReacting);
