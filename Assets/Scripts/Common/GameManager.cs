@@ -1,5 +1,8 @@
-﻿using Core.Boss;
+﻿using System;
+using Core.Boss;
 using Core.Combat;
+using Core.Multiplayer;
+using Core.Player;
 using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -22,15 +25,22 @@ namespace Core.GameFlow
     [DisallowMultipleComponent]
     public class GameManager : MonoBehaviour
     {
+        private const int ExpectedMultiplayerPlayerCount = 2;
+
         [Header("Health References")]
         [SerializeField] private Health _playerHealth;
         [SerializeField] private Health _bossHealth;
 
         [Header("GameOver UI")]
         [SerializeField] private GameObject _gameOverRoot;
+        [SerializeField] private GameObject _victoryImageRoot;
+        [SerializeField] private GameObject _defeatedImageRoot;
+        [SerializeField] private GameObject _resultTextRoot;
         [SerializeField] private TMP_Text _resultLabel;
         [SerializeField, TextArea(2, 4)] private string _victoryText = "Victory";
         [SerializeField, TextArea(2, 4)] private string _defeatedText = "Try Again?\n(Press Enter to Restart)";
+        [SerializeField, TextArea(1, 2)] private string _multiplayerDefeatedTitle = "Defeated";
+        [SerializeField] private string _multiplayerRetryPromptFormat = "Press Enter to Play ({0}/{1})";
 
         [Header("Animation (Optional)")]
         [SerializeField] private Animator _animator;
@@ -39,12 +49,20 @@ namespace Core.GameFlow
 
         [Header("Input")]
         [SerializeField] private KeyCode _restartKey = KeyCode.Return;
+        [SerializeField] private float _multiplayerRetryRestartDelay = 0.35f;
 
         private bool _isHealthEventsBound;
         private bool _playerDead;
         private bool _bossDead;
         private bool _isGameOverResolved;
         private bool _isSceneLoading;
+        private int _lastMultiplayerRetryReadyCount = -1;
+        private int _lastMultiplayerRetryTotalCount = -1;
+        private int _stableMultiplayerRetryReadyCount;
+        private int _stableMultiplayerRetryTotalCount = ExpectedMultiplayerPlayerCount;
+        private bool _hasMultiplayerRetryConsensus;
+        private float _multiplayerRetryConsensusReachedTime = -1f;
+        private TMP_Text[] _cachedResultTextLabels = Array.Empty<TMP_Text>();
 
         public GameFlowState CurrentState { get; private set; } = GameFlowState.InGame;
         public GameResult CurrentResult { get; private set; } = GameResult.None;
@@ -72,6 +90,7 @@ namespace Core.GameFlow
             CurrentResult = GameResult.None;
             _isGameOverResolved = false;
             _isSceneLoading = false;
+            ResetMultiplayerRetryUiState();
 
             _playerDead = _playerHealth != null && _playerHealth.IsDead;
             _bossDead = _bossHealth != null && _bossHealth.IsDead;
@@ -82,13 +101,17 @@ namespace Core.GameFlow
             if (CurrentState != GameFlowState.GameOver) return;
             if (_isSceneLoading) return;
 
-            bool isRestartPressed = Input.GetKeyDown(_restartKey);
-            if (_restartKey == KeyCode.Return)
+            if (IsMultiplayerGameplayActive())
             {
-                isRestartPressed = isRestartPressed || Input.GetKeyDown(KeyCode.KeypadEnter);
+                if (CurrentResult == GameResult.Defeated)
+                {
+                    HandleMultiplayerDefeatRestart();
+                }
+
+                return;
             }
 
-            if (!isRestartPressed) return;
+            if (!IsRestartPressed()) return;
 
             RestartCurrentScene();
         }
@@ -97,6 +120,13 @@ namespace Core.GameFlow
         {
             if (CurrentState != GameFlowState.InGame) return;
             if (_isGameOverResolved) return;
+
+            if (IsMultiplayerGameplayActive())
+            {
+                ResolveMultiplayerGameOver();
+                return;
+            }
+
             if (!_playerDead && !_bossDead) return;
 
             if (_bossDead)
@@ -118,6 +148,160 @@ namespace Core.GameFlow
             _bossDead = true;
         }
 
+        private void ResolveMultiplayerGameOver()
+        {
+            if (TryGetMultiplayerBossDeadState(out bool isBossDead) && isBossDead)
+            {
+                ResolveGameOver(GameResult.Victory);
+                return;
+            }
+
+            if (!TryGetMultiplayerPlayerDeathState(out bool areAllPlayersDead))
+            {
+                return;
+            }
+
+            if (areAllPlayersDead)
+            {
+                ResolveGameOver(GameResult.Defeated);
+            }
+        }
+
+        private bool TryGetMultiplayerBossDeadState(out bool isBossDead)
+        {
+            isBossDead = false;
+            if (!MultiplayerRuntimeRoot.HasInstance)
+            {
+                if (_bossHealth != null)
+                {
+                    isBossDead = _bossHealth.IsDead;
+                    return true;
+                }
+
+                return false;
+            }
+
+            MultiplayerBossAuthorityBridge bridge = MultiplayerRuntimeRoot.Instance.BossAuthorityBridge;
+            if (bridge != null && bridge.HasLatestBossState)
+            {
+                isBossDead = bridge.IsBossDead;
+                return true;
+            }
+
+            if (MultiplayerRuntimeRoot.Instance.NetworkManager != null
+                && MultiplayerRuntimeRoot.Instance.NetworkManager.IsServer
+                && _bossHealth != null)
+            {
+                isBossDead = _bossHealth.IsDead;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryGetMultiplayerPlayerDeathState(out bool areAllPlayersDead)
+        {
+            areAllPlayersDead = false;
+
+            int avatarCount = MultiplayerPlayerAvatar.GetActiveAvatarCount();
+            if (avatarCount < ExpectedMultiplayerPlayerCount)
+            {
+                return false;
+            }
+
+            int resolvedAvatarCount = 0;
+            int deadAvatarCount = 0;
+
+            for (int i = 0; i < avatarCount; i++)
+            {
+                if (!MultiplayerPlayerAvatar.TryGetActiveAvatar(i, out MultiplayerPlayerAvatar avatar) || avatar == null)
+                {
+                    continue;
+                }
+
+                if (!avatar.TryGetResultDeathState(out bool isDead))
+                {
+                    return false;
+                }
+
+                resolvedAvatarCount++;
+                if (isDead)
+                {
+                    deadAvatarCount++;
+                }
+            }
+
+            if (resolvedAvatarCount < ExpectedMultiplayerPlayerCount)
+            {
+                return false;
+            }
+
+            areAllPlayersDead = deadAvatarCount >= resolvedAvatarCount;
+            return true;
+        }
+
+        private void HandleMultiplayerDefeatRestart()
+        {
+            if (IsRestartPressed() && MultiplayerPlayerAvatar.TryGetLocalAvatar(out MultiplayerPlayerAvatar localAvatar))
+            {
+                localAvatar.SubmitRetryReadyIfOwner();
+            }
+
+            RefreshMultiplayerRetryState();
+            UpdateMultiplayerDefeatedUi(force: false);
+
+            if (!ShouldRestartMultiplayerGameplay())
+            {
+                return;
+            }
+
+            RestartCurrentScene();
+        }
+
+        private bool ShouldRestartMultiplayerGameplay()
+        {
+            if (!MultiplayerRuntimeRoot.HasInstance || MultiplayerRuntimeRoot.Instance.NetworkManager == null)
+            {
+                return false;
+            }
+
+            if (!MultiplayerRuntimeRoot.Instance.NetworkManager.IsServer)
+            {
+                return false;
+            }
+
+            RefreshMultiplayerRetryState();
+            if (!_hasMultiplayerRetryConsensus || _multiplayerRetryConsensusReachedTime < 0f)
+            {
+                return false;
+            }
+
+            return Time.unscaledTime - _multiplayerRetryConsensusReachedTime >= Mathf.Max(0f, _multiplayerRetryRestartDelay);
+        }
+
+        private bool TryGetMultiplayerRetryCounts(out int readyCount, out int totalCount)
+        {
+            readyCount = 0;
+            totalCount = 0;
+
+            int avatarCount = MultiplayerPlayerAvatar.GetActiveAvatarCount();
+            for (int i = 0; i < avatarCount; i++)
+            {
+                if (!MultiplayerPlayerAvatar.TryGetActiveAvatar(i, out MultiplayerPlayerAvatar avatar) || avatar == null)
+                {
+                    continue;
+                }
+
+                totalCount++;
+                if (avatar.IsRetryReady)
+                {
+                    readyCount++;
+                }
+            }
+
+            return totalCount > 0;
+        }
+
         private void ResolveGameOver(GameResult result)
         {
             if (_isGameOverResolved) return;
@@ -126,11 +310,23 @@ namespace Core.GameFlow
             CurrentState = GameFlowState.GameOver;
             CurrentResult = result;
 
-            bool isVictory = result == GameResult.Victory;
-            ShowGameOverUI(isVictory ? _victoryText : _defeatedText);
+            if (IsMultiplayerGameplayActive() && result == GameResult.Defeated)
+            {
+                ResetMultiplayerRetryUiState();
+                UpdateMultiplayerDefeatedUi(force: true);
+            }
+            else
+            {
+                ShowGameOverUI(
+                    result,
+                    result == GameResult.Victory
+                        ? ResolveVictoryDisplayText()
+                        : ResolveSoloDefeatedDisplayText());
+            }
 
             if (_animator != null)
             {
+                bool isVictory = result == GameResult.Victory;
                 _animator.SetTrigger(isVictory ? _victoryTrigger : _defeatedTrigger);
             }
         }
@@ -140,8 +336,136 @@ namespace Core.GameFlow
             if (_isSceneLoading) return;
 
             _isSceneLoading = true;
+            if (IsMultiplayerGameplayActive())
+            {
+                RestartMultiplayerGameplayAsync();
+                return;
+            }
+
             Scene activeScene = SceneManager.GetActiveScene();
             SceneManager.LoadScene(activeScene.name);
+        }
+
+        private async void RestartMultiplayerGameplayAsync()
+        {
+            try
+            {
+                if (!MultiplayerSessionService.HasInstance)
+                {
+                    throw new InvalidOperationException("Multiplayer session service is missing.");
+                }
+
+                await MultiplayerSessionService.Instance.RestartGameplayAsync();
+            }
+            catch (Exception ex)
+            {
+                _isSceneLoading = false;
+                Debug.LogError($"GameManager: Multiplayer restart failed. {ex.Message}");
+            }
+        }
+
+        private bool IsRestartPressed()
+        {
+            bool isRestartPressed = Input.GetKeyDown(_restartKey);
+            if (_restartKey == KeyCode.Return)
+            {
+                isRestartPressed = isRestartPressed || Input.GetKeyDown(KeyCode.KeypadEnter);
+            }
+
+            return isRestartPressed;
+        }
+
+        private bool IsMultiplayerGameplayActive()
+        {
+            if (!MultiplayerSessionService.HasInstance || !MultiplayerSessionService.Instance.HasActiveSession)
+            {
+                return false;
+            }
+
+            Scene activeScene = SceneManager.GetActiveScene();
+            return activeScene.IsValid()
+                   && string.Equals(activeScene.path, MultiplayerScenePaths.GamePlayScenePath, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void UpdateMultiplayerDefeatedUi(bool force)
+        {
+            RefreshMultiplayerRetryState();
+
+            int totalCount = Mathf.Max(ExpectedMultiplayerPlayerCount, _stableMultiplayerRetryTotalCount);
+            int readyCount = Mathf.Clamp(_stableMultiplayerRetryReadyCount, 0, totalCount);
+            if (_hasMultiplayerRetryConsensus)
+            {
+                readyCount = totalCount;
+            }
+
+            if (!force
+                && readyCount == _lastMultiplayerRetryReadyCount
+                && totalCount == _lastMultiplayerRetryTotalCount)
+            {
+                return;
+            }
+
+            _lastMultiplayerRetryReadyCount = readyCount;
+            _lastMultiplayerRetryTotalCount = totalCount;
+            ShowGameOverUI(GameResult.Defeated, BuildMultiplayerDefeatedMessage(readyCount, totalCount));
+        }
+
+        private string BuildMultiplayerDefeatedMessage(int readyCount, int totalCount)
+        {
+            int clampedTotalCount = Mathf.Max(ExpectedMultiplayerPlayerCount, totalCount);
+            int clampedReadyCount = Mathf.Clamp(readyCount, 0, clampedTotalCount);
+            string retryPrompt = string.Format(_multiplayerRetryPromptFormat, clampedReadyCount, clampedTotalCount);
+            if (_defeatedImageRoot != null)
+            {
+                return retryPrompt;
+            }
+
+            return $"{_multiplayerDefeatedTitle}\n{retryPrompt}";
+        }
+
+        private string ResolveVictoryDisplayText()
+        {
+            return _victoryImageRoot != null ? string.Empty : _victoryText;
+        }
+
+        private string ResolveSoloDefeatedDisplayText()
+        {
+            return _defeatedText;
+        }
+
+        private void RefreshMultiplayerRetryState()
+        {
+            if (!TryGetMultiplayerRetryCounts(out int runtimeReadyCount, out int runtimeTotalCount))
+            {
+                return;
+            }
+
+            int resolvedTotalCount = Mathf.Max(ExpectedMultiplayerPlayerCount, runtimeTotalCount);
+            int resolvedReadyCount = Mathf.Clamp(runtimeReadyCount, 0, resolvedTotalCount);
+
+            _stableMultiplayerRetryTotalCount = Mathf.Max(_stableMultiplayerRetryTotalCount, resolvedTotalCount);
+            _stableMultiplayerRetryReadyCount = Mathf.Max(_stableMultiplayerRetryReadyCount, resolvedReadyCount);
+
+            if (_stableMultiplayerRetryReadyCount >= _stableMultiplayerRetryTotalCount)
+            {
+                _hasMultiplayerRetryConsensus = true;
+                _stableMultiplayerRetryReadyCount = _stableMultiplayerRetryTotalCount;
+
+                if (_multiplayerRetryConsensusReachedTime < 0f)
+                {
+                    _multiplayerRetryConsensusReachedTime = Time.unscaledTime;
+                }
+            }
+        }
+
+        private void ResetMultiplayerRetryUiState()
+        {
+            _lastMultiplayerRetryReadyCount = -1;
+            _lastMultiplayerRetryTotalCount = -1;
+            _stableMultiplayerRetryReadyCount = 0;
+            _stableMultiplayerRetryTotalCount = ExpectedMultiplayerPlayerCount;
+            _hasMultiplayerRetryConsensus = false;
+            _multiplayerRetryConsensusReachedTime = -1f;
         }
 
         private void ResolveHealthReferences()
@@ -189,7 +513,11 @@ namespace Core.GameFlow
 
         private void ResolveGameOverUiReferences()
         {
-            if (_gameOverRoot != null && _resultLabel != null)
+            if (_gameOverRoot != null
+                && _resultLabel != null
+                && _victoryImageRoot != null
+                && _defeatedImageRoot != null
+                && _resultTextRoot != null)
             {
                 return;
             }
@@ -208,12 +536,39 @@ namespace Core.GameFlow
                     _gameOverRoot = gameOverTransform.gameObject;
                 }
 
+                if (_victoryImageRoot == null)
+                {
+                    Transform victoryImageTransform = FindChildRecursive(gameOverTransform, "Image_Win");
+                    _victoryImageRoot = victoryImageTransform != null ? victoryImageTransform.gameObject : null;
+                }
+
+                if (_defeatedImageRoot == null)
+                {
+                    Transform defeatedImageTransform = FindChildRecursive(gameOverTransform, "Image_Lose");
+                    _defeatedImageRoot = defeatedImageTransform != null ? defeatedImageTransform.gameObject : null;
+                }
+
                 if (_resultLabel == null)
                 {
                     _resultLabel = FindGameResultLabel(gameOverTransform);
                 }
 
-                if (_gameOverRoot != null && _resultLabel != null)
+                if (_resultTextRoot == null)
+                {
+                    Transform resultTextTransform = FindChildRecursive(gameOverTransform, "Text_GameResult");
+                    if (resultTextTransform == null && _resultLabel != null)
+                    {
+                        resultTextTransform = ResolveDirectChildAncestor(_resultLabel.transform, gameOverTransform);
+                    }
+
+                    _resultTextRoot = resultTextTransform != null
+                        ? resultTextTransform.gameObject
+                        : (_resultLabel != null ? _resultLabel.gameObject : null);
+                }
+
+                CacheResultTextLabels();
+
+                if (_gameOverRoot != null)
                 {
                     return;
                 }
@@ -269,6 +624,43 @@ namespace Core.GameFlow
             return labels.Length > 0 ? labels[0] : null;
         }
 
+        private static Transform ResolveDirectChildAncestor(Transform target, Transform expectedRoot)
+        {
+            if (target == null || expectedRoot == null)
+            {
+                return null;
+            }
+
+            Transform current = target;
+            while (current != null && current.parent != null)
+            {
+                if (current.parent == expectedRoot)
+                {
+                    return current;
+                }
+
+                current = current.parent;
+            }
+
+            return null;
+        }
+
+        private void CacheResultTextLabels()
+        {
+            if (_resultTextRoot != null)
+            {
+                _cachedResultTextLabels = _resultTextRoot.GetComponentsInChildren<TMP_Text>(true);
+                if (_cachedResultTextLabels.Length > 0)
+                {
+                    return;
+                }
+            }
+
+            _cachedResultTextLabels = _resultLabel != null
+                ? new[] { _resultLabel }
+                : Array.Empty<TMP_Text>();
+        }
+
         private void BindHealthEvents()
         {
             if (_isHealthEventsBound) return;
@@ -305,17 +697,40 @@ namespace Core.GameFlow
             _isHealthEventsBound = false;
         }
 
-        private void ShowGameOverUI(string message)
+        private void ShowGameOverUI(GameResult result, string message)
         {
             if (_gameOverRoot != null)
             {
                 _gameOverRoot.SetActive(true);
             }
 
-            if (_resultLabel != null)
+            if (_victoryImageRoot != null)
             {
-                _resultLabel.text = message;
-                _resultLabel.gameObject.SetActive(true);
+                _victoryImageRoot.SetActive(result == GameResult.Victory);
+            }
+
+            if (_defeatedImageRoot != null)
+            {
+                _defeatedImageRoot.SetActive(result == GameResult.Defeated);
+            }
+
+            bool shouldShowText = !string.IsNullOrWhiteSpace(message);
+            if (_resultTextRoot != null)
+            {
+                _resultTextRoot.SetActive(shouldShowText);
+            }
+
+            CacheResultTextLabels();
+            for (int i = 0; i < _cachedResultTextLabels.Length; i++)
+            {
+                TMP_Text label = _cachedResultTextLabels[i];
+                if (label == null)
+                {
+                    continue;
+                }
+
+                label.text = message;
+                label.gameObject.SetActive(shouldShowText);
             }
         }
 
@@ -326,9 +741,31 @@ namespace Core.GameFlow
                 _gameOverRoot.SetActive(false);
             }
 
-            if (_resultLabel != null)
+            if (_victoryImageRoot != null)
             {
-                _resultLabel.gameObject.SetActive(false);
+                _victoryImageRoot.SetActive(false);
+            }
+
+            if (_defeatedImageRoot != null)
+            {
+                _defeatedImageRoot.SetActive(false);
+            }
+
+            if (_resultTextRoot != null)
+            {
+                _resultTextRoot.SetActive(false);
+            }
+
+            CacheResultTextLabels();
+            for (int i = 0; i < _cachedResultTextLabels.Length; i++)
+            {
+                TMP_Text label = _cachedResultTextLabels[i];
+                if (label == null)
+                {
+                    continue;
+                }
+
+                label.gameObject.SetActive(false);
             }
         }
     }

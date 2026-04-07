@@ -54,6 +54,9 @@ namespace Core.CameraSystem
         [SerializeField, HideInInspector, Range(0f, 0.05f)] private float predictedOwnerPositionSmoothTime = 0f;
         [SerializeField, HideInInspector, Range(0f, 0.05f)] private float predictedOwnerRotationSmoothTime = 0f;
 
+        [Header("Multiplayer Spectator")]
+        [SerializeField] private float multiplayerSpectatorFollowDelay = 2.5f;
+
         [Header("Multiplayer Camera Trace")]
         [SerializeField, HideInInspector] private bool enableMultiplayerCameraFollowTrace = true;
         [SerializeField, HideInInspector, Range(0.02f, 0.5f)] private float multiplayerCameraFollowTraceLogInterval = 0.08f;
@@ -74,6 +77,7 @@ namespace Core.CameraSystem
         private bool _hasMultiplayerCameraTraceState;
         private int _anchorStillFrameCount;
         private float _nextMultiplayerCameraFollowTraceLogTime;
+        private float _multiplayerLocalDeathStartTime = -1f;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void EnsureGameplayCameraControllerRuntime()
@@ -130,6 +134,7 @@ namespace Core.CameraSystem
             if (sharpTurnStrongBoost < 0f) sharpTurnStrongBoost = 0f;
             if (predictedOwnerPositionSmoothTime < 0f) predictedOwnerPositionSmoothTime = 0f;
             if (predictedOwnerRotationSmoothTime < 0f) predictedOwnerRotationSmoothTime = 0f;
+            if (multiplayerSpectatorFollowDelay < 0f) multiplayerSpectatorFollowDelay = 0f;
             if (multiplayerCameraFollowTraceLogInterval < 0.02f) multiplayerCameraFollowTraceLogInterval = 0.02f;
             if (multiplayerCameraFollowTraceDeltaThreshold < 0f) multiplayerCameraFollowTraceDeltaThreshold = 0f;
             if (multiplayerCameraFollowTraceStillThreshold < 0f) multiplayerCameraFollowTraceStillThreshold = 0f;
@@ -170,6 +175,7 @@ namespace Core.CameraSystem
                 followTarget = playerController != null ? playerController.transform : null;
                 _initialized = false;
                 _hasLastFollowPosition = false;
+                ResetMultiplayerSpectatorDelayState();
             }
 
             if (followTarget == null && playerController != null)
@@ -352,12 +358,75 @@ namespace Core.CameraSystem
 
         private Vector3 GetResolvedFollowPosition()
         {
+            if (TryGetMultiplayerSpectatorFollowPosition(out Vector3 spectatorFollowPosition))
+            {
+                return spectatorFollowPosition;
+            }
+
             if (playerController != null)
             {
                 return playerController.GetPreferredCameraFollowPosition();
             }
 
             return followTarget.position;
+        }
+
+        private bool TryGetMultiplayerSpectatorFollowPosition(out Vector3 followPosition)
+        {
+            followPosition = default;
+
+            if (!IsMultiplayerGameplayContext() || playerController == null)
+            {
+                ResetMultiplayerSpectatorDelayState();
+                return false;
+            }
+
+            if (!Core.Multiplayer.MultiplayerPlayerAvatar.TryGetLocalAvatar(out Core.Multiplayer.MultiplayerPlayerAvatar localAvatar)
+                || localAvatar == null
+                || !localAvatar.TryGetResultDeathState(out bool isLocalDead))
+            {
+                ResetMultiplayerSpectatorDelayState();
+                return false;
+            }
+
+            if (!isLocalDead)
+            {
+                ResetMultiplayerSpectatorDelayState();
+                return false;
+            }
+
+            if (!HasMultiplayerSpectatorDelayElapsed())
+            {
+                return false;
+            }
+
+            int avatarCount = Core.Multiplayer.MultiplayerPlayerAvatar.GetActiveAvatarCount();
+            for (int i = 0; i < avatarCount; i++)
+            {
+                if (!Core.Multiplayer.MultiplayerPlayerAvatar.TryGetActiveAvatar(i, out Core.Multiplayer.MultiplayerPlayerAvatar avatar)
+                    || avatar == null
+                    || !avatar.IsSpawned
+                    || avatar.IsOwner)
+                {
+                    continue;
+                }
+
+                if (!avatar.TryGetResultDeathState(out bool isDead) || isDead)
+                {
+                    continue;
+                }
+
+                PlayerController partnerController = avatar.GetComponent<PlayerController>();
+                if (partnerController == null)
+                {
+                    continue;
+                }
+
+                followPosition = partnerController.GetPreferredCameraFollowPosition();
+                return true;
+            }
+
+            return false;
         }
 
         private void RefreshBindingIfNeeded()
@@ -367,6 +436,7 @@ namespace Core.CameraSystem
             if (playerController == null)
             {
                 _initialized = false;
+                ResetMultiplayerSpectatorDelayState();
                 ResetMultiplayerCameraTraceState();
             }
         }
@@ -466,6 +536,21 @@ namespace Core.CameraSystem
             _hasMultiplayerCameraTraceState = false;
             _anchorStillFrameCount = 0;
             _nextMultiplayerCameraFollowTraceLogTime = 0f;
+        }
+
+        private bool HasMultiplayerSpectatorDelayElapsed()
+        {
+            if (_multiplayerLocalDeathStartTime < 0f)
+            {
+                _multiplayerLocalDeathStartTime = Time.unscaledTime;
+            }
+
+            return Time.unscaledTime - _multiplayerLocalDeathStartTime >= multiplayerSpectatorFollowDelay;
+        }
+
+        private void ResetMultiplayerSpectatorDelayState()
+        {
+            _multiplayerLocalDeathStartTime = -1f;
         }
 
         private static float PlanarDistance(Vector3 a, Vector3 b)

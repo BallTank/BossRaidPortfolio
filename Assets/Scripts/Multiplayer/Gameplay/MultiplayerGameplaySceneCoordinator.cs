@@ -104,6 +104,32 @@ namespace Core.Multiplayer
             RebindServerBossTarget(networkManager, connectedClientIds);
         }
 
+        public static void DespawnAuthoritativePlayers()
+        {
+            if (!MultiplayerRuntimeRoot.HasInstance)
+            {
+                return;
+            }
+
+            NetworkManager networkManager = MultiplayerRuntimeRoot.Instance.NetworkManager;
+            if (networkManager == null || !networkManager.IsServer || !networkManager.IsListening)
+            {
+                return;
+            }
+
+            List<ulong> connectedClientIds = new List<ulong>(networkManager.ConnectedClientsIds);
+            for (int i = 0; i < connectedClientIds.Count; i++)
+            {
+                NetworkObject playerObject = networkManager.SpawnManager.GetPlayerNetworkObject(connectedClientIds[i]);
+                if (playerObject == null || !playerObject.IsSpawned)
+                {
+                    continue;
+                }
+
+                playerObject.Despawn(true);
+            }
+        }
+
         private static bool ShouldPrepareCurrentScene()
         {
             return ShouldPrepareScene(SceneManager.GetActiveScene());

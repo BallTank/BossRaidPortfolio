@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Text;
 using System.Threading.Tasks;
 using Unity.Netcode;
 using Unity.Services.Lobbies;
@@ -84,8 +82,6 @@ namespace Core.Multiplayer
         private const float LobbyHeartbeatIntervalSeconds = 15f;
         private const float LobbyPollIntervalSeconds = 2f;
         private const float HostStartUnlockStableDurationSeconds = 2f;
-        private const float ConnectionDebugPulseIntervalSeconds = 2f;
-
         private static MultiplayerSessionService _instance;
 
         private Task _currentOperationTask;
@@ -111,17 +107,6 @@ namespace Core.Multiplayer
         private float _lobbyPollTimer;
         private float _hostStartStableTimer;
         private TaskCompletionSource<bool> _gameplayStartTaskSource;
-        private readonly StringBuilder _connectionDebugBuilder = new StringBuilder(512);
-        private float _connectionDebugPulseTimer;
-        private int _connectionDebugSequence;
-        private bool _hasPendingDisconnectDebugSnapshot;
-        private ulong _pendingDisconnectPeerClientId;
-        private MultiplayerSessionState _pendingDisconnectState = MultiplayerSessionState.Idle;
-        private string _pendingDisconnectReason = string.Empty;
-        private string _pendingDisconnectNgoReason = string.Empty;
-        private string _pendingDisconnectSceneName = string.Empty;
-        private string _pendingDisconnectAppLabel = string.Empty;
-        private string _pendingDisconnectLocalClientIdLabel = "na";
 
         public static bool HasInstance => _instance != null;
         public static MultiplayerSessionService Instance => GetOrCreateInstance();
@@ -170,8 +155,6 @@ namespace Core.Multiplayer
 
         private void Update()
         {
-            UpdateConnectionDebugPulse(Time.unscaledDeltaTime);
-
             if (!IsLobbyTrackedState(_state))
             {
                 return;
@@ -274,6 +257,29 @@ namespace Core.Multiplayer
             return _currentOperationTask;
         }
 
+        public Task RestartGameplayAsync()
+        {
+            if (IsBusy)
+            {
+                throw new InvalidOperationException("Multiplayer session service is busy.");
+            }
+
+            if (!_isHost)
+            {
+                throw new InvalidOperationException("Only the host can restart gameplay.");
+            }
+
+            if (_state != MultiplayerSessionState.InGameplay)
+            {
+                throw new InvalidOperationException("Gameplay restart is only available during multiplayer gameplay.");
+            }
+
+            _lastErrorMessage = string.Empty;
+            _lastFailureKind = MultiplayerSessionFailureKind.None;
+            _currentOperationTask = RestartGameplayInternalAsync(_sessionVersion);
+            return _currentOperationTask;
+        }
+
         private async Task CreateHostSessionInternalAsync(string roomTitle, int sessionVersion)
         {
             _lastErrorMessage = string.Empty;
@@ -294,13 +300,10 @@ namespace Core.Multiplayer
                 _runtimeRoot.EnsureConfigured();
                 EnsureNetworkManagerIsIdle(_runtimeRoot.NetworkManager);
 
-                Debug.Log("MultiplayerSessionService: Creating Relay allocation for Host.");
                 Allocation allocation = await RelayService.Instance.CreateAllocationAsync(1);
 
-                Debug.Log("MultiplayerSessionService: Requesting Relay join code for Host.");
                 string relayJoinCode = await RelayService.Instance.GetJoinCodeAsync(allocation.AllocationId);
 
-                Debug.Log("MultiplayerSessionService: Creating Lobby for Host.");
                 CreateLobbyOptions options = BuildHostCreateOptions(relayJoinCode);
                 Lobby lobby = await LobbyService.Instance.CreateLobbyAsync(roomTitle, 2, options);
 
@@ -334,8 +337,6 @@ namespace Core.Multiplayer
                 SetState(MultiplayerSessionState.LobbyActive);
                 UpdateHostStartUnlockGate(0f);
                 TryPublishCurrentSnapshot();
-
-                Debug.Log($"MultiplayerSessionService: Host session started. LobbyId={lobby.Id}, JoinCode={relayJoinCode}");
             }
             catch (Exception ex)
             {
@@ -378,14 +379,12 @@ namespace Core.Multiplayer
                 _runtimeRoot.EnsureConfigured();
                 EnsureNetworkManagerIsIdle(_runtimeRoot.NetworkManager);
 
-                Debug.Log($"MultiplayerSessionService: Querying Lobby for Client join. JoinCode={joinCode}");
                 Lobby lobby = await QueryJoinableLobbyByJoinCodeAsync(joinCode);
                 if (lobby == null)
                 {
                     throw new WrongJoinCodeException();
                 }
 
-                Debug.Log($"MultiplayerSessionService: Joining Lobby {lobby.Id} as Client.");
                 _currentLobby = await LobbyService.Instance.JoinLobbyByIdAsync(
                     lobby.Id,
                     new JoinLobbyByIdOptions
@@ -393,7 +392,6 @@ namespace Core.Multiplayer
                         Player = new Unity.Services.Lobbies.Models.Player(id: _localPlayerId)
                     });
 
-                Debug.Log($"MultiplayerSessionService: Joining Relay allocation as Client. JoinCode={joinCode}");
                 JoinAllocation joinAllocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
 
                 RelayServerEndpoint relayEndpoint = ResolveRelayEndpoint(joinAllocation);
@@ -427,8 +425,6 @@ namespace Core.Multiplayer
                 SetState(MultiplayerSessionState.LobbyActive);
                 UpdateHostStartUnlockGate(0f);
                 TryPublishCurrentSnapshot();
-
-                Debug.Log($"MultiplayerSessionService: Client session started. LobbyId={_currentLobby.Id}, JoinCode={joinCode}");
             }
             catch (Exception ex)
             {
@@ -459,59 +455,7 @@ namespace Core.Multiplayer
         {
             try
             {
-                _runtimeRoot = MultiplayerRuntimeRoot.Instance;
-                _runtimeRoot.EnsureConfigured();
-
-                NetworkManager networkManager = _runtimeRoot.NetworkManager;
-                if (networkManager == null)
-                {
-                    throw new InvalidOperationException("NetworkManager is missing before gameplay start.");
-                }
-
-                if (!networkManager.IsServer || !networkManager.IsListening || networkManager.ShutdownInProgress)
-                {
-                    throw new InvalidOperationException("NGO host is not in a valid state for gameplay start.");
-                }
-
-                if (networkManager.SceneManager == null)
-                {
-                    throw new InvalidOperationException("NetworkSceneManager is missing.");
-                }
-
-                _hostStartUnlocked = false;
-                _hostStartStableTimer = 0f;
-                SetState(MultiplayerSessionState.StartingGameplay);
-                TryPublishCurrentSnapshot();
-
-                RegisterSceneLoadCallbacks();
-                _gameplayStartTaskSource = new TaskCompletionSource<bool>();
-                _ = UpdateHostLobbySessionStateAsync(StartingStateValue, sessionVersion);
-
-                SceneEventProgressStatus loadStatus = networkManager.SceneManager.LoadScene(
-                    MultiplayerScenePaths.GamePlayScenePath,
-                    LoadSceneMode.Single);
-
-                if (loadStatus != SceneEventProgressStatus.Started)
-                {
-                    throw new InvalidOperationException($"NGO gameplay scene load failed to start. Status={loadStatus}");
-                }
-
-                Task completedTask = await Task.WhenAny(
-                    _gameplayStartTaskSource.Task,
-                    Task.Delay(GameplayStartTimeoutMilliseconds));
-
-                if (completedTask != _gameplayStartTaskSource.Task)
-                {
-                    throw new TimeoutException("Gameplay start timed out.");
-                }
-
-                await _gameplayStartTaskSource.Task;
-                MultiplayerGameplaySceneCoordinator.TrySpawnAuthoritativePlayers();
-                Debug.Log("MultiplayerSessionService: Gameplay scene sync completed.");
-                LogGameplaySceneSyncCompleted();
-                SetState(MultiplayerSessionState.InGameplay);
-                TryPublishCurrentSnapshot();
-                _ = UpdateHostLobbySessionStateAsync(InGameStateValue, sessionVersion);
+                await LoadGameplaySceneInternalAsync(sessionVersion, despawnExistingPlayers: false, timeoutMessage: "Gameplay start timed out.");
             }
             catch (Exception ex)
             {
@@ -538,6 +482,99 @@ namespace Core.Multiplayer
                 ClearGameplayStartTracking();
                 _currentOperationTask = null;
             }
+        }
+
+        private async Task RestartGameplayInternalAsync(int sessionVersion)
+        {
+            try
+            {
+                await LoadGameplaySceneInternalAsync(sessionVersion, despawnExistingPlayers: true, timeoutMessage: "Gameplay restart timed out.");
+            }
+            catch (Exception ex)
+            {
+                _lastFailureKind = MultiplayerSessionFailureKind.Fatal;
+                _lastErrorMessage = $"Gameplay restart failed: {ex.Message}";
+                Debug.LogError($"MultiplayerSessionService: {_lastErrorMessage}");
+
+                if (_state != MultiplayerSessionState.Closing && _state != MultiplayerSessionState.Closed)
+                {
+                    if (IsSessionVersionCurrent(sessionVersion))
+                    {
+                        AdvanceSessionVersion();
+                    }
+
+                    await ShutdownSessionInternalAsync();
+                    ReturnToMultiplayerTitleSceneIfNeeded();
+                }
+
+                throw;
+            }
+            finally
+            {
+                UnregisterSceneLoadCallbacks();
+                ClearGameplayStartTracking();
+                _currentOperationTask = null;
+            }
+        }
+
+        private async Task LoadGameplaySceneInternalAsync(int sessionVersion, bool despawnExistingPlayers, string timeoutMessage)
+        {
+            _runtimeRoot = MultiplayerRuntimeRoot.Instance;
+            _runtimeRoot.EnsureConfigured();
+
+            NetworkManager networkManager = _runtimeRoot.NetworkManager;
+            if (networkManager == null)
+            {
+                throw new InvalidOperationException("NetworkManager is missing before gameplay start.");
+            }
+
+            if (!networkManager.IsServer || !networkManager.IsListening || networkManager.ShutdownInProgress)
+            {
+                throw new InvalidOperationException("NGO host is not in a valid state for gameplay start.");
+            }
+
+            if (networkManager.SceneManager == null)
+            {
+                throw new InvalidOperationException("NetworkSceneManager is missing.");
+            }
+
+            if (despawnExistingPlayers)
+            {
+                MultiplayerGameplaySceneCoordinator.DespawnAuthoritativePlayers();
+            }
+
+            _hostStartUnlocked = false;
+            _hostStartStableTimer = 0f;
+            SetState(MultiplayerSessionState.StartingGameplay);
+            TryPublishCurrentSnapshot();
+
+            RegisterSceneLoadCallbacks();
+            _gameplayStartTaskSource = new TaskCompletionSource<bool>();
+            _ = UpdateHostLobbySessionStateAsync(StartingStateValue, sessionVersion);
+
+            SceneEventProgressStatus loadStatus = networkManager.SceneManager.LoadScene(
+                MultiplayerScenePaths.GamePlayScenePath,
+                LoadSceneMode.Single);
+
+            if (loadStatus != SceneEventProgressStatus.Started)
+            {
+                throw new InvalidOperationException($"NGO gameplay scene load failed to start. Status={loadStatus}");
+            }
+
+            Task completedTask = await Task.WhenAny(
+                _gameplayStartTaskSource.Task,
+                Task.Delay(GameplayStartTimeoutMilliseconds));
+
+            if (completedTask != _gameplayStartTaskSource.Task)
+            {
+                throw new TimeoutException(timeoutMessage);
+            }
+
+            await _gameplayStartTaskSource.Task;
+            MultiplayerGameplaySceneCoordinator.TrySpawnAuthoritativePlayers();
+            SetState(MultiplayerSessionState.InGameplay);
+            TryPublishCurrentSnapshot();
+            _ = UpdateHostLobbySessionStateAsync(InGameStateValue, sessionVersion);
         }
 
         private CreateLobbyOptions BuildHostCreateOptions(string relayJoinCode)
@@ -808,8 +845,6 @@ namespace Core.Multiplayer
 
         private void HandleNetworkClientConnected(ulong clientId)
         {
-            LogNetworkPeerEvent("peer-connect", clientId, string.Empty);
-
             if (_state != MultiplayerSessionState.LobbyActive)
             {
                 return;
@@ -826,61 +861,40 @@ namespace Core.Multiplayer
         private void HandleNetworkClientDisconnected(ulong clientId)
         {
             NetworkManager networkManager = _runtimeRoot != null ? _runtimeRoot.NetworkManager : null;
-            string disconnectReason = ResolveDisconnectDebugReason(clientId, networkManager);
-            CaptureDisconnectDebugSnapshot(clientId, networkManager, disconnectReason);
-            LogPeerDisconnectEdge(clientId, disconnectReason, networkManager);
-            TryLogPeerDisconnectDetail(clientId, disconnectReason, networkManager);
-
-            bool preserveDisconnectSnapshotForShutdown = false;
-
-            try
+            if (!IsLobbyTrackedState(_state))
             {
-                if (!IsLobbyTrackedState(_state))
-                {
-                    return;
-                }
-
-                if (!_isHost && networkManager != null && clientId == networkManager.LocalClientId)
-                {
-                    preserveDisconnectSnapshotForShutdown = true;
-                    BeginFatalShutdown(DisconnectedFromHostMessage);
-                    return;
-                }
-
-                if (_state == MultiplayerSessionState.StartingGameplay)
-                {
-                    if (_isHost && clientId != NetworkManager.ServerClientId)
-                    {
-                        preserveDisconnectSnapshotForShutdown = true;
-                        FailPendingGameplayStart(ClientDisconnectedDuringGameplayStartMessage);
-                    }
-
-                    return;
-                }
-
-                if (_state == MultiplayerSessionState.InGameplay)
-                {
-                    if (_isHost && clientId != NetworkManager.ServerClientId)
-                    {
-                        preserveDisconnectSnapshotForShutdown = true;
-                        BeginFatalShutdown(ClientDisconnectedDuringGameplayMessage);
-                        return;
-                    }
-                }
-
-                UpdateHostStartUnlockGate(0f);
-                TryPublishCurrentSnapshot();
-                if (clientId != NetworkManager.ServerClientId)
-                {
-                    RequestLobbyRefresh();
-                }
+                return;
             }
-            finally
+
+            if (!_isHost && networkManager != null && clientId == networkManager.LocalClientId)
             {
-                if (!preserveDisconnectSnapshotForShutdown)
+                BeginFatalShutdown(DisconnectedFromHostMessage);
+                return;
+            }
+
+            if (_state == MultiplayerSessionState.StartingGameplay)
+            {
+                if (_isHost && clientId != NetworkManager.ServerClientId)
                 {
-                    ClearDisconnectDebugSnapshot();
+                    FailPendingGameplayStart(ClientDisconnectedDuringGameplayStartMessage);
                 }
+
+                return;
+            }
+
+            if (_state == MultiplayerSessionState.InGameplay
+                && _isHost
+                && clientId != NetworkManager.ServerClientId)
+            {
+                BeginFatalShutdown(ClientDisconnectedDuringGameplayMessage);
+                return;
+            }
+
+            UpdateHostStartUnlockGate(0f);
+            TryPublishCurrentSnapshot();
+            if (clientId != NetworkManager.ServerClientId)
+            {
+                RequestLobbyRefresh();
             }
         }
 
@@ -1034,9 +1048,7 @@ namespace Core.Multiplayer
                 return;
             }
 
-            MultiplayerSessionState previousState = _state;
             _state = nextState;
-            LogSessionStateTransition(previousState, nextState);
             StateChanged?.Invoke(_state);
         }
 
@@ -1064,367 +1076,6 @@ namespace Core.Multiplayer
             _currentOperationTask = HandleFatalShutdownAsync(message);
         }
 
-        internal static bool TryLogAvatarConnectionProfileBaseline(
-            MultiplayerPlayerAvatar avatar,
-            string currentProfile,
-            string sourceLabel,
-            int inputSequence)
-        {
-            if (!HasInstance || avatar == null)
-            {
-                return false;
-            }
-
-            Instance.LogAvatarConnectionProfileEvent(
-                "avatar-profile-baseline",
-                avatar,
-                string.Empty,
-                currentProfile,
-                sourceLabel,
-                inputSequence);
-            return true;
-        }
-
-        internal static bool TryLogAvatarConnectionProfileTransition(
-            MultiplayerPlayerAvatar avatar,
-            string previousProfile,
-            string currentProfile,
-            string sourceLabel,
-            int inputSequence)
-        {
-            if (!HasInstance || avatar == null)
-            {
-                return false;
-            }
-
-            Instance.LogAvatarConnectionProfileEvent(
-                "avatar-profile-transition",
-                avatar,
-                previousProfile,
-                currentProfile,
-                sourceLabel,
-                inputSequence);
-            return true;
-        }
-
-        private void UpdateConnectionDebugPulse(float deltaTime)
-        {
-            if (!ShouldEmitConnectionDebugPulse())
-            {
-                _connectionDebugPulseTimer = 0f;
-                return;
-            }
-
-            _connectionDebugPulseTimer += deltaTime;
-            if (_connectionDebugPulseTimer < ConnectionDebugPulseIntervalSeconds)
-            {
-                return;
-            }
-
-            _connectionDebugPulseTimer = 0f;
-            WriteConnectionDebugLine(BeginConnectionDebugLine("pulse"), warning: false);
-        }
-
-        private bool ShouldEmitConnectionDebugPulse()
-        {
-            return IsLobbyTrackedState(_state) || IsNetworkSessionAlive();
-        }
-
-        private void LogNetworkPeerEvent(string eventName, ulong peerClientId, string reason)
-        {
-            StringBuilder builder = BeginConnectionDebugLine(eventName);
-            builder.Append(' ').Append("peerClientId=").Append(peerClientId);
-
-            if (!string.IsNullOrEmpty(reason))
-            {
-                builder.Append(' ').Append("reason=").Append(reason);
-            }
-
-            bool isDisconnectEvent = string.Equals(eventName, "peer-disconnect", StringComparison.Ordinal);
-            NetworkManager networkManager = _runtimeRoot != null ? _runtimeRoot.NetworkManager : null;
-            if (isDisconnectEvent && networkManager != null && !string.IsNullOrEmpty(networkManager.DisconnectReason))
-            {
-                builder.Append(' ').Append("ngoReason=").Append(networkManager.DisconnectReason);
-            }
-
-            if (isDisconnectEvent)
-            {
-                AppendDisconnectInputProfiles(builder);
-            }
-
-            WriteConnectionDebugLine(builder, warning: isDisconnectEvent);
-        }
-
-        private void CaptureDisconnectDebugSnapshot(ulong peerClientId, NetworkManager networkManager, string reason)
-        {
-            _hasPendingDisconnectDebugSnapshot = true;
-            _pendingDisconnectPeerClientId = peerClientId;
-            _pendingDisconnectState = _state;
-            _pendingDisconnectReason = reason ?? string.Empty;
-            _pendingDisconnectNgoReason = networkManager != null ? networkManager.DisconnectReason ?? string.Empty : string.Empty;
-            _pendingDisconnectSceneName = SceneManager.GetActiveScene().name;
-            _pendingDisconnectAppLabel = ResolveConnectionDebugAppLabel();
-
-            if (networkManager != null && (networkManager.IsListening || networkManager.IsServer || networkManager.IsClient || networkManager.ShutdownInProgress))
-            {
-                _pendingDisconnectLocalClientIdLabel = networkManager.LocalClientId.ToString(CultureInfo.InvariantCulture);
-                return;
-            }
-
-            _pendingDisconnectLocalClientIdLabel = "na";
-        }
-
-        private void LogPeerDisconnectEdge(ulong peerClientId, string reason, NetworkManager networkManager)
-        {
-            StringBuilder builder = BeginConnectionDebugLine("peer-disconnect");
-            AppendDisconnectCoreFields(builder, peerClientId, reason, networkManager);
-            WriteConnectionDebugLine(builder, warning: false);
-        }
-
-        private void TryLogPeerDisconnectDetail(ulong peerClientId, string reason, NetworkManager networkManager)
-        {
-            try
-            {
-                StringBuilder builder = BeginConnectionDebugLine("peer-disconnect-detail");
-                AppendDisconnectCoreFields(builder, peerClientId, reason, networkManager);
-                AppendDisconnectInputProfiles(builder);
-                WriteConnectionDebugLine(builder, warning: true);
-            }
-            catch (Exception ex)
-            {
-                StringBuilder builder = BeginConnectionDebugLine("peer-disconnect-detail-failed");
-                AppendDisconnectCoreFields(builder, peerClientId, reason, networkManager);
-                builder.Append(' ').Append("detailError=").Append(ex.GetType().Name);
-                WriteConnectionDebugLine(builder, warning: true);
-            }
-        }
-
-        private void TryLogPeerDisconnectFallback()
-        {
-            if (!_hasPendingDisconnectDebugSnapshot)
-            {
-                return;
-            }
-
-            StringBuilder builder = BeginConnectionDebugLine("peer-disconnect-fallback");
-            builder.Append(' ').Append("peerClientId=").Append(_pendingDisconnectPeerClientId);
-
-            if (!string.IsNullOrEmpty(_pendingDisconnectReason))
-            {
-                builder.Append(' ').Append("reason=").Append(_pendingDisconnectReason);
-            }
-
-            if (!string.IsNullOrEmpty(_pendingDisconnectNgoReason))
-            {
-                builder.Append(' ').Append("ngoReason=").Append(_pendingDisconnectNgoReason);
-            }
-
-            builder.Append(' ').Append("capturedState=").Append(_pendingDisconnectState);
-            builder.Append(' ').Append("capturedScene=").Append(_pendingDisconnectSceneName);
-            builder.Append(' ').Append("capturedApp=").Append(_pendingDisconnectAppLabel);
-            builder.Append(' ').Append("capturedLocalClientId=").Append(_pendingDisconnectLocalClientIdLabel);
-            WriteConnectionDebugLine(builder, warning: false);
-        }
-
-        private void LogSessionStateTransition(MultiplayerSessionState previousState, MultiplayerSessionState nextState)
-        {
-            StringBuilder builder = BeginConnectionDebugLine("state-change");
-            builder.Append(' ').Append("from=").Append(previousState);
-            builder.Append(' ').Append("to=").Append(nextState);
-            WriteConnectionDebugLine(builder, warning: false);
-        }
-
-        private void LogGameplaySceneSyncCompleted()
-        {
-            WriteConnectionDebugLine(BeginConnectionDebugLine("gameplay-sync-complete"), warning: false);
-        }
-
-        private void LogAvatarConnectionProfileEvent(
-            string eventName,
-            MultiplayerPlayerAvatar avatar,
-            string previousProfile,
-            string currentProfile,
-            string sourceLabel,
-            int inputSequence)
-        {
-            StringBuilder builder = BeginConnectionDebugLine(eventName);
-            builder.Append(' ').Append("avatar=").Append(avatar.gameObject.name);
-            builder.Append(' ').Append("ownerClientId=").Append(avatar.OwnerClientId);
-            builder.Append(' ').Append("objectId=").Append(avatar.NetworkObjectId);
-            builder.Append(' ').Append("avatarServer=").Append(avatar.IsServer);
-            builder.Append(' ').Append("avatarOwnerLocal=").Append(avatar.IsOwner);
-            builder.Append(' ').Append("profile=").Append(currentProfile);
-
-            if (!string.IsNullOrEmpty(previousProfile))
-            {
-                builder.Append(' ').Append("previous=").Append(previousProfile);
-            }
-
-            builder.Append(' ').Append("source=").Append(sourceLabel);
-            builder.Append(' ').Append("inputSeq=").Append(inputSequence);
-            WriteConnectionDebugLine(builder, warning: false);
-        }
-
-        private void AppendDisconnectCoreFields(StringBuilder builder, ulong peerClientId, string reason, NetworkManager networkManager)
-        {
-            builder.Append(' ').Append("peerClientId=").Append(peerClientId);
-
-            if (!string.IsNullOrEmpty(reason))
-            {
-                builder.Append(' ').Append("reason=").Append(reason);
-            }
-
-            string ngoReason = networkManager != null ? networkManager.DisconnectReason : string.Empty;
-            if (!string.IsNullOrEmpty(ngoReason))
-            {
-                builder.Append(' ').Append("ngoReason=").Append(ngoReason);
-            }
-        }
-
-        private StringBuilder BeginConnectionDebugLine(string eventName)
-        {
-            StringBuilder builder = _connectionDebugBuilder;
-            builder.Clear();
-            builder.Append("[MultiplayerConnectionDebug] ");
-            builder.Append("seq=").Append(++_connectionDebugSequence).Append(' ');
-            builder.Append("t=").Append(Time.realtimeSinceStartup.ToString("F2", CultureInfo.InvariantCulture)).Append(' ');
-            builder.Append("app=").Append(ResolveConnectionDebugAppLabel()).Append(' ');
-            builder.Append("event=").Append(eventName).Append(' ');
-            builder.Append("state=").Append(_state).Append(' ');
-            builder.Append("scene=").Append(SceneManager.GetActiveScene().name);
-            AppendConnectionDebugNetworkView(builder);
-            return builder;
-        }
-
-        private string ResolveConnectionDebugAppLabel()
-        {
-            return $"{(Application.isEditor ? "editor-" : "build-")}{ResolveConnectionDebugRoleLabel()}";
-        }
-
-        private string ResolveConnectionDebugRoleLabel()
-        {
-            if (_isHost || _state == MultiplayerSessionState.CreatingHostSession)
-            {
-                return "host";
-            }
-
-            if (_state == MultiplayerSessionState.JoiningClientSession
-                || _state == MultiplayerSessionState.LobbyActive
-                || _state == MultiplayerSessionState.StartingGameplay
-                || _state == MultiplayerSessionState.InGameplay)
-            {
-                return "client";
-            }
-
-            NetworkManager networkManager = _runtimeRoot != null ? _runtimeRoot.NetworkManager : null;
-            if (networkManager != null && networkManager.IsServer)
-            {
-                return "host";
-            }
-
-            return networkManager != null && networkManager.IsClient ? "client" : "unknown";
-        }
-
-        private void AppendConnectionDebugNetworkView(StringBuilder builder)
-        {
-            NetworkManager networkManager = _runtimeRoot != null ? _runtimeRoot.NetworkManager : null;
-
-            builder.Append(' ').Append("localClientId=");
-            if (networkManager != null && (networkManager.IsListening || networkManager.IsServer || networkManager.IsClient || networkManager.ShutdownInProgress))
-            {
-                builder.Append(networkManager.LocalClientId);
-            }
-            else
-            {
-                builder.Append("na");
-            }
-
-            builder.Append(' ').Append("isServer=").Append(networkManager != null && networkManager.IsServer);
-            builder.Append(' ').Append("isClient=").Append(networkManager != null && networkManager.IsClient);
-            builder.Append(' ').Append("isConnected=").Append(networkManager != null && networkManager.IsConnectedClient);
-            builder.Append(' ').Append("isListening=").Append(networkManager != null && networkManager.IsListening);
-            builder.Append(' ').Append("shutdown=").Append(networkManager != null && networkManager.ShutdownInProgress);
-            builder.Append(' ').Append("hostPeerCount=");
-
-            if (networkManager != null && networkManager.IsServer && networkManager.IsListening && !networkManager.ShutdownInProgress)
-            {
-                builder.Append(networkManager.ConnectedClientsIds.Count);
-            }
-            else
-            {
-                builder.Append("na");
-            }
-
-            int lobbyPlayerCount = _currentLobby != null && _currentLobby.Players != null ? _currentLobby.Players.Count : 0;
-            builder.Append(' ').Append("lobbyPlayers=").Append(lobbyPlayerCount);
-        }
-
-        private void WriteConnectionDebugLine(StringBuilder builder, bool warning)
-        {
-            if (warning)
-            {
-                Debug.LogWarning(builder.ToString());
-                return;
-            }
-
-            Debug.Log(builder.ToString());
-        }
-
-        private void AppendDisconnectInputProfiles(StringBuilder builder)
-        {
-            MultiplayerPlayerAvatar[] avatars = FindObjectsOfType<MultiplayerPlayerAvatar>();
-            if (avatars == null || avatars.Length == 0)
-            {
-                return;
-            }
-
-            bool noActionObservedAffected = false;
-            builder.Append(' ').Append("avatarProfiles=");
-
-            for (int i = 0; i < avatars.Length; i++)
-            {
-                MultiplayerPlayerAvatar avatar = avatars[i];
-                if (avatar == null)
-                {
-                    continue;
-                }
-
-                if (i > 0)
-                {
-                    builder.Append(" | ");
-                }
-
-                builder.Append('[').Append(avatar.BuildConnectionDebugProfile()).Append(']');
-                noActionObservedAffected |= avatar.HasNoActionDisconnectProfile;
-            }
-
-            builder.Append(' ').Append("noActionObservedAffected=").Append(noActionObservedAffected);
-        }
-
-        private string ResolveDisconnectDebugReason(ulong clientId, NetworkManager networkManager)
-        {
-            if (!_isHost && networkManager != null && clientId == networkManager.LocalClientId)
-            {
-                return DisconnectedFromHostMessage;
-            }
-
-            if (_state == MultiplayerSessionState.StartingGameplay
-                && _isHost
-                && clientId != NetworkManager.ServerClientId)
-            {
-                return ClientDisconnectedDuringGameplayStartMessage;
-            }
-
-            if (_state == MultiplayerSessionState.InGameplay
-                && _isHost
-                && clientId != NetworkManager.ServerClientId)
-            {
-                return ClientDisconnectedDuringGameplayMessage;
-            }
-
-            return string.Empty;
-        }
-
         private async Task HandleFatalShutdownAsync(string message)
         {
             await ShutdownSessionInternalAsync();
@@ -1447,7 +1098,6 @@ namespace Core.Multiplayer
             try
             {
                 await LobbyService.Instance.SendHeartbeatPingAsync(_currentLobby.Id);
-                Debug.Log("MultiplayerSessionService: Lobby heartbeat sent.");
             }
             catch (Exception ex)
             {
@@ -1621,7 +1271,6 @@ namespace Core.Multiplayer
 
         private async Task ShutdownSessionInternalAsync()
         {
-            TryLogPeerDisconnectFallback();
             SetState(MultiplayerSessionState.Closing);
 
             _heartbeatEnabled = false;
@@ -1637,8 +1286,6 @@ namespace Core.Multiplayer
             ClearCachedSessionState();
             PublishSnapshot(default);
             SetState(MultiplayerSessionState.Closed);
-
-            Debug.Log("MultiplayerSessionService: Cleanup complete.");
             _currentOperationTask = null;
         }
 
@@ -1685,12 +1332,10 @@ namespace Core.Multiplayer
             {
                 if (_isHost)
                 {
-                    Debug.Log($"MultiplayerSessionService: Deleting lobby {_currentLobby.Id}.");
                     await LobbyService.Instance.DeleteLobbyAsync(_currentLobby.Id);
                 }
                 else if (!string.IsNullOrEmpty(_localPlayerId))
                 {
-                    Debug.Log($"MultiplayerSessionService: Leaving lobby {_currentLobby.Id} as player {_localPlayerId}.");
                     await LobbyService.Instance.RemovePlayerAsync(_currentLobby.Id, _localPlayerId);
                 }
             }
@@ -1742,19 +1387,6 @@ namespace Core.Multiplayer
             _lobbyPollTimer = 0f;
             _hostStartStableTimer = 0f;
             _gameplayStartTaskSource = null;
-            ClearDisconnectDebugSnapshot();
-        }
-
-        private void ClearDisconnectDebugSnapshot()
-        {
-            _hasPendingDisconnectDebugSnapshot = false;
-            _pendingDisconnectPeerClientId = 0;
-            _pendingDisconnectState = MultiplayerSessionState.Idle;
-            _pendingDisconnectReason = string.Empty;
-            _pendingDisconnectNgoReason = string.Empty;
-            _pendingDisconnectSceneName = string.Empty;
-            _pendingDisconnectAppLabel = string.Empty;
-            _pendingDisconnectLocalClientIdLabel = "na";
         }
 
         private int AdvanceSessionVersion()

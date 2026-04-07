@@ -105,7 +105,6 @@ namespace Core.Multiplayer
                 }
 
                 SetState(MultiplayerBootstrapState.Ready);
-                Debug.Log($"MultiplayerServicesBootstrap: Ready. PlayerId={_playerId}");
             }
             catch (Exception ex)
             {
