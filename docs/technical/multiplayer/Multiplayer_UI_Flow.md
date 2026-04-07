@@ -197,22 +197,6 @@ sequenceDiagram
     UI->>UI: waiting text + host-only Start 표시
 ```
 
-Host 흐름 규칙:
-
-1. Host는 room title을 입력하거나 비워 둘 수 있다.
-2. UI는 `Create Room` 입력을 `MultiplayerSessionService`에 전달한다.
-3. session service는 먼저 Relay allocation을 만든다.
-4. session service는 real Relay join code를 먼저 받는다.
-5. session service는 그 code를 Lobby metadata에 저장하며 lobby를 만든다.
-6. session service는 host 네트워크 런타임을 시작한다.
-7. UI는 session snapshot을 받아 `LobbyPanel`로 이동한다.
-
-현재 구현 메모:
-
-* duplicated multiplayer title scene에서는 이 Host path가 실제로 연결돼 있다.
-* `Cancel`은 active session이 있을 때 `ShutdownSessionAsync()`를 호출한다.
-* Client join path도 이제 같은 runtime driver를 통해 실제 session service로 연결돼 있다.
-
 ### 6.2. Client 참가 흐름 (Client Join Flow)
 
 ```mermaid
@@ -243,13 +227,6 @@ sequenceDiagram
     end
 ```
 
-Client 흐름 규칙:
-
-1. Client는 relay join code를 입력한다.
-2. code가 잘못되면 popup을 띄운다.
-3. Join이 성공하면 공통 lobby UI로 들어간다.
-4. Client는 `Start` 권한을 가지지 않는다.
-
 ### 6.3. Lobby 준비 흐름 (Lobby Ready Flow)
 
 ```mermaid
@@ -268,21 +245,6 @@ sequenceDiagram
     Net-->>Host: LoadingScene 로드
     Net-->>Client: LoadingScene 로드
 ```
-
-Lobby 준비 규칙:
-
-1. `2/2 connected`를 표시한다.
-2. 2초 동안 안정 상태를 기다린다.
-3. Host의 `Start`를 활성화한다.
-4. Host가 모든 플레이어의 gameplay 흐름을 시작한다.
-
-### 6.4. Back / Cancel / Fail Flow
-
-1. Host가 `Back` 또는 `Cancel`을 누르면 세션을 닫고 `TitleMainPanel`로 돌아간다.
-2. wrong key는 popup을 띄우고 `ClientJoinPanel`에 남긴다.
-3. 그 외 create, join, start fatal fail은 세션을 닫고 `TitleMainPanel`로 돌아간다.
-4. Host가 나간 뒤 Client만 lobby에 남아 있지 않는다.
-5. 이번 버전은 reconnect를 지원하지 않는다.
 
 ---
 

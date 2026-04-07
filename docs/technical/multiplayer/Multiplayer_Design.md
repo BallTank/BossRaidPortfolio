@@ -36,7 +36,7 @@
 | 멀티플레이 씬 흐름 | `TitleScene -> LoadingScene -> GamePlayScene` |
 | 결과 처리 | 두 플레이어 모두 사망 시 패배, 보스 처치 시 승리 |
 | 재시작 처리 | 두 플레이어 모두 `Enter` 입력 시 재시작 |
-| spectator | 사망 2초 후, 죽은 플레이어 카메라는 살아있는 플레이어의 exact camera를 본다 |
+| spectator | current baseline은 dead local player가 약 `2.5초` 뒤 own orbit input을 유지한 채 alive partner follow position을 본다 |
 
 ### 2.1. 용어 메모 (One-line Note)
 
@@ -94,38 +94,6 @@ flowchart TD
     Victory -->|Esc| BackTitle
     BackTitle --> Title
 ```
-
-### 3.1. 화면 패널 정의 (Panel Definition)
-
-| 패널 | 주요 요소 | 규칙 |
-| --- | --- | --- |
-| `TitleMainPanel` | `Solo Play`, `Multi Play` | 더 이상 `press any key` 시작 구조를 사용하지 않는다. solo, multi button이 있다.|
-| `MultiplayerModePanel` | `Host`, `Client`, `Back to Title` | 멀티플레이 진입 후 분기 선택용 패널이다. |
-| `HostCreatePanel` | optional room title input, `Create Room`, `Back` | 제목이 비어 있으면 자동 제목을 생성한다. |
-| `ClientJoinPanel` | Relay join code input, `Join`, `Back` | 잘못된 키 입력 시 popup을 띄우고 다시 입력받는다. |
-| `LobbyPanel` | room title, join code, connected players, waiting text, `Start`, back/cancel | Host와 Client가 공통으로 보는 대기 패널이다. Start 버튼은 Host에게만 보이고, `2/2 connected` 상태가 2초 유지되면 활성화된다. |
-| `WrongKeyPopup` | message text, `OK` | 메시지는 `Wrong key. Please type again.` 를 기본값으로 사용한다. |
-
-### 3.2. 룸 제목 규칙 (Room Title Rule)
-
-* Host는 방 제목을 직접 입력할 수 있다.
-* Host가 제목을 비워 두면 자동 제목을 생성한다.
-* 자동 제목 형식은 `join here 0000` 이다.
-* `0000`은 랜덤 4자리 숫자다.
-* Room title은 표시용 metadata다.
-* 실제 접속 키는 `Relay join code`다.
-
-### 3.3. Lobby 패널 표시 규칙 (Lobby Panel Rule)
-
-* `Client` 버튼을 누르면 join code 입력 패널과 lobby 정보 영역을 함께 노출할 수 있다.
-* Lobby panel에는 항상 `room title`이 보이도록 유지한다.
-* Host가 방을 만들면 room title과 join code를 즉시 표시한다.
-* Client가 올바른 join code로 입장하면 같은 lobby panel로 합류한다.
-* 두 플레이어가 모두 입장하면 `2/2 connected` 상태를 표시한다.
-* `2/2 connected` 상태가 2초 유지되면 Host의 `Start` 버튼이 활성화된다.
-* Host가 `Start`를 누르면 Host가 게임 씬 전환을 시작한다.
-
----
 
 ## 4. 네트워크 구조 (Network Architecture)
 
@@ -225,28 +193,6 @@ sequenceDiagram
     end
 ```
 
-### 5.1. 잘못된 키 처리 (Wrong Key Handling)
-
-* Wrong key는 `query empty`, `invalid`, `expired`, `not found` 같은 Client join 실패를 같은 UX로 묶어 처리한다.
-* 사용자 문구는 단순하게 유지한다.
-* 기본 문구는 아래와 같다.
-
-```text
-Wrong key. Please type again.
-```
-
-### 5.2. 세션 정리 규칙 (Session Cleanup Rule)
-
-이 멀티플레이 범위의 세션 정리 기준은 `Strict close`다.
-
-1. If create/join/start fails, close the multiplayer session and return to `TitleScene`.
-2. If Host presses `Back` or `Cancel` in multiplayer flow, close Lobby, Relay, and NGO session, then return to `TitleScene`.
-3. If Host leaves during gameplay, the session closes for both players and both return to `TitleScene`.
-4. Client does not stay in lobby alone after Host exit.
-5. This version does not support reconnect or host migration.
-
----
-
 ## 6. 플레이 규칙 (Gameplay Rules)
 
 ### 6.1. 플레이어 스폰 규칙 (Spawn Rule)
@@ -279,8 +225,8 @@ Wrong key. Please type again.
 ### 6.4. 사망 후 spectator 규칙 (Death Camera Rule)
 
 * 한 플레이어가 죽고 다른 플레이어가 살아 있으면, 즉시 게임오버로 가지 않는다.
-* 죽은 플레이어는 2초 동안 자신의 사망 상태를 본다.
-* 2초 후, 죽은 플레이어의 로컬 카메라는 살아있는 플레이어의 exact camera를 따라간다.
+* current baseline에서는 dead local player가 죽은 뒤 약 `2.5초` 후 spectator follow 후보가 된다.
+* 죽은 플레이어의 로컬 카메라는 살아있는 플레이어의 exact camera를 복사하지 않고, alive partner의 follow position만 따라간다.
 * 살아있는 플레이어의 카메라와 입력은 변경하지 않는다.
 * spectator는 죽은 플레이어 쪽 로컬 표현만 바뀐다.
 * 두 플레이어가 모두 죽으면 spectator보다 game over 결과가 우선한다.
@@ -289,7 +235,7 @@ Wrong key. Please type again.
 
 1. Dead player loses control.
 2. Alive player keeps full control.
-3. After 2 seconds, dead player watches the alive player's exact camera.
+3. After about 2.5 seconds, dead player keeps local orbit input and watches the alive player's follow position.
 4. If both are dead, switch to defeat flow.
 
 ---
@@ -300,12 +246,10 @@ Wrong key. Please type again.
 
 * 두 플레이어가 모두 죽으면 패배다.
 * 패배 UI는 양쪽 플레이어에게 동시에 표시한다.
-* 기본 문구는 아래 구조를 사용한다.
+* current panel contract는 `Image_Lose` art + retry prompt text 구조를 사용한다.
 
 ```text
-Game Over
-Press Enter to Retry
-Esc to Go Title
+Press Enter to Play (0/2)
 ```
 
 ### 7.2. 재시작 합의 규칙 (Retry Consensus)
@@ -315,10 +259,10 @@ Esc to Go Title
 
 1. First player presses Enter.
 2. Host records ready state for that player.
-3. The first ready player sees:
+3. Both players see:
 
 ```text
-Ready 1/2 - waiting for other player
+Press Enter to Play (1/2)
 ```
 
 4. Second player presses Enter.
@@ -326,19 +270,24 @@ Ready 1/2 - waiting for other player
 6. Both players see:
 
 ```text
-Both ready - restarting
+Press Enter to Play (2/2)
 ```
 
-7. 위 문구를 1초간 표시한 뒤, Host가 같은 게임 씬을 다시 로드한다.
+7. Host가 `2/2`를 확인하면 새 게임을 다시 시작한다.
+
+메모:
+
+* current UX 기준으로 `Defeated` title은 `Image_Lose` art가 맡는다.
+* retry prompt는 same defeat panel 하단 text로 count만 `0/2 -> 1/2 -> 2/2`로 바뀐다.
+* `2/2` 확인 후 exact restart delay는 implementation에서 짧게 조정할 수 있다.
 
 ### 7.3. 승리 규칙 (Victory)
 
 * 보스를 쓰러뜨리면 승리다.
-* 승리 UI는 아래 문구를 사용한다.
+* current panel contract에서 승리 title은 `Image_Win` art가 맡는다.
 
 ```text
-Victory
-Press Esc to Go Title
+Image_Win
 ```
 
 ### 7.4. 타이틀 복귀 규칙 (Back To Title)
@@ -358,7 +307,7 @@ Press Esc to Go Title
 | 입력 시스템 | `LocalInputProvider`만 존재 | owner input relay + `NetworkInputProvider` 계층 추가 |
 | 플레이어 관리 | 단일 `PlayerController` 가정 | 2 player spawn / owner 분리 / remote representation 추가 |
 | 보스 AI | 단일 플레이어 추적 | 2P aggro resolver 추가 |
-| 카메라 | 단일 로컬 카메라 | spectator exact-camera sync 추가 |
+| 카메라 | 단일 로컬 카메라 | dead-player spectator follow position + `2.5초` delay + local orbit 유지 |
 | 결과 UI | 단일 플레이어 재시작 | retry consensus / shared title return 추가 |
 
 ### 8.1. 예상 주요 시스템

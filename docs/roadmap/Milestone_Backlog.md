@@ -154,7 +154,24 @@
 ---
 
 
+### 9주차: 멀티플레이 구현
+
+- [ ] 콤보 평소에는 끄고 있다가 콤보일때만 켜기
+
+
 #### 멀티플레이어
+##### 보스 (Boss)
+1. [x] boss authority를 Host 기준으로 정리
+2. [x] boss 움직임 동기화
+3. [x] boss 공격 동기화
+4. [x] boss 피격 동기화
+5. [ ] boss aggro 구현
+
+---
+
+
+#### 멀티플레이어
+##### 공통 (General)
 1. [x] `TitleScene` 멀티플레이 UI 구조 설계 확정
 2. [x] NGO/UTP/Relay/Lobby 패키지 및 서비스 초기화
 2.1 [x] package 준비 세션
@@ -165,9 +182,28 @@
 2.6 [x] gameplay start 세션
 2.7 [x] strict cleanup 세션
 3. [x] Host/Client lobby create/join 흐름 구현
-4. [x] 2인 gameplay scene spawn 동기화
-5. [ ] boss aggro + 공격 구현
-6. [ ] (싱글, 멀티) 다시 플레이 만들기
+4. [ ] (싱글, 멀티) 다시 플레이 만들기
+
+##### 플레이어 (Player)
+1. [x] 2인 gameplay scene spawn 동기화
+2. [x] 이동 동기화: `client prediction + Host authoritative reconcile`
+3. [x] 플레이어 권한 규칙 정리: `client sends intent, Host decides result`
+4. [x] 대쉬 동기화: `local anticipation + Host correction`
+5. [x] 공격 동기화: `Attack1 / Attack2 / Attack3`의 시작, 판정, 데미지 결과를 Host authority로 처리
+6. [x] 상대 플레이어 표시 복제: remote partner의 `move / dash / attack / hit / stun / death`를 display-only 경로로 재생
+7. [x] 플레이어 HP/HUD 동기화: Host authoritative HP 기준으로 self / partner HUD 갱신
+
+##### 보스 (Boss)
+1. [ ] boss authority를 Host 기준으로 정리
+2. [ ] boss 움직임 동기화
+3. [ ] boss 공격 동기화
+4. [ ] boss 피격 동기화
+5. [ ] boss aggro 구현
+
+##### 구현 안된 것
+1. client screen boss HP update
+2. projectiles in boss attack 3, 4. 
+3. victory sign if the boss defeated.
 ---
 
 #### 🚧 버그
@@ -184,6 +220,9 @@
 - [x] 🟡**(플레이어) Attack3 넉백 거리 수정**: Projectile로 스턴생기면 stun distance보다 멀리 나간다. 넉백길이 일정하게 수정
 - [ ] 🟡**(플레이어, 애니메이션) locomotion 수정**: 반대방향으로 돌리면 속도가 줄어들 때 idle상태가 되어서 한프레임 때 서 있게 된다. 부드럽게 돌려서 계속 달리는 모션을 보여주자.
 - [ ] 🟡**(플레이어, 애니메이션) client 공격 우선순위 고치기**: 이동 또는 대쉬 때 공격을 하면 공격이 우선적으로 실행된다. 이동은 상관없지만 대쉬는 캔슬이 되면 안된다. 대쉬 캔슬이 되지 않게 만들기.
+- [x] 🟡**(플레이어, 애니메이션) dash 수정**: idle상태에서 dash를 하면 부드럽게 대쉬를 하지 않는다. 대신 방향키를 누른 상태에서 대쉬를 한다면 부드럽게 됐다. idle 상태에서도 대쉬 부드럽게 하기
+- [ ] 🟡**(플레이어, 애니메이션) dash 상대화면에서 부드럽게 출력**: 나의 dash가 상대 화면에서 잔상이 남기면서 진행된다. 이걸 방지하고 부드럽게 연출되게 하자.
+- [ ] 🟡**(플레이어, 콜리젼) 멀티 때 서로 닿지 않게 만들기**: 멀티일 때 서로 겹쳐서 지직거린다. 겹치지 않게 마진을 주자. 
 - [ ] 🟡**(보스, 애니메이션) 2페이즈 생략**: 페이즈 변환할 때 때려도 페이즈변환 무시 안되게 하기.
 - [x] 🟢**(리포지토리) 보스 모델 공유 누락 수정**: `FourEvilDragonsPBR/DragonUsurper`의 `Red.prefab(.meta)`와 `UNI VFX`의 `Crushing Pull Gold.prefab(.meta)`만 `.gitignore` 예외로 허용하도록 규칙을 조정
 - [x] 🟢**(보스, 공격범위)**: Attack1 editable range source를 `HeadDamageCaster.radius`로 단일화하고, `BossController.basicAttackRange`는 인스펙터에서 숨김 + legacy fallback으로만 유지.
@@ -192,6 +231,7 @@
 - [ ] 🟢**(보스, Attack1) 첫공격만 준비동작 생략**: 첫공격도 준비동작 있게 하기
 ~~- [ ] 🟢**(보스) attack2 모델과 로직의 싱크**: 도약을 하면 부모 gameObject가 애니메이션을 못따라간다. (보류)~~
 - [ ] ~~🟢**(플레이어)**: PlayerController 인스펙터에서 HUD 켜고 끄는 체크박스 기능 만들기, HUD위치 Top center로 변환.~~
+- [ ] 🟢**(보스, 멀티플레이) 회전 지지직**: 회전할 때 부드럽게 회전하도록 하기
 
 
 ---

@@ -280,18 +280,7 @@ small `alphaFloor`를 준다.
 
 ---
 
-## 4. 현재 면접용 기억 카드
-
-1. 현재 런타임 경로는 `PredictionReconciliation` 하나다.
-2. client는 `local prediction`만 하고, final authority는 Host가 가진다.
-3. locomotion-only 구간만 prediction하고, 나머지는 같은 구조 안에서 Host `Full` simulation으로 fallback한다.
-4. shared truth는 `PlayerLocomotionCore`가 담당한다.
-5. 남은 미세한 A/D 문제는 주로 `predicted render smoothing` 쪽에서 읽는다.
-6. `LookOnly` / `HostOnlyCharacterController`는 현재 코드가 아니라 제거된 이력이다.
-
----
-
-## 5. 관련 문서
+## 4. 관련 문서
 
 * `docs/technical/System_Blueprint.md`
 * `docs/technical/Technical_Glossary.md`

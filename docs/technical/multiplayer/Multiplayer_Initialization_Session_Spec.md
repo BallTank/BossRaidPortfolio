@@ -1,7 +1,7 @@
 ﻿# 🧩 멀티플레이 초기화 세션 명세: Boss Raid Portfolio
 
 이 문서는 `NGO / UTP / Relay / Lobby` 패키지 및 서비스 초기화를 **세션 단위**로 정확하게 정의한다.  
-기존 `docs/technical/multiplayer/Multiplayer_Service_Initialization.md`가 넓은 기준 문서라면, 이 문서는 **"각 세션이 정확히 언제 시작되고, 무엇을 하고, 어디서 끝나는가"**를 더 또렷하게 설명하는 companion spec이다.
+이 문서는 **"각 세션이 정확히 언제 시작되고, 무엇을 하고, 어디서 끝나는가"**를 더 또렷하게 설명하는 기준 spec이다.
 
 ---
 
@@ -34,55 +34,6 @@
 | UI 기준 문서 | `docs/technical/multiplayer/Multiplayer_UI_Flow.md` |
 | 시스템 구조 기준 | `docs/technical/System_Blueprint.md` |
 | 참조 로그 | `docs/Progress_Log/2026-03-16.md` |
-
-### 2.1. 현재 기준선 (Current Baseline)
-
-현재 저장소 기준선은 아래와 같다.
-
-* common `TitleSceneController` 내부에는 아직 fake multiplayer prototype 메서드가 남아 있지만, duplicated multiplayer title scene의 Host create / Client join path는 real session service로 우회됐다.
-* Host path는 real Relay join code, real Lobby metadata(`S1`), real `1/2 connected` 표시까지 연결됐다.
-* Client path도 real Lobby query(`S1`) + Relay join + NGO Client start까지 연결됐고, `2/2 connected` 이후 `Start unlock` rule만 아직 후속 단계다.
-* `Packages/manifest.json` direct baseline에는 `com.unity.services.multiplayer@2.1.3`, `com.unity.netcode.gameobjects@1.15.1`가 들어가 있다.
-* `Packages/packages-lock.json`에는 resolver 결과로 `com.unity.transport@2.6.0`, `com.unity.services.authentication@3.6.0`, `com.unity.services.core@1.16.0` 등이 잡혀 있다.
-* `ProjectSettings/ProjectSettings.asset`의 `cloudProjectId`는 채워져 있다.
-* `Assets/Scripts/Multiplayer` 계층이 생겼고, 현재 `Bootstrap / Runtime / Services / UI / SceneFlow`로 분리돼 있다.
-
-### 2.2. 현재 완료 상태 (Current Completion State)
-
-`2026-03-17` 기준 현재 완료 상태는 아래와 같다.
-
-| 항목 | 현재 상태 |
-| --- | --- |
-| Project Link | 완료 (`cloudProjectId` 채워짐) |
-| Session 1 | 완료 |
-| direct package | `com.unity.services.multiplayer@2.1.3` |
-| direct package | `com.unity.netcode.gameobjects@1.15.1` |
-| resolver package | `com.unity.transport@2.6.0` |
-| resolver package | `com.unity.services.authentication@3.6.0` |
-| resolver package | `com.unity.services.core@1.16.0` |
-| resolve log | `Logs/unity_package_resolve.log` 생성 및 성공 |
-| compile gate | `error CS`, `Compilation failed`, `Scripts have compiler errors` 패턴 미검출 |
-| Session 2 code | `MultiplayerServicesBootstrap`, `MultiplayerTitleSceneDriver`, `MultiplayerScenePaths` 추가 |
-| Session 2 scene scope | `Assets/Scenes/mutiplayer/TitleScene.unity`에서만 bootstrap path 활성 |
-| Session 2 runtime smoke | 완료 (`Create Room` 클릭 전 `Connecting...` 확인 + Console `PlayerId` log 확인) |
-| Session 3 code | `MultiplayerRuntimeRoot`, `MultiplayerSessionService`, `TitleSceneController` multiplayer bridge 추가 |
-| Session 3 compile gate | 완료 (`dotnet build Assembly-CSharp.csproj -v:minimal`) |
-| Session 3 current output | Host `Create Room` 성공 시 real Relay join code + Lobby create + `LobbyPanel` real `1/2 connected` |
-| Session 3 runtime smoke | 완료 (`PlayerId ready -> Host session started -> Lobby heartbeat -> Deleting lobby -> Cleanup complete` 로그 확인) |
-| Session 4 code | `JoinClientSessionAsync`, join-code query helper, wrong-key/fatal failure 분기 추가 |
-| Session 4 compile gate | 완료 (`dotnet build Assembly-CSharp.csproj -v:minimal`, Warning 3 / Error 0) |
-| Session 4 current output | Client `Join` 성공 시 real Lobby join + Relay join + NGO Client start + `LobbyPanel` real room data 표시 |
-| 다음 단계 | `Session 5 - Lobby Active Session` |
-
-쉬운 설명:
-
-패키지 준비 단계는 끝났다.  
-UGS bootstrap 코드도 들어갔다.  
-Host create와 Client join이 모두 real Relay/Lobby/NGO 경로로 연결됐다.  
-Host create / cancel은 실제 manual smoke test까지 끝났다.  
-다음 일은 Lobby active 안정화와 `Start unlock`이다.
-
----
 
 ## 3. 고정 결정 사항 (Locked Decision)
 
@@ -868,48 +819,16 @@ UI가 Relay, Lobby, NGO 코드를 직접 실행하면 안 된다.
 
 ---
 
-## 7. TitleScene 연결 지점 (TitleScene Integration Point)
+## 7. 검증 체크리스트 (Verification Checklist)
 
-현재 duplicated multiplayer title scene에서는 아래 매핑이 적용된다.  
-common `TitleSceneController` 내부에는 prototype 메서드가 남아 있지만, runtime driver가 Host create / Host cancel을 session service로 우회한다.
-
-| 현재 메서드 | common prototype 동작 | duplicated multiplayer runtime 연결 상태 |
-| --- | --- | --- |
-| `HandleCreateRoomSelected()` | random join code 생성 + fake `2/2` | `MultiplayerTitleSceneDriver`가 `CreateHostSessionAsync(roomTitle)`로 우회함 |
-| `HandleJoinRoomSelected()` | code 형식만 검사 + fake lobby 진입 | `MultiplayerTitleSceneDriver`가 `JoinClientSessionAsync(joinCode)`로 우회함 |
-| `HandleStartSelected()` | local `SceneLoader.Load` | duplicated gameplay scene path load 유지, 이후 `StartGameplayAsync()` 예정 |
-| `HandleLobbyExitSelected()` | local state reset만 수행 | active session이 있으면 `ShutdownSessionAsync()` 호출 후 title 복귀 |
-
-### 7.1. 제거 대상 fake logic
-
-아래 로직은 아직 남아 있는 fake logic 또는 common prototype fallback이다.
-
-* `GenerateJoinCode(6)` - duplicated Host runtime에서는 우회되지만 common prototype에는 남아 있다.
-* `_connectedPlayerCount = 2` 직접 대입 - common prototype fallback에는 남아 있지만 duplicated runtime Host/Client path에서는 더 이상 쓰지 않는다.
-* `_hostStartCountdownActive = true`를 실제 연결 없이 시작 - common Host prototype path에 남아 있다.
-* join code 형식만 맞으면 곧바로 lobby success 처리하는 흐름 - common Client prototype fallback에만 남아 있고 duplicated runtime에서는 더 이상 쓰지 않는다.
-
-### 7.2. 유지할 UI 규칙 (Keep Rule)
-
-아래 UI 규칙은 유지한다.
-
-* room title empty -> `join here 0000` 스타일 자동 제목
-* wrong key popup 문구
-* Host only Start button
-* `2/2 connected` 상태가 안정적으로 2초 유지되면 Start unlock
-
----
-
-## 8. 검증 체크리스트 (Verification Checklist)
-
-### 8.1. Session 0 / 1 검증
+### 7.1. Session 0 / 1 검증
 
 * `cloudProjectId`가 비어 있지 않아야 한다.
 * required package가 설치되어야 한다.
 * `NetworkManager`, `UnityTransport` 추가 가능 상태여야 한다.
 * compile error가 없어야 한다.
 
-#### 8.1.1. 빠른 확인 방법
+#### 7.1.1. 빠른 확인 방법
 
 현재 상태를 빠르게 확인할 때는 아래 순서로 본다.
 
@@ -936,13 +855,13 @@ common `TitleSceneController` 내부에는 prototype 메서드가 남아 있지�
 * `Unity.Services.Multiplayer.dll`
 * `Unity.Services.Authentication.dll`
 
-### 8.2. Session 2 검증
+### 7.2. Session 2 검증
 
 * Play Mode에서 `UnityServices.InitializeAsync()` 성공
 * anonymous sign-in 성공
 * `PlayerId` 확보 확인
 
-### 8.3. Session 3 검증
+### 7.3. Session 3 검증
 
 * Host create 클릭
 * real relay join code 생성
@@ -950,25 +869,25 @@ common `TitleSceneController` 내부에는 prototype 메서드가 남아 있지�
 * `LobbyPanel`에 `room title`, `join code`, `1/2 connected` 표시
 * `Cancel` 클릭 시 lobby delete + NGO shutdown + title 복귀
 
-### 8.4. Session 4 검증
+### 7.4. Session 4 검증
 
 * wrong code -> popup 표시
 * valid code -> lobby join 성공
 * relay join 성공
 * NGO client start 성공
 
-### 8.5. Session 5 검증
+### 7.5. Session 5 검증
 
 * Host/Client 모두 실제 `2/2 connected` 표시
 * Host만 `Start` 버튼을 본다
 * `2/2 + 2초 stable` 이후에만 `Start` 활성화
 
-### 8.6. Session 6 검증
+### 7.6. Session 6 검증
 
 * Host start -> both peers synchronized gameplay scene load
 * local-only start path가 multiplayer main path를 타지 않는다
 
-### 8.7. Session 7 검증
+### 7.7. Session 7 검증
 
 * Host cancel -> both peers title return
 * Client back -> host lobby state 또는 strict close 규칙이 정상 동작
@@ -976,16 +895,16 @@ common `TitleSceneController` 내부에는 prototype 메서드가 남아 있지�
 
 ---
 
-## 9. 구현 가드 메모 (Implementation Guard Note)
+## 8. 구현 가드 메모 (Implementation Guard Note)
 
-### 9.1. Solo 보호 규칙
+### 8.1. Solo 보호 규칙
 
 멀티플레이 bootstrap 코드는 `Solo Play`를 건드리지 않는다.
 
 * solo start는 기존 `SceneLoader.Load(_nextSceneId)` 유지
 * multiplayer path만 session service를 통한다
 
-### 9.2. 로그 규칙
+### 8.2. 로그 규칙
 
 초기 구현 시 최소 아래 로그는 유지하는 편이 좋다.
 
@@ -996,7 +915,7 @@ common `TitleSceneController` 내부에는 prototype 메서드가 남아 있지�
 * host/client start success/fail
 * cleanup start/complete
 
-### 9.3. 외부 기준 참고 (Official Reference)
+### 8.3. 외부 기준 참고 (Official Reference)
 
 아래 Unity 공식 문서를 기준으로 broad initialization 문서와 이 session spec을 맞춘다.
 
@@ -1011,13 +930,13 @@ common `TitleSceneController` 내부에는 prototype 메서드가 남아 있지�
 * Lobby events: `https://docs.unity.com/en-us/lobby/lobby-events`
 * NGO scene management: `https://docs-multiplayer.unity3d.com/netcode/current/basics/scenemanagement/using-networkscenemanager/`
 
-### 9.4. 작성 기준일 (Verification Date)
+### 8.4. 작성 기준일 (Verification Date)
 
 이 문서의 외부 기준 확인일은 `2026-03-13`이다.
 
 ---
 
-## 10. 이번 문서의 비범위 (Non-Goal)
+## 9. 이번 문서의 비범위 (Non-Goal)
 
 이 문서는 아래 구현 상세를 다루지 않는다.
 
@@ -1032,6 +951,6 @@ common `TitleSceneController` 내부에는 prototype 메서드가 남아 있지�
 
 ---
 
-## 11. 참조 로그 (Trace Note)
+## 10. 참조 로그 (Trace Note)
 
 참조 로그: `docs/Progress_Log/2026-03-16.md`
