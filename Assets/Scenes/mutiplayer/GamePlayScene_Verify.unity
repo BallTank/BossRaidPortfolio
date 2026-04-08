@@ -182,14 +182,15 @@ MonoBehaviour:
   searchingMoveSpeed: 2
   rotationSpeed: 5
   phaseTwoHealthThreshold: 0.5
-  detectionRange: 46.3
-  basicAttackRange: 2.7
-  lungeAttackRange: 26.8
-  projectileAttackRange: 33.32
-  aoeAttackRange: 39.87
+  aggroPriorityRange: 18.6
+  detectionRange: 64.1
+  lungeAttackRange: 30.7
+  sharedRangedAttackRange: 48.7
   chaseReengageBuffer: 1
   searchDuration: 5
-  attackDamage: 40
+  aggroTime: 5
+  basicAttackRange: 2.7
+  attackDamage: 5
   attackDuration: 1
   attackCooldown: 4
   basicAttackSettings:
@@ -250,9 +251,9 @@ MonoBehaviour:
   enableChase: 1
   enableRotation: 1
   enableBasicAttack: 1
-  enableLungeAttack: 1
-  enableProjectileAttack: 1
-  enableAoEAttack: 1
+  enableLungeAttack: 0
+  enableProjectileAttack: 0
+  enableAoEAttack: 0
   ignorePlayerCollision: 1
   showPhaseDebugLabel: 0
 --- !u!143 &242866945
@@ -293,8 +294,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 29f8d572df6abc242b243fcd31b4d868, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _maxHealth: 150
-  _currentHealth: 150
+  _maxHealth: 500
+  _currentHealth: 500
   _isInvincible: 0
   _runtimeWriteAuthorityMode: 0
 --- !u!1 &311313666
@@ -521,6 +522,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _ownerHealth: {fileID: 242866946}
+  _ownerController: {fileID: 0}
 --- !u!114 &423284611
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -918,6 +920,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _ownerHealth: {fileID: 242866946}
+  _ownerController: {fileID: 0}
 --- !u!1 &963194225
 GameObject:
   m_ObjectHideFlags: 0
@@ -1148,6 +1151,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _ownerHealth: {fileID: 242866946}
+  _ownerController: {fileID: 0}
 --- !u!114 &1189825118
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1233,6 +1237,7 @@ MonoBehaviour:
   _victoryTrigger: Victory
   _defeatedTrigger: Defeated
   _restartKey: 13
+  _multiplayerRetryRestartDelay: 0.35
 --- !u!1 &1470039689
 GameObject:
   m_ObjectHideFlags: 0
