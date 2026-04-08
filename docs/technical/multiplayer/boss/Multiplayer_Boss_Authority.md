@@ -6,6 +6,10 @@
 boss는 player처럼 owner input을 가지는 오브젝트가 아니라,
 Host가 직접 시뮬레이션하는 `server-owned NPC`로 본다.
 
+관련 세부 규칙:
+
+* current aggro source of truth는 `docs/technical/multiplayer/boss/Mutiplayer_Boss_Aggro.md`를 따른다.
+
 ---
 
 ## 1. 목적 (Purpose)

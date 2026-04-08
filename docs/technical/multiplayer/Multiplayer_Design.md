@@ -203,24 +203,31 @@ sequenceDiagram
 
 ### 6.2. 보스 타깃 규칙 (Boss Aggro Rule)
 
-이 보스는 항상 `alive player`만 타깃 후보로 본다.
+current boss aggro는 same-day follow-up으로 여러 번 정리되었기 때문에,
+이 섹션은 short summary만 유지하고 detailed source of truth는 전용 문서를 따른다.
 
-기본 규칙은 아래와 같다.
+상세 문서:
 
-1. If there is no hit override, the boss picks the nearest alive player.
-2. If the farther player hits the boss, target switches to that attacker.
-3. If both players hit the boss, aggro uses hit time as the override hint.
-4. If the same target stayed fixed for more than 5 seconds, the boss refreshes target selection.
-5. Refresh first checks recent hit information, then falls back to nearest alive player.
+* `docs/technical/multiplayer/boss/Mutiplayer_Boss_Aggro.md`
+
+현재 요약 규칙은 아래와 같다.
+
+1. Boss only considers alive players.
+2. Without hold/lock, boss falls back to the closest live player.
+3. If current target stays inside `AggroPriorityRange`, distance alone does not change the target.
+4. After boss attacks, target still stays fixed.
+5. The first valid boss hit starts `AggroTime`.
+6. During `AggroTime`, boss keeps current target and only records damage.
+7. When `AggroTime` ends, boss switches one time to the clear damage winner if both players are valid candidates inside `AggroPriorityRange`.
 
 ### 6.3. 권장 런타임 데이터 (Suggested Runtime Data)
 
 | 데이터 | 의미 |
 | --- | --- |
 | `CurrentTargetClientId` | 현재 보스가 바라보는 대상 |
-| `LastHitClientId` | 가장 최근에 보스를 타격한 플레이어 |
-| `LastHitTimeByPlayer` | 플레이어별 마지막 타격 시각 |
-| `AggroRefreshInterval = 5.0f` | 고정 타깃 강제 재평가 주기 |
+| `AggroPriorityRange` | current target hold와 timer-end compare를 여는 우선 원 |
+| `AggroTime` | current cycle damage를 누적하는 타이머 |
+| `LockedAggroTargetClientId` | timer-end clear winner가 있을 때 유지되는 대상 |
 
 ### 6.4. 사망 후 spectator 규칙 (Death Camera Rule)
 

@@ -248,7 +248,7 @@ classDiagram
 ```
 
 ### 2.2. Boss AI Architecture (The Dragon)
-거리 기반 상태 전환과 비주얼 분리(BossVisual)가 적용된 보스 전용 구조입니다.
+거리 기반 상태 전환, closest-target base + recent-damage aggro override, 비주얼 분리(BossVisual)가 적용된 보스 전용 구조입니다.
 
 **관련 코드:**
 *   **Controller**: `Assets/Scripts/Boss/BossController.cs`
@@ -266,11 +266,12 @@ classDiagram
         <<MonoBehaviour>>
         +MoveSpeed float
         +DetectionRange float
+        +AggroPriorityRange float
+        +AggroTime float
         +BasicAttackRangeOrigin Transform
         +BasicAttackRange float
         +LungeAttackRange float
-        +ProjectileAttackRange float
-        +AoEAttackRange float
+        +SharedRangedAttackRange float
         +ChaseReengageBuffer float
         +CanAttack bool
         +IsLocomotionVisualSuppressed bool
@@ -287,6 +288,7 @@ classDiagram
         +GetPlanarDistanceToTarget() float
         +GetPlanarDistanceFromBasicAttackOriginToTarget() float
         +IsTargetInDetectionRange() bool
+        +RegisterAggroContribution(GameObject, int) void
         +RefreshClosestLiveTarget(bool) void
         +GetPlanarDistance(Vector3, Vector3) float
         +CaptureAuthoritativeState(int, float) BossAuthoritativeState
@@ -329,6 +331,7 @@ classDiagram
         <<MonoBehaviour>>
         +Owner Health
         +TakeDamage(int)
+        +ReportDamageContribution(GameObject, int)
     }
 
     class DamageCaster { +EnableHitbox(int) +DisableHitbox() +SetOwner(GameObject) }
@@ -357,6 +360,7 @@ classDiagram
     BossController --> Health : Uses
     BossController --> DamageCaster : Controls
     BossController --> BossAuthoritativeState : captures host truth
+    BossHitBox --> BossController : forwards dealer contribution
     MultiplayerBossAuthorityBridge --> BossController : captures host truth / applies display-only state
     MultiplayerBossAuthorityBridge --> BossVisual : drives client display-only animation
     MultiplayerBossAuthorityBridge --> CombatHUDController : writes boss HUD from authoritative HP
@@ -575,16 +579,16 @@ classDiagram
 | **Attack Logic** | `AttackState`는 콤보, 캔슬, 개별 데미지 윈도우를 처리하며, multiplayer에서는 Host-approved action start를 기준으로 동작한다. |
 | **Camera & Presentation** | 카메라 입력과 `CameraRoot` 관리는 `ThirdPersonCameraController`가 맡고, multiplayer local 화면 보정은 `MultiplayerPlayerPresentationDriver`가 visual-only helper로 담당한다. dead local player spectator는 alive partner의 exact camera를 공유하지 않고, dead player의 own orbit input을 유지한 채 약 `2.5초` 뒤 partner `GetPreferredCameraFollowPosition()`만 따라간다. |
 | **Hit & Reaction** | 플레이어는 `IBossAttackHitReceiver`를 통해 보스 공격 메타데이터를 받고, hit/stun/death 반응은 authoritative snapshot apply를 기준으로 정리한다. |
-| **HUD Binding** | `CombatHUDController`는 player/boss HP, combo, damage feedback을 관리한다. multiplayer에서는 player HUD는 avatar-driven authoritative path를 쓰고, boss HUD는 local boss `Health` 대신 `MultiplayerBossAuthorityBridge`가 boss authoritative snapshot으로 직접 갱신한다. `MultiplayerPlayerAvatar.TryGetReplicatedHealth(...)`도 same HUD replica를 result-flow read source로 재사용한다. |
+| **HUD Binding** | `CombatHUDController`는 player/boss HP, combo, damage feedback을 관리한다. multiplayer에서는 player HUD는 avatar-driven authoritative path를 쓰고, boss HUD는 local boss `Health` 대신 `MultiplayerBossAuthorityBridge`가 boss authoritative snapshot으로 직접 갱신한다. same viewer-side HUD path는 portrait에도 적용되어, Host 화면은 Host portrait가 좌측 main HUD에, Client 화면은 Client portrait가 좌측 main HUD에 오도록 `MultiplayerPlayerAvatar`가 local viewer 기준으로 portrait layout도 다시 쓴다. `MultiplayerPlayerAvatar.TryGetReplicatedHealth(...)`도 same HUD replica를 result-flow read source로 재사용한다. |
 | **Animator & Validation** | `PlayerAnimatorGuard`가 플레이어 Animator 상태/이벤트 계약의 누락을 점검하고 복구 경로를 제공한다. |
 
 ### 3.3. Boss System (The Dragon)
 | Component | Note |
 | --- | --- |
 | **Boss Logic (FSM)** | `BossController`는 Idle, Combat, Attack, Searching, Hit, Dead 흐름을 상태 머신으로 관리한다. |
-| **Boss Sensors** | 타겟 감지와 공격 거리 평가는 Y를 제외한 XZ 거리 기준으로 수행한다. |
-| **Boss Navigation** | 추적 이동, 즉시 회전, attack-range hysteresis, locomotion visual suppression을 분리해 관리한다. |
-| **Boss Combat** | 공격 선택은 pattern range filtering과 `Strategy Pattern`을 기준으로 구성되며, Basic/Lunge/Projectile/AoE 슬롯을 같은 attack state에서 위임한다. |
+| **Boss Sensors** | 타겟 감지와 공격 거리 평가는 Y를 제외한 XZ 거리 기준으로 수행한다. 기본 타겟 획득 fallback은 closest live player지만, current target이 `AggroPriorityRange` 안에 있는 동안에는 attack 전/후에도 그 target을 계속 유지한다. boss가 어느 플레이어에게서든 첫 피격을 받으면 `AggroTime`이 시작되고, 타이머 동안 current target을 유지한 채 cycle damage를 누적한다. 타이머가 끝난 뒤 두 플레이어가 `AggroPriorityRange` 안에 함께 있으면 current cycle damage winner로 target을 한 번 교체하고, 새 피격이 들어오면 다음 cycle이 다시 시작된다. current implementation의 target refresh path는 `scan live targets -> resolve aggro priority -> apply target if changed` 순서로 분리해 유지한다. inspector tuning은 detection-related 값(`AggroPriorityRange`, `DetectionRange`, `LungeAttackRange`, `SharedRangedAttackRange`, `ChaseReengageBuffer`, `SearchDuration`)을 `Detection Settings`에 모으고, `AggroTime`만 `Aggro Settings`에 분리한다. |
+| **Boss Navigation** | 추적 이동, 즉시 회전, attack-range hysteresis, locomotion visual suppression을 분리해 관리한다. aggro timer는 `AttackState`와 phase intro 중에는 pause되어 animation 전환을 방해하지 않는다. |
+| **Boss Combat** | 공격 선택은 pattern range filtering과 `Strategy Pattern`을 기준으로 구성되며, Basic/Lunge/Projectile/AoE 슬롯을 같은 attack state에서 위임한다. Phase2의 Projectile/AoE entry gate는 `SharedRangedAttackRange` 하나를 공용 source로 사용한다. |
 | **DamageCaster Ownership** | `HeadDamageCaster`, `LungeDamageCaster`는 Boss 로직 계층에 두고, 실제 위치 추종은 visual/bone 계층의 anchor를 사용한다. |
 | **Lunge Contract** | Lunge는 animation event + normalized-time fallback + root motion relay를 조합해 phase 전환과 이동을 제어한다. |
 | **Boss Authority Contract** | current `step 1-2` 기준 `BossController`는 `CaptureAuthoritativeState(...)`로 dedicated boss snapshot을 만들고, `MultiplayerBossAuthorityBridge`가 이 snapshot을 Host runtime-root에서 capture/send 한다. snapshot은 transform / locomotion state / current attack id / attack start server tick / HP / phase / dead flag만 담는다. |
@@ -594,8 +598,8 @@ classDiagram
 ### 3.4. User Interface (UI)
 | Component | Note |
 | --- | --- |
-| **Combat HUD** | `CombatHUDController`는 HP bar, combo UI, damage feedback, 전체 HUD visibility를 제어한다. multiplayer boss HP는 `MultiplayerBossAuthorityBridge`가 authoritative snapshot 기준으로 직접 반영한다. |
-| **Player/Boss Labels** | HUD는 player, boss, partner label과 HP source를 분리해 solo/multiplayer 양쪽에 대응한다. |
+| **Combat HUD** | `CombatHUDController`는 HP bar, combo UI, damage feedback, 전체 HUD visibility를 제어한다. multiplayer boss HP는 `MultiplayerBossAuthorityBridge`가 authoritative snapshot 기준으로 직접 반영한다. same HUD controller는 prefab 안의 기본 Host/Client portrait pair를 캐시하고, local viewer가 누구인지에 따라 좌측 main portrait와 partner portrait를 swap한다. |
+| **Player/Boss Labels** | HUD는 player, boss, partner label과 HP source를 분리해 solo/multiplayer 양쪽에 대응한다. multiplayer에서는 label뿐 아니라 portrait도 viewer-relative rule을 따라, Host 화면은 `Host(me)`가 좌측, Client 화면은 `Client(me)`가 좌측에 유지된다. |
 | **Title Prototype UI** | `TitleSceneController`는 `TitleMainPanel`, multiplayer 선택 패널, join/lobby/wrong-key panel을 title flow 검증용으로 관리한다. |
 
 ### 3.5. Game Logic & Flow
@@ -618,6 +622,7 @@ classDiagram
 | **Multiplayer overall design** | `docs/technical/multiplayer/Multiplayer_Design.md` |
 | **Player action authority** | `docs/technical/multiplayer/player/Multiplayer_Player_Action_Authority.md` |
 | **Boss authority** | `docs/technical/multiplayer/boss/Multiplayer_Boss_Authority.md` |
+| **Boss aggro rule** | `docs/technical/multiplayer/boss/Mutiplayer_Boss_Aggro.md` |
 | **Daily implementation history** | `docs/Progress_Log/README.md` 및 각 일자 로그 |
 
 이 문서는 architecture overview와 current runtime snapshot을 유지한다.
