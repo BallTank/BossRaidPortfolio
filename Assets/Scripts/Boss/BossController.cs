@@ -63,6 +63,9 @@ namespace Core.Boss
         [SerializeField, Tooltip("두 플레이어가 모두 이 범위 안에 있으면 aggro time 종료 후 피해 기여도로 어그로를 비교한다.")]
         private float aggroPriorityRange = 6.0f;
         [SerializeField] private float detectionRange = 10.0f;
+        [FormerlySerializedAs("attackRange")]
+        [SerializeField, Tooltip("Basic 공격 사거리. Head DamageCaster radius와 자동 동기화된다.")]
+        private float basicAttackRange = 2.5f;
         [SerializeField] private float lungeAttackRange = 4.5f;
         [FormerlySerializedAs("projectileAttackRange")]
         [FormerlySerializedAs("aoeAttackRange")]
@@ -75,9 +78,6 @@ namespace Core.Boss
         [FormerlySerializedAs("aggroDamageWindow")]
         [SerializeField, Tooltip("첫 피격 후 피해 기여도를 확정하기 전까지 누적할 시간(초)")]
         private float aggroTime = 3.0f;
-
-        [FormerlySerializedAs("attackRange")]
-        [SerializeField, HideInInspector] private float basicAttackRange = 2.5f;
 
         [Header("공격 설정 (Attack Settings)")]
         [SerializeField] private int attackDamage = 20;
@@ -200,6 +200,8 @@ namespace Core.Boss
             if (lungeAttackRange < 0f) lungeAttackRange = 0f;
             if (sharedRangedAttackRange < 0f) sharedRangedAttackRange = 0f;
             if (chaseReengageBuffer < 0f) chaseReengageBuffer = 0f;
+            SyncBasicAttackRangeToHeadDamageCaster();
+
             if (basicAttackSettings == null)
             {
                 basicAttackSettings = new BasicAttackSettings();
@@ -232,7 +234,7 @@ namespace Core.Boss
         public float DetectionRange => detectionRange;
         public float AggroPriorityRange => Mathf.Min(aggroPriorityRange, detectionRange);
         public float AggroTime => aggroTime;
-        public float BasicAttackRange => _headDamageCaster != null ? _headDamageCaster.Radius : Mathf.Max(0f, basicAttackRange);
+        public float BasicAttackRange => Mathf.Max(0f, basicAttackRange);
         public float LungeAttackRange => lungeAttackRange;
         public float SharedRangedAttackRange => sharedRangedAttackRange;
         public float ProjectileAttackRange => sharedRangedAttackRange;
@@ -438,6 +440,8 @@ namespace Core.Boss
 
         private void Start()
         {
+            SyncBasicAttackRangeToHeadDamageCaster();
+
             // DamageCaster에 Owner 설정 (자해 방지)
             if (_headDamageCaster != null)
             {
@@ -533,6 +537,16 @@ namespace Core.Boss
             {
                 _health = GetComponent<Health>();
             }
+        }
+
+        private void SyncBasicAttackRangeToHeadDamageCaster()
+        {
+            if (_headDamageCaster == null)
+            {
+                return;
+            }
+
+            _headDamageCaster.SetRadius(Mathf.Max(0f, basicAttackRange));
         }
 
         private static ulong ResolveTargetNetworkObjectId(Transform target)
