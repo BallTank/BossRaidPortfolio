@@ -60,18 +60,24 @@ namespace Core.Boss
         [SerializeField, Range(0.05f, 1f)] private float phaseTwoHealthThreshold = 0.5f;
 
         [Header("감지 설정 (Detection Settings)")]
+        [SerializeField, Tooltip("두 플레이어가 모두 이 범위 안에 있으면 aggro time 종료 후 피해 기여도로 어그로를 비교한다.")]
+        private float aggroPriorityRange = 6.0f;
         [SerializeField] private float detectionRange = 10.0f;
-
-        [Header("패턴별 공격 사거리 (Pattern Attack Ranges)")]
-        [FormerlySerializedAs("attackRange")]
-        [SerializeField, HideInInspector] private float basicAttackRange = 2.5f;
         [SerializeField] private float lungeAttackRange = 4.5f;
-        [SerializeField] private float projectileAttackRange = 6.0f;
-        [SerializeField] private float aoeAttackRange = 6.0f;
-
+        [FormerlySerializedAs("projectileAttackRange")]
+        [FormerlySerializedAs("aoeAttackRange")]
+        [SerializeField] private float sharedRangedAttackRange = 6.0f;
         [SerializeField, Tooltip("공격 사거리 경계 지터 완화를 위한 추적 재진입 여유 거리")]
         private float chaseReengageBuffer = 1.0f;
         [SerializeField] private float searchDuration = 5.0f;
+
+        [Header("어그로 설정 (Aggro Settings)")]
+        [FormerlySerializedAs("aggroDamageWindow")]
+        [SerializeField, Tooltip("첫 피격 후 피해 기여도를 확정하기 전까지 누적할 시간(초)")]
+        private float aggroTime = 3.0f;
+
+        [FormerlySerializedAs("attackRange")]
+        [SerializeField, HideInInspector] private float basicAttackRange = 2.5f;
 
         [Header("공격 설정 (Attack Settings)")]
         [SerializeField] private int attackDamage = 20;
@@ -153,7 +159,30 @@ namespace Core.Boss
         private int _ignoredPlayerRootInstanceId;
         private const float LungeRootMotionMinStep = 0.0001f;
         private const float ClosestLiveTargetRefreshInterval = 0.1f;
+        private const int MaxAggroCandidateCount = 8;
         private float _nextClosestLiveTargetRefreshTime;
+        private readonly Transform[] _aggroCandidateBuffer = new Transform[MaxAggroCandidateCount];
+        private readonly Transform[] _aggroContributorBuffer = new Transform[MaxAggroCandidateCount];
+        private readonly int[] _aggroContributorDamageBuffer = new int[MaxAggroCandidateCount];
+        private int _aggroContributorCount;
+        private bool _isAggroTimerRunning;
+        private float _aggroTimerRemaining;
+        private Transform _lockedAggroTarget;
+
+        /// <summary>
+        /// 어그로 타겟 재평가에 필요한 스캔 결과를 한 번에 묶어 전달한다.
+        /// </summary>
+        private readonly struct AggroTargetScanResult
+        {
+            public AggroTargetScanResult(Transform closestTarget, int aggroCandidateCount)
+            {
+                ClosestTarget = closestTarget;
+                AggroCandidateCount = aggroCandidateCount;
+            }
+
+            public Transform ClosestTarget { get; }
+            public int AggroCandidateCount { get; }
+        }
 
         /// <summary>
         /// Unity 에디터에서 스크립트가 로드되거나 인스펙터의 값이 변경될 때 호출되어 데이터의 유효성을 검사합니다.
@@ -165,10 +194,11 @@ namespace Core.Boss
             if (searchingMoveSpeed < 0) searchingMoveSpeed = 0f;
             phaseTwoHealthThreshold = Mathf.Clamp01(phaseTwoHealthThreshold);
             if (detectionRange < 0f) detectionRange = 0f;
+            aggroPriorityRange = Mathf.Clamp(aggroPriorityRange, 0f, detectionRange);
+            if (aggroTime < 0f) aggroTime = 0f;
             if (basicAttackRange < 0f) basicAttackRange = 0f;
             if (lungeAttackRange < 0f) lungeAttackRange = 0f;
-            if (projectileAttackRange < 0f) projectileAttackRange = 0f;
-            if (aoeAttackRange < 0f) aoeAttackRange = 0f;
+            if (sharedRangedAttackRange < 0f) sharedRangedAttackRange = 0f;
             if (chaseReengageBuffer < 0f) chaseReengageBuffer = 0f;
             if (basicAttackSettings == null)
             {
@@ -200,10 +230,13 @@ namespace Core.Boss
         public float MoveSpeed => moveSpeed;
         public float SearchingMoveSpeed => searchingMoveSpeed;
         public float DetectionRange => detectionRange;
+        public float AggroPriorityRange => Mathf.Min(aggroPriorityRange, detectionRange);
+        public float AggroTime => aggroTime;
         public float BasicAttackRange => _headDamageCaster != null ? _headDamageCaster.Radius : Mathf.Max(0f, basicAttackRange);
         public float LungeAttackRange => lungeAttackRange;
-        public float ProjectileAttackRange => projectileAttackRange;
-        public float AoEAttackRange => aoeAttackRange;
+        public float SharedRangedAttackRange => sharedRangedAttackRange;
+        public float ProjectileAttackRange => sharedRangedAttackRange;
+        public float AoEAttackRange => sharedRangedAttackRange;
         public float ChaseReengageBuffer => chaseReengageBuffer;
         public float SearchDuration => searchDuration;
         public int AttackDamage => attackDamage;
@@ -431,6 +464,7 @@ namespace Core.Boss
 
             // Controller에서 직접 Update 호출
             _stateMachine.CurrentState?.Update();
+            UpdateAggroTimer();
         }
 
         private void HandleDamage(int damage)
@@ -451,6 +485,7 @@ namespace Core.Boss
         private void HandleDeath()
         {
             damageBlinkEffect?.StopBlink();
+            ResetAggroState();
             EndAuthoritativeAttack();
             _stateMachine.ChangeState(DeadState);
         }
@@ -681,13 +716,26 @@ namespace Core.Boss
             if (!showPhaseDebugLabel) return;
 
             float healthRatio = _health != null ? _health.HealthRatio : 0f;
+            string targetLabel = playerTransform != null ? playerTransform.name : "None";
+            string lockedTargetLabel = _lockedAggroTarget != null ? _lockedAggroTarget.name : "None";
+            string aggroMode = _isAggroTimerRunning
+                ? "TimerHold"
+                : _lockedAggroTarget != null ? "DamageLock" : IsCurrentTargetWithinAggroPriorityRange() ? "TargetHold" : "Distance";
+            int currentTargetCycleDamage = ResolveAggroContributionDamage(playerTransform);
             string debugText =
                 $"Boss Phase: {_currentPhase}\n" +
                 $"HP: {healthRatio * 100f:0.#}%\n" +
                 $"Intro Playing: {_phaseIntroPlaying}\n" +
-                $"Phase2 Triggered: {_phaseTwoTriggered}";
+                $"Phase2 Triggered: {_phaseTwoTriggered}\n" +
+                $"Target: {targetLabel}\n" +
+                $"Aggro Mode: {aggroMode}\n" +
+                $"Aggro Circle: {AggroPriorityRange:0.#}\n" +
+                $"Aggro Time: {aggroTime:0.#}s\n" +
+                $"Aggro Timer: {(_isAggroTimerRunning ? _aggroTimerRemaining : 0f):0.##}s\n" +
+                $"Locked Target: {lockedTargetLabel}\n" +
+                $"Target Cycle Damage: {currentTargetCycleDamage}";
 
-            Rect rect = new Rect(16f, 16f, 260f, 90f);
+            Rect rect = new Rect(16f, 16f, 300f, 185f);
             GUI.Box(rect, GUIContent.none);
             GUI.Label(rect, debugText);
         }
@@ -728,24 +776,115 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// 현재 씬에서 가장 가까운 살아있는 플레이어를 다시 추적 타겟으로 선택한다.
-        /// 솔로/멀티플레이 공통으로 동작하며, 멀티플레이 verify 단계에서는 임시 aggro 대체 규칙으로 사용한다.
+        /// 보스 피격 시 현재 aggro cycle의 피해 기여도를 기록한다.
+        /// 첫 피격이 들어오면 aggro time을 시작하고, 타이머가 끝날 때까지 누적 피해를 모은다.
+        /// </summary>
+        public void RegisterAggroContribution(GameObject dealer, int damage)
+        {
+            if (dealer == null || damage <= 0) return;
+            if (_health == null || _health.IsDead || !_health.HasRuntimeWriteAuthority) return;
+
+            PlayerController dealerController = dealer.GetComponent<PlayerController>();
+            if (dealerController == null)
+            {
+                dealerController = dealer.GetComponentInParent<PlayerController>();
+            }
+
+            if (dealerController == null) return;
+
+            if (!_isAggroTimerRunning)
+            {
+                BeginAggroTimer();
+            }
+
+            RegisterAggroDamage(dealerController.transform, damage);
+        }
+
+        /// <summary>
+        /// 현재 씬의 살아있는 플레이어를 기준으로 타겟을 다시 선택한다.
+        /// 기본 규칙은 가장 가까운 플레이어 우선이고, aggro time 종료 후에는 피해 기여도 winner를 잠깐 고정한다.
         /// </summary>
         public void RefreshClosestLiveTarget(bool force = false)
         {
-            if (!force && Time.time < _nextClosestLiveTargetRefreshTime)
+            if (!ShouldRefreshClosestLiveTarget(force))
             {
                 return;
             }
-
-            _nextClosestLiveTargetRefreshTime = Time.time + ClosestLiveTargetRefreshInterval;
 
             PlayerController[] playerControllers = FindObjectsByType<PlayerController>(
                 FindObjectsInactive.Exclude,
                 FindObjectsSortMode.None);
 
-            Transform bestTarget = null;
-            float bestDistanceSqr = float.PositiveInfinity;
+            AggroTargetScanResult targetScan = ScanLiveTargets(playerControllers);
+            Transform bestTarget = ResolveTargetByAggro(targetScan);
+
+            ApplyTargetIfChanged(bestTarget);
+        }
+
+        private bool ShouldRefreshClosestLiveTarget(bool force)
+        {
+            if (!force && Time.time < _nextClosestLiveTargetRefreshTime)
+            {
+                return false;
+            }
+
+            _nextClosestLiveTargetRefreshTime = Time.time + ClosestLiveTargetRefreshInterval;
+            return true;
+        }
+
+        private Transform ResolveTargetByAggro(AggroTargetScanResult targetScan)
+        {
+            Transform lockedTarget = TryGetValidLockedAggroTarget();
+            if (lockedTarget != null)
+            {
+                return lockedTarget;
+            }
+
+            Transform heldTarget = TryGetHeldCurrentAggroTarget();
+            if (heldTarget != null)
+            {
+                return heldTarget;
+            }
+
+            return targetScan.ClosestTarget;
+        }
+
+        private Transform TryGetValidLockedAggroTarget()
+        {
+            if (_lockedAggroTarget == null)
+            {
+                return null;
+            }
+
+            if (IsLiveTarget(_lockedAggroTarget) && IsTargetWithinAggroPriorityRange(_lockedAggroTarget))
+            {
+                return _lockedAggroTarget;
+            }
+
+            _lockedAggroTarget = null;
+            return null;
+        }
+
+        private Transform TryGetHeldCurrentAggroTarget()
+        {
+            // 어그로 타이머가 돌고 있거나 공격 직후라도, 현재 타겟이 우선 원 안에 있으면 그 타겟을 유지한다.
+            return IsCurrentTargetWithinAggroPriorityRange() ? playerTransform : null;
+        }
+
+        private void ApplyTargetIfChanged(Transform nextTarget)
+        {
+            if (nextTarget != playerTransform)
+            {
+                SetTarget(nextTarget);
+            }
+        }
+
+        private AggroTargetScanResult ScanLiveTargets(PlayerController[] playerControllers)
+        {
+            Transform closestTarget = null;
+            float closestDistanceSqr = float.PositiveInfinity;
+            int aggroCandidateCount = 0;
+            float aggroPriorityRangeSqr = AggroPriorityRange * AggroPriorityRange;
 
             for (int i = 0; i < playerControllers.Length; i++)
             {
@@ -761,22 +900,228 @@ namespace Core.Boss
                     continue;
                 }
 
-                Vector3 delta = playerController.transform.position - transform.position;
-                delta.y = 0f;
-                float planarDistanceSqr = delta.sqrMagnitude;
-                if (planarDistanceSqr >= bestDistanceSqr)
+                Transform candidate = playerController.transform;
+                float planarDistanceSqr = GetPlanarDistanceSqr(transform.position, candidate.position);
+                if (planarDistanceSqr < closestDistanceSqr)
                 {
-                    continue;
+                    closestDistanceSqr = planarDistanceSqr;
+                    closestTarget = candidate;
                 }
 
-                bestDistanceSqr = planarDistanceSqr;
-                bestTarget = playerController.transform;
+                if (aggroCandidateCount < MaxAggroCandidateCount
+                    && planarDistanceSqr <= aggroPriorityRangeSqr)
+                {
+                    _aggroCandidateBuffer[aggroCandidateCount] = candidate;
+                    aggroCandidateCount++;
+                }
             }
 
-            if (bestTarget != playerTransform)
+            return new AggroTargetScanResult(closestTarget, aggroCandidateCount);
+        }
+
+        private void UpdateAggroTimer()
+        {
+            if (!_isAggroTimerRunning)
             {
-                SetTarget(bestTarget);
+                return;
             }
+
+            // 공격/페이즈 전환 연출 중에는 타이머를 멈춰 타겟 고정 변경이 애니메이션을 끊지 않게 한다.
+            if (ShouldPauseAggroTimer())
+            {
+                return;
+            }
+
+            _aggroTimerRemaining -= Time.deltaTime;
+            if (_aggroTimerRemaining > 0f)
+            {
+                return;
+            }
+
+            LockAggroTargetFromCurrentCycle();
+        }
+
+        private bool ShouldPauseAggroTimer()
+        {
+            if (_phaseIntroPlaying)
+            {
+                return true;
+            }
+
+            if (_stateMachine == null)
+            {
+                return false;
+            }
+
+            return _stateMachine.CurrentState == AttackState;
+        }
+
+        private void BeginAggroTimer()
+        {
+            ClearAggroContributions();
+            _lockedAggroTarget = null;
+            _isAggroTimerRunning = true;
+            _aggroTimerRemaining = Mathf.Max(0f, aggroTime);
+        }
+
+        private void LockAggroTargetFromCurrentCycle()
+        {
+            _isAggroTimerRunning = false;
+            _aggroTimerRemaining = 0f;
+            _lockedAggroTarget = ResolveAggroDamageWinner();
+            ClearAggroContributions();
+
+            // 타이머 종료 시 clear winner가 있으면 다음 refresh를 기다리지 않고 즉시 타겟을 넘긴다.
+            if (_lockedAggroTarget != null && _lockedAggroTarget != playerTransform)
+            {
+                SetTarget(_lockedAggroTarget);
+            }
+        }
+
+        private Transform ResolveAggroDamageWinner()
+        {
+            PlayerController[] playerControllers = FindObjectsByType<PlayerController>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None);
+
+            AggroTargetScanResult targetScan = ScanLiveTargets(playerControllers);
+            if (targetScan.AggroCandidateCount < 2)
+            {
+                return null;
+            }
+
+            int aggroCandidateCount = targetScan.AggroCandidateCount;
+            Transform bestDealer = null;
+            int bestDamage = 0;
+            bool hasTie = false;
+
+            for (int i = 0; i < aggroCandidateCount; i++)
+            {
+                Transform candidate = _aggroCandidateBuffer[i];
+                int dealtDamage = ResolveAggroContributionDamage(candidate);
+                if (dealtDamage > bestDamage)
+                {
+                    bestDamage = dealtDamage;
+                    bestDealer = candidate;
+                    hasTie = false;
+                }
+                else if (dealtDamage == bestDamage && dealtDamage > 0)
+                {
+                    hasTie = true;
+                }
+            }
+
+            if (bestDamage <= 0 || hasTie)
+            {
+                return null;
+            }
+
+            return bestDealer;
+        }
+
+        private void RegisterAggroDamage(Transform dealer, int damage)
+        {
+            int contributorIndex = FindAggroContributorIndex(dealer);
+            if (contributorIndex >= 0)
+            {
+                _aggroContributorDamageBuffer[contributorIndex] += damage;
+                return;
+            }
+
+            if (_aggroContributorCount >= MaxAggroCandidateCount)
+            {
+                return;
+            }
+
+            _aggroContributorBuffer[_aggroContributorCount] = dealer;
+            _aggroContributorDamageBuffer[_aggroContributorCount] = damage;
+            _aggroContributorCount++;
+        }
+
+        private int FindAggroContributorIndex(Transform dealer)
+        {
+            if (dealer == null)
+            {
+                return -1;
+            }
+
+            for (int i = 0; i < _aggroContributorCount; i++)
+            {
+                if (_aggroContributorBuffer[i] == dealer)
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private int ResolveAggroContributionDamage(Transform target)
+        {
+            int contributorIndex = FindAggroContributorIndex(target);
+            if (contributorIndex < 0)
+            {
+                return 0;
+            }
+
+            return _aggroContributorDamageBuffer[contributorIndex];
+        }
+
+        private void ClearAggroContributions()
+        {
+            for (int i = 0; i < _aggroContributorCount; i++)
+            {
+                _aggroContributorBuffer[i] = null;
+                _aggroContributorDamageBuffer[i] = 0;
+            }
+
+            _aggroContributorCount = 0;
+        }
+
+        private void ResetAggroState()
+        {
+            _isAggroTimerRunning = false;
+            _aggroTimerRemaining = 0f;
+            _lockedAggroTarget = null;
+            ClearAggroContributions();
+        }
+
+        private bool IsCurrentTargetWithinAggroPriorityRange()
+        {
+            return IsTargetWithinAggroPriorityRange(playerTransform);
+        }
+
+        private bool IsTargetWithinAggroPriorityRange(Transform target)
+        {
+            if (!IsLiveTarget(target))
+            {
+                return false;
+            }
+
+            float aggroPriorityRangeSqr = AggroPriorityRange * AggroPriorityRange;
+            return GetPlanarDistanceSqr(transform.position, target.position) <= aggroPriorityRangeSqr;
+        }
+
+        private static bool IsLiveTarget(Transform target)
+        {
+            if (target == null)
+            {
+                return false;
+            }
+
+            PlayerController playerController = target.GetComponent<PlayerController>();
+            if (playerController == null)
+            {
+                playerController = target.GetComponentInParent<PlayerController>();
+            }
+
+            if (playerController == null)
+            {
+                return false;
+            }
+
+            Health playerHealth = playerController.GetComponent<Health>();
+            return playerHealth == null || !playerHealth.IsDead;
         }
 
         /// <summary>
@@ -787,6 +1132,13 @@ namespace Core.Boss
             Vector3 delta = to - from;
             delta.y = 0f;
             return delta.magnitude;
+        }
+
+        private static float GetPlanarDistanceSqr(Vector3 from, Vector3 to)
+        {
+            Vector3 delta = to - from;
+            delta.y = 0f;
+            return delta.sqrMagnitude;
         }
 
         public void MoveTo(Vector3 targetPosition, float speed)
@@ -993,10 +1345,10 @@ namespace Core.Boss
             Gizmos.DrawWireSphere(transform.position, lungeAttackRange);
 
             Gizmos.color = Color.cyan;
-            Gizmos.DrawWireSphere(transform.position, projectileAttackRange);
+            Gizmos.DrawWireSphere(transform.position, sharedRangedAttackRange);
 
-            Gizmos.color = Color.magenta;
-            Gizmos.DrawWireSphere(transform.position, aoeAttackRange);
+            Gizmos.color = new Color(1f, 0.2f, 0.7f);
+            Gizmos.DrawWireSphere(transform.position, AggroPriorityRange);
 
             Gizmos.color = Color.yellow;
             Gizmos.DrawWireSphere(transform.position, detectionRange);

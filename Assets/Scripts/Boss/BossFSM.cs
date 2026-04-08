@@ -188,12 +188,12 @@ namespace Core.Boss
         private IBossAttackPattern PickPhaseTwoPattern(float planarDistance)
         {
             IBossAttackPattern projectile = Controller.EnableProjectileAttack &&
-                                            planarDistance <= Controller.ProjectileAttackRange
+                                            planarDistance <= Controller.SharedRangedAttackRange
                 ? Controller.ProjectileAttackPattern
                 : null;
 
             IBossAttackPattern aoe = Controller.EnableAoEAttack &&
-                                     planarDistance <= Controller.AoEAttackRange
+                                     planarDistance <= Controller.SharedRangedAttackRange
                 ? Controller.AoEAttackPattern
                 : null;
 
@@ -222,14 +222,9 @@ namespace Core.Boss
                 return maxRange;
             }
 
-            if (Controller.EnableProjectileAttack)
+            if (Controller.EnableProjectileAttack || Controller.EnableAoEAttack)
             {
-                maxRange = Mathf.Max(maxRange, Controller.ProjectileAttackRange);
-            }
-
-            if (Controller.EnableAoEAttack)
-            {
-                maxRange = Mathf.Max(maxRange, Controller.AoEAttackRange);
+                maxRange = Mathf.Max(maxRange, Controller.SharedRangedAttackRange);
             }
 
             return maxRange;

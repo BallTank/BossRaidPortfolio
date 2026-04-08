@@ -302,7 +302,7 @@ namespace Core.Boss.Attacks
         {
             Vector3 center = controller.Target != null
                 ? controller.Target.position
-                : controller.transform.position + controller.transform.forward * controller.AoEAttackRange;
+                : controller.transform.position + controller.transform.forward * controller.SharedRangedAttackRange;
 
             Vector3 heading = ResolveTargetHeading(controller, out float targetSpeed);
             float baseSpread = Mathf.Max(0f, _settings.spawnSpreadRadius);

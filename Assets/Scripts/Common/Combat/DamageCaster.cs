@@ -42,6 +42,7 @@ namespace Core.Combat
         // 한 번의 공격(Enable~Disable 기간) 동안 중복 피격을 방지하기 위한 Set
         private HashSet<int> _hitTargets = new HashSet<int>();
         private int _ownerInstanceID = 0; // 자신을 타격하지 않도록 Owner ID 저장
+        private GameObject _ownerObject;
 
         private void Awake()
         {
@@ -119,7 +120,10 @@ namespace Core.Combat
         public void SetOwner(GameObject owner)
         {
             if (owner != null)
+            {
+                _ownerObject = owner;
                 _ownerInstanceID = owner.GetInstanceID();
+            }
         }
 
         /// <summary>
@@ -168,10 +172,11 @@ namespace Core.Combat
                     // 중복 타격 방지 로직 개선:
                     // BossHitBox인 경우 Owner(보스 본체)의 ID를 추적, 일반 몬스터는 자신의 ID 추적.
                     int realTargetID = 0;
+                    BossHitBox bossHitBoxTarget = target as BossHitBox;
 
-                    if (target is BossHitBox bossHitBox && bossHitBox.Owner != null)
+                    if (bossHitBoxTarget != null && bossHitBoxTarget.Owner != null)
                     {
-                        realTargetID = bossHitBox.Owner.gameObject.GetInstanceID();
+                        realTargetID = bossHitBoxTarget.Owner.gameObject.GetInstanceID();
                     }
                     else if (target is MonoBehaviour targetMono)
                     {
@@ -221,6 +226,11 @@ namespace Core.Combat
 
                     if (didDamage)
                     {
+                        if (bossHitBoxTarget != null && _ownerObject != null)
+                        {
+                            bossHitBoxTarget.ReportDamageContribution(_ownerObject, _damagePayload);
+                        }
+
                         if (!_attackWindowHasConfirmedHit)
                         {
                             // 콤보 UI는 실제 유효 타격이 확인된 순간에만 열어야 한다.
