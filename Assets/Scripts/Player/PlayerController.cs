@@ -1108,6 +1108,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         Health bossHudSource = isMultiplayerSession ? null : _bossHealthForHUD;
 
         _combatHUD.Initialize(playerHudSource, bossHudSource);
+        _combatHUD.ResetPortraitLayoutToDefault();
         _combatHUD.SetPlayerName(_playerDisplayName);
         _combatHUD.SetBossName(_bossDisplayName);
         _combatHUD.SetPartnerHudVisible(isMultiplayerSession);

@@ -1124,6 +1124,10 @@ namespace Core.Multiplayer
                 return;
             }
 
+            bool isLocalHost = NetworkManager != null
+                               && OwnerClientId == NetworkManager.ServerClientId;
+            hudController.SetViewerRelativePortraitLayout(isLocalHost);
+
             if (TryResolveHudHealthValues(allowLocalFallback: true, out int localCurrentHealth, out int localMaxHealth))
             {
                 hudController.SetPlayerHpNormalized(

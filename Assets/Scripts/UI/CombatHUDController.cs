@@ -16,6 +16,8 @@ namespace Core.UI
         private const string PartnerHudPanelName = "PartnerHUD_Panel";
         private const string PartnerHpFillName = "Image_PartnerHP_Fill";
         private const string PartnerNameTextName = "Text_PartnerName";
+        private const string PartnerPortraitImageName = "Image_PartnerPortrait_3P";
+        private const string PartnerLegacyPortraitImageName = "Image_PartnerPortrait_2P";
         private const string ComboRootName = "Text_Combo";
 
         [Header("플레이어 HUD")]
@@ -33,6 +35,8 @@ namespace Core.UI
 
         [Header("파트너 HUD")]
         [SerializeField] private GameObject _partnerHudRoot;
+        [SerializeField] private Image _partnerPortraitImage;
+        [SerializeField] private Image _partnerLegacyPortraitImage;
         [SerializeField] private Image _partnerHpFill;
         [SerializeField] private TMP_Text _partnerNameText;
         [SerializeField] private string _partnerNameLabel = "Partner";
@@ -64,6 +68,9 @@ namespace Core.UI
         private int _lastObservedPlayerMaxHealth = int.MinValue;
         private int _lastObservedBossHealth = int.MinValue;
         private int _lastObservedBossMaxHealth = int.MinValue;
+        private Sprite _hostPortraitSprite;
+        private Sprite _clientPortraitSprite;
+        private bool _hasCachedMultiplayerPortraitSprites;
 
         public Health PlayerHealth => _playerHealth;
         public Health BossHealth => _bossHealth;
@@ -139,6 +146,31 @@ namespace Core.UI
 
             _playerTorsoImage.sprite = torsoSprite;
             _playerTorsoImage.enabled = torsoSprite != null;
+        }
+
+        /// <summary>
+        /// 멀티플레이 viewer 기준으로 좌측/파트너 portrait를 재배치한다.
+        /// Host 화면은 Host portrait가 좌측, Client 화면은 Client portrait가 좌측이다.
+        /// </summary>
+        public void SetViewerRelativePortraitLayout(bool isLocalHost)
+        {
+            ResolvePartnerHudBindings();
+            CacheMultiplayerPortraitSprites();
+
+            Sprite mainPortrait = isLocalHost ? _hostPortraitSprite : _clientPortraitSprite;
+            Sprite partnerPortrait = isLocalHost ? _clientPortraitSprite : _hostPortraitSprite;
+            ApplyPortraitLayout(mainPortrait, partnerPortrait);
+        }
+
+        /// <summary>
+        /// HUD portrait를 prefab 기본 배치(Host 좌측, Client partner)로 되돌린다.
+        /// solo 또는 HUD 재초기화 시 기준값으로 사용한다.
+        /// </summary>
+        public void ResetPortraitLayoutToDefault()
+        {
+            ResolvePartnerHudBindings();
+            CacheMultiplayerPortraitSprites();
+            ApplyPortraitLayout(_hostPortraitSprite, _clientPortraitSprite);
         }
 
         /// <summary>
@@ -527,6 +559,74 @@ namespace Core.UI
                 {
                     _partnerNameText = partnerNameTransform.GetComponent<TMP_Text>();
                 }
+            }
+
+            if (_partnerPortraitImage == null)
+            {
+                Transform partnerPortraitTransform = _partnerHudRoot.transform.Find(PartnerPortraitImageName);
+                if (partnerPortraitTransform == null)
+                {
+                    partnerPortraitTransform = FindChildTransformByName(_partnerHudRoot.transform, PartnerPortraitImageName);
+                }
+
+                if (partnerPortraitTransform != null)
+                {
+                    _partnerPortraitImage = partnerPortraitTransform.GetComponent<Image>();
+                }
+            }
+
+            if (_partnerLegacyPortraitImage == null)
+            {
+                Transform partnerLegacyPortraitTransform = _partnerHudRoot.transform.Find(PartnerLegacyPortraitImageName);
+                if (partnerLegacyPortraitTransform == null)
+                {
+                    partnerLegacyPortraitTransform = FindChildTransformByName(_partnerHudRoot.transform, PartnerLegacyPortraitImageName);
+                }
+
+                if (partnerLegacyPortraitTransform != null)
+                {
+                    _partnerLegacyPortraitImage = partnerLegacyPortraitTransform.GetComponent<Image>();
+                }
+            }
+        }
+
+        private void CacheMultiplayerPortraitSprites()
+        {
+            if (_hasCachedMultiplayerPortraitSprites)
+            {
+                return;
+            }
+
+            if (_playerTorsoImage != null)
+            {
+                _hostPortraitSprite = _playerTorsoImage.sprite;
+            }
+
+            if (_partnerPortraitImage != null)
+            {
+                _clientPortraitSprite = _partnerPortraitImage.sprite;
+            }
+
+            _hasCachedMultiplayerPortraitSprites = _hostPortraitSprite != null || _clientPortraitSprite != null;
+        }
+
+        private void ApplyPortraitLayout(Sprite mainPortrait, Sprite partnerPortrait)
+        {
+            if (_playerTorsoImage != null)
+            {
+                _playerTorsoImage.sprite = mainPortrait;
+                _playerTorsoImage.enabled = mainPortrait != null;
+            }
+
+            if (_partnerPortraitImage != null)
+            {
+                _partnerPortraitImage.sprite = partnerPortrait;
+                _partnerPortraitImage.enabled = partnerPortrait != null;
+            }
+
+            if (_partnerLegacyPortraitImage != null)
+            {
+                _partnerLegacyPortraitImage.gameObject.SetActive(false);
             }
         }
 
