@@ -319,4 +319,6 @@
 ## Unity Compatibility Addendum (2026-02-20)
 - **Editor Assembly Anchor (에디터 어셈블리 앵커)**: `Assets/Editor`에 최소 1개 스크립트를 유지해 `Assembly-CSharp-Editor` 생성이 보장되도록 하는 안정화 패턴.
 - **Unity API Drift (API 드리프트)**: Unity 버전 전환 시 동일 기능의 프로퍼티/메서드 시그니처가 달라져 발생하는 호환성 문제. 본 프로젝트에서는 `Rigidbody.linearVelocity` -> `Rigidbody.velocity` 교체로 복구.
+- **Player/Boss Balance Tool Window**: `Assets/Editor/PlayerBossBalanceToolWindow.cs`가 제공하는 editor window. `Tools/Balance/Open Player Boss Balance Tool` 경로로 열며, player/boss balance를 one combined JSON으로 export/import 한다.
+- **Combined Balance JSON**: balance portability 전용 JSON contract. current schema는 `player` / `boss` 두 section을 가지며, `Health`의 max HP와 `PlayerController`/`BossController`의 selected tuning field만 담고 current HP, runtime/debug/reference field는 제외한다.
 * **Owner Render Proxy (owner 화면용 render proxy)**: owner free move 화면에서 raw predicted root 대신 body와 camera가 같이 보는 부드러운 presentation 기준점. gameplay truth/root/collider는 raw network tick state를 유지하고, 화면 표시만 이 proxy를 통해 완화한다. current follow-up에서는 predicted owner camera도 이 proxy를 direct orbit follow로 본다.
