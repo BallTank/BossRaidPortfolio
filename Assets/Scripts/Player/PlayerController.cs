@@ -42,6 +42,9 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     [SerializeField] private PlayerVisual playerVisual;
     [SerializeField] private BlinkWhiteEffect blinkWhiteEffect;
 
+    [Header("Animation Settings")]
+    [SerializeField, Range(0f, 0.2f)] private float locomotionAnimatorSpeedDampTime = 0.08f;
+
     [Header("Dash Settings")]
     [SerializeField] private float dashDuration = 0.2f;
     [SerializeField] private float dashSpeedMultiplier = 3.0f;
@@ -84,6 +87,10 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     [SerializeField, HideInInspector] private float _multiplayerLocomotionGroundSnapDistance = 0.15f;
     [SerializeField, HideInInspector] private int _multiplayerLocomotionMaxSlideIterations = 1;
 
+    [Header("Movement Debug Trace")]
+    [SerializeField] private bool enableMovementDebugLog = false;
+    [SerializeField, Range(0.01f, 0.5f)] private float movementDebugLogInterval = 0.01f;
+
     [Header("Attack2 Debug")]
     [SerializeField] private bool enableAttack2DebugLog = true;
     [SerializeField] private float attack2DebugTraceDuration = 0.8f;
@@ -102,6 +109,8 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     public const string ANIM_STATE_STUN = "Stun";
     public const string ANIM_STATE_DIE = "Die";
     private const float NetworkLocomotionGroundedGravity = -2.0f;
+    private const float PredictedLocomotionStopThreshold = 0.01f;
+    private const float PredictedLocomotionStopGraceTime = 0.03f;
 
     // FSM (제네릭 StateMachine 사용)
     private StateMachine<PlayerBaseState> _stateMachine;
@@ -121,7 +130,6 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     private float _nextDashTime;
     private float _networkDashTimerRemaining;
     private float _networkDashCooldownRemaining;
-
     // Stun / Invul Runtime
     private bool _isStunned;
     private bool _isPostStunInvulnerable;
@@ -142,6 +150,9 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     private int _pendingComboHudStep;
     private bool _hasPendingAuthoritativeAttackFacingYaw;
     private float _pendingAuthoritativeAttackFacingYaw;
+    private float _latestPredictedPlanarSpeedMagnitude;
+    private bool _hasLatestPredictedPlanarSpeedMagnitude;
+    private float _predictedLocomotionStopTimer;
 
     public event Action<int> AttackDamageResolved;
     public event Action<int> AuthoritativeAttackStepStarted;
@@ -162,6 +173,9 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     public CombatHUDController CombatHUD => _combatHUD;
     public RuntimeSimulationMode SimulationMode => _simulationMode;
     public ActionAuthorityMode CurrentActionAuthorityMode => _actionAuthorityMode;
+    public float LocomotionAnimatorSpeedDampTime => locomotionAnimatorSpeedDampTime;
+    public bool EnableMovementDebugLog => enableMovementDebugLog;
+    public float MovementDebugLogInterval => movementDebugLogInterval;
     public int CurrentAttackComboIndex => AttackState != null && _stateMachine != null && _stateMachine.CurrentState == AttackState
         ? AttackState.CurrentComboIndex
         : -1;
@@ -223,6 +237,8 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         if (postStunInvulDuration < 0f) postStunInvulDuration = 0f;
         if (pushbackDuration < 0f) pushbackDuration = 0f;
         if (projectileCountTimer < 0f) projectileCountTimer = 0f;
+        if (locomotionAnimatorSpeedDampTime < 0f) locomotionAnimatorSpeedDampTime = 0f;
+        if (movementDebugLogInterval < 0.01f) movementDebugLogInterval = 0.01f;
         if (attack2DebugTraceDuration < 0f) attack2DebugTraceDuration = 0f;
         if (attack2DebugLogInterval < 0.01f) attack2DebugLogInterval = 0.01f;
         if (attack2DebugNearDistance < 0f) attack2DebugNearDistance = 0f;
@@ -323,6 +339,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
             else
             {
                 EnsureMultiplayerPresentationDriver().UpdatePredictedLocomotionPresentation(input);
+                ApplyFrameDrivenPredictedLocomotionAnimatorSpeed(input);
             }
         }
         else
@@ -353,6 +370,103 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         camRight.Normalize();
 
         return (camForward * inputDir.y + camRight * inputDir.x).normalized;
+    }
+
+    public void SetLocomotionAnimatorSpeed(float speed, bool immediate = false)
+    {
+        SetLocomotionAnimatorSpeed(speed, Time.deltaTime, immediate);
+    }
+
+    public void SetLocomotionAnimatorSpeed(float speed, float deltaTime, bool immediate = false)
+    {
+        Animator animator = Animator;
+        if (animator == null)
+        {
+            return;
+        }
+
+        float clampedSpeed = Mathf.Clamp01(speed);
+        if (immediate || locomotionAnimatorSpeedDampTime <= 0f)
+        {
+            animator.SetFloat(ANIM_PARAM_SPEED, clampedSpeed);
+            return;
+        }
+
+        if (deltaTime <= 0f)
+        {
+            animator.SetFloat(ANIM_PARAM_SPEED, clampedSpeed);
+            return;
+        }
+
+        // 짧은 중립 입력 구간에서 Idle이 끼어들지 않도록 이동 블렌드를 완만하게 갱신한다.
+        animator.SetFloat(ANIM_PARAM_SPEED, clampedSpeed, locomotionAnimatorSpeedDampTime, deltaTime);
+    }
+
+    public bool ShouldUseFrameDrivenPredictedLocomotionAnimatorSpeed()
+    {
+        return _simulationMode == RuntimeSimulationMode.PredictedLocomotion
+               && _actionAuthorityMode == ActionAuthorityMode.ClientOwnerProxy
+               && _isLocalPresentationEnabled
+               && _stateMachine != null
+               && _stateMachine.CurrentState == MoveState;
+    }
+
+    public void SetLatestPredictedPlanarSpeedMagnitude(float planarSpeedMagnitude)
+    {
+        _latestPredictedPlanarSpeedMagnitude = Mathf.Max(0f, planarSpeedMagnitude);
+        _hasLatestPredictedPlanarSpeedMagnitude = true;
+    }
+
+    public void ClearLatestPredictedPlanarSpeedMagnitude()
+    {
+        _latestPredictedPlanarSpeedMagnitude = 0f;
+        _hasLatestPredictedPlanarSpeedMagnitude = false;
+        _predictedLocomotionStopTimer = 0f;
+    }
+
+    private void ApplyFrameDrivenPredictedLocomotionAnimatorSpeed(in PlayerInputPacket input)
+    {
+        if (!ShouldUseFrameDrivenPredictedLocomotionAnimatorSpeed()
+            || Animator == null)
+        {
+            _predictedLocomotionStopTimer = 0f;
+            return;
+        }
+
+        float targetSpeed = ResolveFrameDrivenPredictedLocomotionAnimatorSpeed(input);
+        if (ShouldForcePredictedLocomotionStop(input.moveDir.magnitude, targetSpeed))
+        {
+            // 실제 정지 구간이 짧은 grace를 넘기면 lingering walk blend를 즉시 정리한다.
+            SetLocomotionAnimatorSpeed(0f, true);
+            return;
+        }
+
+        SetLocomotionAnimatorSpeed(targetSpeed);
+    }
+
+    private float ResolveFrameDrivenPredictedLocomotionAnimatorSpeed(in PlayerInputPacket input)
+    {
+        float normalizedPlanarSpeed = 0f;
+        if (_hasLatestPredictedPlanarSpeedMagnitude && MoveSpeed > 0.0001f)
+        {
+            normalizedPlanarSpeed = _latestPredictedPlanarSpeedMagnitude / MoveSpeed;
+        }
+
+        return Mathf.Clamp01(Mathf.Max(input.moveDir.magnitude, normalizedPlanarSpeed));
+    }
+
+    private bool ShouldForcePredictedLocomotionStop(float inputMagnitude, float targetSpeed)
+    {
+        bool isStopped = inputMagnitude <= PredictedLocomotionStopThreshold
+                         && targetSpeed <= PredictedLocomotionStopThreshold;
+        if (!isStopped)
+        {
+            _predictedLocomotionStopTimer = 0f;
+            return false;
+        }
+
+        _predictedLocomotionStopTimer += Time.deltaTime;
+        return _predictedLocomotionStopTimer >= PredictedLocomotionStopGraceTime;
     }
 
     public Vector3 GetAttackFacingDirection()
@@ -437,13 +551,14 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         }
 
         _simulationMode = simulationMode;
+        RefreshPredictedPlanarSpeedMagnitudeUsage();
         EnsureMultiplayerPresentationDriver().HandleSimulationModeChanged(_simulationMode);
     }
 
     public void SetActionAuthorityMode(ActionAuthorityMode actionAuthorityMode)
     {
         _actionAuthorityMode = actionAuthorityMode;
-
+        RefreshPredictedPlanarSpeedMagnitudeUsage();
         if (actionAuthorityMode == ActionAuthorityMode.ClientOwnerProxy
             || actionAuthorityMode == ActionAuthorityMode.RemoteDisplayOnly)
         {
@@ -455,12 +570,24 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     public void SetLocalPresentationEnabled(bool enabled)
     {
         _isLocalPresentationEnabled = enabled;
+        RefreshPredictedPlanarSpeedMagnitudeUsage();
         if (!enabled)
         {
             HideComboHud();
         }
 
         EnsureMultiplayerPresentationDriver().HandleLocalPresentationEnabledChanged(enabled);
+    }
+
+    private void RefreshPredictedPlanarSpeedMagnitudeUsage()
+    {
+        bool shouldKeepCachedPlanarSpeed = _simulationMode == RuntimeSimulationMode.PredictedLocomotion
+                                           && _actionAuthorityMode == ActionAuthorityMode.ClientOwnerProxy
+                                           && _isLocalPresentationEnabled;
+        if (!shouldKeepCachedPlanarSpeed)
+        {
+            ClearLatestPredictedPlanarSpeedMagnitude();
+        }
     }
 
     public void SetLookDrivenCameraRootEnabled(bool enabled)

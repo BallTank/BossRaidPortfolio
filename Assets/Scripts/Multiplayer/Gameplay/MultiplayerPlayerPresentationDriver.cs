@@ -27,6 +27,7 @@ namespace Core.Multiplayer
         private Vector2 _lastPredictedPresentationMoveInput;
         private bool _hasLastPredictedPresentationMoveInput;
         private bool _wasDashPresentationActive;
+        private float _nextMovementPresentationDebugLogTime;
         public MultiplayerPlayerPresentationDriver(PlayerController controller)
         {
             _controller = controller;
@@ -75,6 +76,12 @@ namespace Core.Multiplayer
             bool shouldSnapPredictedTransition = dashStartedThisFrame
                                                 || ShouldSnapPredictedPresentationTransition(input.moveDir);
             UpdatePredictedPresentationPosition(presentationTransform, shouldSnapPredictedTransition);
+
+            if (TryBeginMovementPresentationDebugLog())
+            {
+                LogPredictedPresentationDebug(input, isDashActive, dashStartedThisFrame, shouldSnapPredictedTransition, presentationTransform);
+            }
+
             _wasDashPresentationActive = isDashActive;
 
             if (_hasPresentationDefaultTransform)
@@ -249,6 +256,68 @@ namespace Core.Multiplayer
             }
 
             presentationTransform.position = _presentationWorldPosition;
+        }
+
+        private bool TryBeginMovementPresentationDebugLog()
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (_controller == null || !_controller.EnableMovementDebugLog)
+            {
+                return false;
+            }
+
+            if (Time.time < _nextMovementPresentationDebugLogTime)
+            {
+                return false;
+            }
+
+            _nextMovementPresentationDebugLogTime = Time.time + _controller.MovementDebugLogInterval;
+            return true;
+#else
+            return false;
+#endif
+        }
+
+        private void LogPredictedPresentationDebug(
+            in PlayerInputPacket input,
+            bool isDashActive,
+            bool dashStartedThisFrame,
+            bool shouldSnapPredictedTransition,
+            Transform presentationTransform)
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (_controller == null)
+            {
+                return;
+            }
+
+            Vector3 rootPosition = _controller.transform.position;
+            float rootYaw = _controller.transform.eulerAngles.y;
+            Vector3 proxyPosition = presentationTransform.position;
+            Vector3 targetPosition = ResolvePresentationTargetPosition();
+            float animSpeed = _controller.Animator != null
+                ? _controller.Animator.GetFloat(PlayerController.ANIM_PARAM_SPEED)
+                : 0f;
+            float proxyRootDelta = (proxyPosition - rootPosition).magnitude;
+            float proxyTargetDelta = (proxyPosition - targetPosition).magnitude;
+
+            Debug.Log(
+                $"[MoveDebug][Proxy] " +
+                $"input=({input.moveDir.x:F3},{input.moveDir.y:F3}) " +
+                $"dash={isDashActive} " +
+                $"dashStart={dashStartedThisFrame} " +
+                $"snap={shouldSnapPredictedTransition} " +
+                $"rootPos=({rootPosition.x:F3},{rootPosition.y:F3},{rootPosition.z:F3}) " +
+                $"rootYaw={rootYaw:F3} " +
+                $"proxyPos=({proxyPosition.x:F3},{proxyPosition.y:F3},{proxyPosition.z:F3}) " +
+                $"targetPos=({targetPosition.x:F3},{targetPosition.y:F3},{targetPosition.z:F3}) " +
+                $"proxyRootDelta={proxyRootDelta:F3} " +
+                $"proxyTargetDelta={proxyTargetDelta:F3} " +
+                $"smoothTime={_controller.MultiplayerPredictedRenderSmoothTime:F3} " +
+                $"snapDistance={_controller.MultiplayerPredictedRenderSnapDistance:F3} " +
+                $"animSpeed={animSpeed:F3} " +
+                $"state={_controller.StateMachine?.CurrentState?.GetType().Name ?? "None"}");
+#endif
         }
 
         private bool ShouldSnapPredictedPresentationTransition(Vector2 currentMoveInput)

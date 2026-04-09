@@ -96,7 +96,7 @@ flowchart LR
 | `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerAvatar.cs` | owner uplink, Host authority sim, authoritative snapshot, reconcile/replay |
 | `Assets/Scripts/Player/PlayerController.cs` | solo FSM 유지 + locomotion wrapper + predicted presentation delegate |
 | `Assets/Scripts/Player/PlayerLocomotionCore.cs` | shared locomotion capture / apply / simulate |
-| `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerPresentationDriver.cs` | predicted render smoothing + predicted render trace |
+| `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerPresentationDriver.cs` | predicted render smoothing + proxy trace |
 | `Assets/Scripts/Player/LocalInputProvider.cs` | frame input cache |
 | `Assets/Scripts/Multiplayer/Runtime/MultiplayerRuntimeRoot.cs` | multiplayer tick rate 설정 |
 
@@ -215,7 +215,7 @@ predicted target 사이를 render frame에서 보간한다.
 
 * `Assets/Scripts/Player/PlayerController.cs:150`
 * `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerPresentationDriver.cs:12`
-* `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerPresentationDriver.cs:341`
+* `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerPresentationDriver.cs:338`
 
 #### 3.2.4. tick-start alpha가 바뀌었다
 
@@ -248,14 +248,20 @@ small `alphaFloor`를 준다.
 
 ### 3.3. 현재 렌더링 튜닝 값
 
+2026-04-08 debug follow-up 기준 owner position correction deadzone knob은 제거했고, movement debug trace는 `PlayerController.enableMovementDebugLog`로 켠다. verify scene에서 host/client가 같은 root / correction / proxy trace를 보며 문제 layer를 좁혀 본다. yaw correction은 fixed constant로 둔다.
+
+same-day client jitter follow-up latest step 기준 predicted owner locomotion `Speed`는 network tick/replay path가 direct write하지 않는다. `PlayerLocomotionCore`와 `MultiplayerPlayerAvatar`는 predicted owner의 continuous locomotion `Speed`를 더 이상 supply하지 않고, normal frame `Update`가 current input과 latest predicted planar speed cache를 읽어 한 번만 animator에 적용한다. brief neutral frame은 기존 damping으로 흘려 보내고, input과 predicted planar speed가 같이 거의 `0`인 상태가 `0.03s` 넘게 유지되면 immediate `0` settle로 lingering walk blend를 정리한다. dash clip transition은 event timing 보존을 위해 기존 network sim path에 남긴다.
+
 | 항목 | 값 | 근거 위치 |
 | --- | --- | --- |
 | predicted render smooth time | `0.0167` | `Assets/Scripts/Player/PlayerController.cs:149` |
 | predicted render snap distance | `0.35` | `Assets/Scripts/Player/PlayerController.cs:150` |
-| transition snap angle | `35` | `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerPresentationDriver.cs:12` |
-| tick-boundary alphaFloor | `0.05` | `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerPresentationDriver.cs:13` |
-| correction deadzone position | `0.03` | `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerAvatar.cs:20` |
-| correction deadzone yaw | `1.25` | `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerAvatar.cs:21` |
+| transition snap angle | `35` | `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerPresentationDriver.cs:13` |
+| tick-boundary alphaFloor | `0.05` | `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerPresentationDriver.cs:14` |
+| movement debug trace | `enableMovementDebugLog` | `Assets/Scripts/Player/PlayerController.cs:91` |
+| movement debug trace interval | `0.01` | `Assets/Scripts/Player/PlayerController.cs:92` |
+| owner position correction deadzone | `0.03` | `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerAvatar.cs:23` |
+| correction deadzone yaw | `1.25` | `Assets/Scripts/Multiplayer/Gameplay/MultiplayerPlayerAvatar.cs:24` |
 | network tick rate | `60` | `Assets/Scripts/Multiplayer/Runtime/MultiplayerRuntimeRoot.cs:11` |
 
 ### 3.4. 현재 판독 기준
@@ -285,4 +291,5 @@ small `alphaFloor`를 준다.
 * `docs/technical/System_Blueprint.md`
 * `docs/technical/Technical_Glossary.md`
 * `docs/technical/multiplayer/Multiplayer_Client_Movement_brief.md`
+* `docs/technical/multiplayer/jitter/Multiplayer_Client_Stop_Jitter_Investigation.md`
 * `docs/Progress_Log/2026-03-30.md`

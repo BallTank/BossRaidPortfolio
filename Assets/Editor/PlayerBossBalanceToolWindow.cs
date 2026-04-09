@@ -26,7 +26,7 @@ namespace Core.Editor
             PrefabAsset
         }
 
-        private const int CurrentSchemaVersion = 1;
+        private const int CurrentSchemaVersion = 2;
         private const string MenuItemPath = "Tools/Balance/Open Player Boss Balance Tool";
         private const string DefaultPlayerPrefabPath = "Assets/Resources/Multiplayer/MultiplayerPlayerAvatar.prefab";
         private const string DefaultScenePath = "Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity";
@@ -954,6 +954,8 @@ namespace Core.Editor
         public float phaseTwoHealthThreshold;
         public float aggroPriorityRange;
         public float detectionRange;
+        public bool hasBasicAttackRange;
+        public float basicAttackRange;
         public float lungeAttackRange;
         public float sharedRangedAttackRange;
         public float chaseReengageBuffer;
@@ -1134,6 +1136,8 @@ namespace Core.Editor
                 phaseTwoHealthThreshold = FindRequiredProperty(bossObject, "phaseTwoHealthThreshold").floatValue,
                 aggroPriorityRange = FindRequiredProperty(bossObject, "aggroPriorityRange").floatValue,
                 detectionRange = FindRequiredProperty(bossObject, "detectionRange").floatValue,
+                hasBasicAttackRange = true,
+                basicAttackRange = FindRequiredProperty(bossObject, "basicAttackRange").floatValue,
                 lungeAttackRange = FindRequiredProperty(bossObject, "lungeAttackRange").floatValue,
                 sharedRangedAttackRange = FindRequiredProperty(bossObject, "sharedRangedAttackRange").floatValue,
                 chaseReengageBuffer = FindRequiredProperty(bossObject, "chaseReengageBuffer").floatValue,
@@ -1253,6 +1257,10 @@ namespace Core.Editor
             SetFloat(bossObject, "phaseTwoHealthThreshold", Mathf.Clamp(balanceData.phaseTwoHealthThreshold, 0.05f, 1f));
             SetFloat(bossObject, "aggroPriorityRange", SanitizeNonNegative(balanceData.aggroPriorityRange));
             SetFloat(bossObject, "detectionRange", SanitizeNonNegative(balanceData.detectionRange));
+            if (balanceData.hasBasicAttackRange)
+            {
+                SetFloat(bossObject, "basicAttackRange", SanitizeNonNegative(balanceData.basicAttackRange));
+            }
             SetFloat(bossObject, "lungeAttackRange", SanitizeNonNegative(balanceData.lungeAttackRange));
             SetFloat(bossObject, "sharedRangedAttackRange", SanitizeNonNegative(balanceData.sharedRangedAttackRange));
             SetFloat(bossObject, "chaseReengageBuffer", SanitizeNonNegative(balanceData.chaseReengageBuffer));

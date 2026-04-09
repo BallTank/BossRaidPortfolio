@@ -828,6 +828,7 @@ MonoBehaviour:
   _maxHealth: 100
   _currentHealth: 0
   _isInvincible: 0
+  _runtimeWriteAuthorityMode: 0
 --- !u!114 &3806696972648923851
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -845,6 +846,7 @@ MonoBehaviour:
   cameraRoot: {fileID: 174859351127318352}
   playerVisual: {fileID: 365543641090283522}
   blinkWhiteEffect: {fileID: 0}
+  locomotionAnimatorSpeedDampTime: 0.08
   dashDuration: 0.4
   dashSpeedMultiplier: 3
   dashCooldown: 1
@@ -873,8 +875,18 @@ MonoBehaviour:
   _playerDisplayName: Player
   _bossDisplayName: Dragon
   _simulationMode: 2
+  _actionAuthorityMode: 0
   _isLocalPresentationEnabled: 0
   _driveCameraRootFromLookInput: 0
+  _multiplayerPredictedRenderSmoothTime: 0.0167
+  _multiplayerPredictedRenderSnapDistance: 0.35
+  _multiplayerLocomotionCollisionMask:
+    serializedVersion: 2
+    m_Bits: 0
+  _multiplayerLocomotionCollisionShell: 0.02
+  _multiplayerLocomotionGroundSnapDistance: 0.15
+  _multiplayerLocomotionMaxSlideIterations: 1
+  enableMovementDebugLog: 1
   enableAttack2DebugLog: 1
   attack2DebugTraceDuration: 0.8
   attack2DebugLogInterval: 0.05

@@ -1,0 +1,114 @@
+{
+    "schemaVersion": 2,
+    "exportedAt": "2026-04-08 13:05:28",
+    "player": {
+        "health": {
+            "maxHealth": 100
+        },
+        "moveSpeed": 6.0,
+        "rotationSpeed": 10.0,
+        "dashDuration": 0.4000000059604645,
+        "dashSpeedMultiplier": 3.0,
+        "dashCooldown": 1.0,
+        "jumpForce": 6.0,
+        "airControl": 0.5,
+        "stunDuration": 1.2000000476837159,
+        "postStunInvulDuration": 2.0,
+        "pushbackDuration": 0.30000001192092898,
+        "projectileCountTimer": 1.5,
+        "attackCombos": [
+            {
+                "damage": 10.0,
+                "duration": 0.5,
+                "comboInputWindow": 1.059999942779541,
+                "cancelStartTime": 0.30000001192092898
+            },
+            {
+                "damage": 15.0,
+                "duration": 0.6000000238418579,
+                "comboInputWindow": 0.4000000059604645,
+                "cancelStartTime": 0.30000001192092898
+            },
+            {
+                "damage": 30.0,
+                "duration": 1.0,
+                "comboInputWindow": 0.0,
+                "cancelStartTime": 0.30000001192092898
+            }
+        ]
+    },
+    "boss": {
+        "health": {
+            "maxHealth": 1000
+        },
+        "moveSpeed": 3.5,
+        "searchingMoveSpeed": 2.0,
+        "rotationSpeed": 5.0,
+        "phaseTwoHealthThreshold": 0.5,
+        "aggroPriorityRange": 18.600000381469728,
+        "detectionRange": 64.0999984741211,
+        "hasBasicAttackRange": true,
+        "basicAttackRange": 139.60000610351563,
+        "lungeAttackRange": 30.700000762939454,
+        "sharedRangedAttackRange": 48.70000076293945,
+        "chaseReengageBuffer": 1.0,
+        "searchDuration": 5.0,
+        "aggroTime": 5.0,
+        "attackDamage": 10,
+        "attackDuration": 1.0,
+        "attackCooldown": 4.0,
+        "basicAttackSettings": {
+            "readyDuration": 0.20000000298023225,
+            "readyNormalizedWindow": {
+                "x": 0.15000000596046449,
+                "y": 0.44999998807907107
+            }
+        },
+        "lungeAttackSettings": {
+            "damageMultiplier": 1.5,
+            "damageCastNormalizedWindow": {
+                "x": 0.3700000047683716,
+                "y": 0.800000011920929
+            }
+        },
+        "projectileAttackSettings": {
+            "warningDuration": 0.30000001192092898,
+            "damage": 6,
+            "speed": 13.0,
+            "lifetime": 4.0,
+            "volleyCount": 7,
+            "volleyInterval": 0.800000011920929,
+            "homingStrength": 0.6359999775886536,
+            "homingDuration": 1.2000000476837159,
+            "verticalFollowSpeed": 0.5,
+            "postFireRecoveryDuration": 0.11999999731779099,
+            "exitNormalizedTime": 0.8999999761581421
+        },
+        "aoeAttackSettings": {
+            "takeOffDuration": 0.6000000238418579,
+            "flyForwardDuration": 2.799999952316284,
+            "flyForwardSpeed": 8.0,
+            "castRange": 24.0,
+            "landDuration": 0.800000011920929,
+            "spawnInterval": 0.75,
+            "damage": 20,
+            "warningDuration": 1.0,
+            "activeDuration": 0.30000001192092898,
+            "tickInterval": 0.25,
+            "circleCount": 12,
+            "maxCircleInstances": 12,
+            "radius": 3.200000047683716,
+            "spawnSpreadRadius": 9.0,
+            "headingLeadTime": 0.44999998807907107,
+            "maxHeadingLeadDistance": 8.0,
+            "forwardSpreadRadius": 6.0,
+            "sideSpreadRadius": 6.0,
+            "headingBias": 0.8500000238418579,
+            "headingMinSpeed": 0.05000000074505806,
+            "groundRayHeight": 15.0,
+            "groundRayDistance": 40.0,
+            "groundOffset": 0.05000000074505806,
+            "fallbackProjectileHeight": 6.0
+        }
+    }
+}

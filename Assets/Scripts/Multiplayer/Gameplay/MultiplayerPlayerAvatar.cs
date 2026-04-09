@@ -92,6 +92,8 @@ namespace Core.Multiplayer
         private ClientToHostPlayerActionIntent _pendingApprovedComboActionIntent;
         private bool _hasPendingApprovedComboActionIntent;
         private bool _hasReceivedInitialAuthoritativeBaseline;
+        private float _nextMovementPredictionDebugLogTime;
+        private float _nextMovementCorrectionDebugLogTime;
         private byte _lastObservedActionButtons;
         private byte _lastBufferedActionButtons;
         private MultiplayerPlayerAvatar _hudPartnerAvatar;
@@ -222,12 +224,13 @@ namespace Core.Multiplayer
             {
                 _playerController.ApplyLocomotionState(state);
                 ApplyLocomotionAnimator(ResolveLocomotionAnimatorMagnitude(state));
-                _clientPredictedState = state;
+                SetClientPredictedState(state);
                 _hasClientPredictedState = true;
                 _hasReceivedInitialAuthoritativeBaseline = true;
                 _clientAllowsPrediction = state.AllowsPrediction;
                 _lastAppliedAuthoritativeInputSequence = Mathf.Max(_lastAppliedAuthoritativeInputSequence, state.InputSequence);
                 StoreClientPredictedState(state.InputSequence, state);
+                LogAuthoritativeMovementDebug("AuthBaseline", state, false, default, 0, ResolveLocomotionAnimatorMagnitude(state), "first authoritative snapshot");
                 return;
             }
 
@@ -243,15 +246,18 @@ namespace Core.Multiplayer
             {
                 _playerController.ApplyLocomotionState(state);
                 ApplyLocomotionAnimator(ResolveLocomotionAnimatorMagnitude(state));
-                _clientPredictedState = state;
+                SetClientPredictedState(state);
                 _lastAppliedAuthoritativeInputSequence = Mathf.Max(_lastAppliedAuthoritativeInputSequence, state.InputSequence);
+                LogAuthoritativeMovementDebug("AuthDirect", state, false, default, 0, ResolveLocomotionAnimatorMagnitude(state), "prediction disabled");
                 return;
             }
 
-            if (TryGetClientPredictedState(state.InputSequence, out MultiplayerLocomotionState predictedState)
+            bool hasPredictedState = TryGetClientPredictedState(state.InputSequence, out MultiplayerLocomotionState predictedState);
+            if (hasPredictedState
                 && IsWithinOwnerCorrectionDeadzone(predictedState, state))
             {
                 _lastAppliedAuthoritativeInputSequence = Mathf.Max(_lastAppliedAuthoritativeInputSequence, state.InputSequence);
+                LogAuthoritativeMovementDebug("AuthSkip", state, true, predictedState, 0, ResolveLocomotionAnimatorMagnitude(predictedState), "within correction deadzone");
                 return;
             }
 
@@ -260,6 +266,7 @@ namespace Core.Multiplayer
 
             MultiplayerLocomotionState replayState = state;
             float replayInputMagnitude = ResolveLocomotionAnimatorMagnitude(state);
+            int replayCount = 0;
             for (int sequence = state.InputSequence + 1; sequence <= _nextLocalInputSequence; sequence++)
             {
                 if (!TryGetClientInput(sequence, out ClientInputHistoryEntry inputEntry) || !inputEntry.WasPredicted)
@@ -267,6 +274,7 @@ namespace Core.Multiplayer
                     break;
                 }
 
+                replayCount++;
                 replayState = SimulateNetworkLocomotionTick(
                     replayState,
                     inputEntry.Input.ToPlayerInputPacket(),
@@ -281,8 +289,16 @@ namespace Core.Multiplayer
                     inputEntry.Input.MoveDirection.magnitude);
             }
 
-            _clientPredictedState = replayState;
+            SetClientPredictedState(replayState);
             ApplyLocomotionAnimator(replayInputMagnitude);
+            LogAuthoritativeMovementDebug(
+                "AuthReplay",
+                state,
+                hasPredictedState,
+                predictedState,
+                replayCount,
+                replayInputMagnitude,
+                hasPredictedState ? "correction + replay" : "prediction history miss");
         }
 
         [ClientRpc(Delivery = RpcDelivery.Reliable)]
@@ -443,7 +459,7 @@ namespace Core.Multiplayer
             SetOwnerTransformSyncEnabled(false);
             _hasReceivedInitialAuthoritativeBaseline = false;
             _clientAllowsPrediction = false;
-            _clientPredictedState = _playerController.CaptureCurrentLocomotionState(0, 0, false);
+            SetClientPredictedState(_playerController.CaptureCurrentLocomotionState(0, 0, false));
             _hasClientPredictedState = true;
             BindLocalPresentation();
         }
@@ -548,7 +564,7 @@ namespace Core.Multiplayer
 
             if (!_hasClientPredictedState)
             {
-                _clientPredictedState = _playerController.CaptureCurrentLocomotionState(0, 0, _clientAllowsPrediction);
+                SetClientPredictedState(_playerController.CaptureCurrentLocomotionState(0, 0, _clientAllowsPrediction));
                 _hasClientPredictedState = true;
             }
 
@@ -563,30 +579,31 @@ namespace Core.Multiplayer
             {
                 if (!_clientPredictedState.AllowsPrediction)
                 {
-                    _clientPredictedState = _playerController.CaptureCurrentLocomotionState(
+                    SetClientPredictedState(_playerController.CaptureCurrentLocomotionState(
                         _lastAppliedAuthoritativeInputSequence,
                         _lastReceivedAuthoritativeServerTick,
-                        true);
+                        true));
                 }
 
-                _clientPredictedState = SimulateNetworkLocomotionTick(
+                SetClientPredictedState(SimulateNetworkLocomotionTick(
                     _clientPredictedState,
                     input,
                     ResolveFixedDeltaTime(),
                     locomotionInput.InputSequence,
                     _lastReceivedAuthoritativeServerTick,
                     true,
-                    true);
+                    true));
             }
             else
             {
-                _clientPredictedState = _playerController.CaptureCurrentLocomotionState(
+                SetClientPredictedState(_playerController.CaptureCurrentLocomotionState(
                     locomotionInput.InputSequence,
                     _lastReceivedAuthoritativeServerTick,
-                    false);
+                    false));
             }
 
             StoreClientPredictedState(locomotionInput.InputSequence, _clientPredictedState);
+            LogClientPredictionDebug(input, locomotionInput.InputSequence, canPredictThisTick);
 
             SubmitOwnerInputServerRpc(locomotionInput);
         }
@@ -1334,7 +1351,12 @@ namespace Core.Multiplayer
                 _playerController.Animator.CrossFade(PlayerController.ANIM_STATE_LOCOMOTION, 0.1f);
             }
 
-            _playerController.Animator.SetFloat(PlayerController.ANIM_PARAM_SPEED, Mathf.Clamp01(inputMagnitude));
+            if (_playerController.ShouldUseFrameDrivenPredictedLocomotionAnimatorSpeed())
+            {
+                return;
+            }
+
+            _playerController.SetLocomotionAnimatorSpeed(inputMagnitude);
         }
 
         private float ResolveLocomotionAnimatorMagnitude(in MultiplayerLocomotionState state, float inputMagnitude = 0f)
@@ -1370,9 +1392,21 @@ namespace Core.Multiplayer
                 updateAnimator);
         }
 
-        private void ResetRuntimeState()
+        private void SetClientPredictedState(in MultiplayerLocomotionState state)
+        {
+            _clientPredictedState = state;
+            _playerController?.SetLatestPredictedPlanarSpeedMagnitude(state.PlanarVelocity.magnitude);
+        }
+
+        private void ClearClientPredictedState()
         {
             _clientPredictedState = default;
+            _playerController?.ClearLatestPredictedPlanarSpeedMagnitude();
+        }
+
+        private void ResetRuntimeState()
+        {
+            ClearClientPredictedState();
             _serverAuthoritativeState = default;
             _hasClientPredictedState = false;
             _hasServerAuthoritativeState = false;
@@ -1561,6 +1595,123 @@ namespace Core.Multiplayer
             float yawError = Mathf.Abs(Mathf.DeltaAngle(predictedState.Yaw, authoritativeState.Yaw));
             return positionError <= OwnerPositionCorrectionDeadzone * OwnerPositionCorrectionDeadzone
                    && yawError <= OwnerYawCorrectionDeadzone;
+        }
+
+        private bool TryBeginMovementPredictionDebugLog()
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (_playerController == null || !_playerController.EnableMovementDebugLog)
+            {
+                return false;
+            }
+
+            if (Time.time < _nextMovementPredictionDebugLogTime)
+            {
+                return false;
+            }
+
+            _nextMovementPredictionDebugLogTime = Time.time + _playerController.MovementDebugLogInterval;
+            return true;
+#else
+            return false;
+#endif
+        }
+
+        private bool TryBeginMovementCorrectionDebugLog()
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (_playerController == null || !_playerController.EnableMovementDebugLog)
+            {
+                return false;
+            }
+
+            if (Time.time < _nextMovementCorrectionDebugLogTime)
+            {
+                return false;
+            }
+
+            _nextMovementCorrectionDebugLogTime = Time.time + _playerController.MovementDebugLogInterval;
+            return true;
+#else
+            return false;
+#endif
+        }
+
+        private void LogClientPredictionDebug(in PlayerInputPacket input, int inputSequence, bool canPredictThisTick)
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (!TryBeginMovementPredictionDebugLog())
+            {
+                return;
+            }
+
+            Vector3 rootPosition = _playerController.transform.position;
+            float rootYaw = _playerController.transform.eulerAngles.y;
+            float animSpeed = _playerController.Animator != null
+                ? _playerController.Animator.GetFloat(PlayerController.ANIM_PARAM_SPEED)
+                : 0f;
+
+            Debug.Log(
+                $"[MoveDebug][ClientPredict] " +
+                $"seq={inputSequence} " +
+                $"predict={canPredictThisTick} " +
+                $"input=({input.moveDir.x:F3},{input.moveDir.y:F3}) " +
+                $"rootPos=({rootPosition.x:F3},{rootPosition.y:F3},{rootPosition.z:F3}) " +
+                $"rootYaw={rootYaw:F3} " +
+                $"predPos=({_clientPredictedState.Position.x:F3},{_clientPredictedState.Position.y:F3},{_clientPredictedState.Position.z:F3}) " +
+                $"predYaw={_clientPredictedState.Yaw:F3} " +
+                $"planarVel={_clientPredictedState.PlanarVelocity.magnitude:F3} " +
+                $"animSpeed={animSpeed:F3} " +
+                $"grounded={_clientPredictedState.IsGrounded} " +
+                $"dash={_clientPredictedState.IsDashActive} " +
+                $"state={_playerController.StateMachine?.CurrentState?.GetType().Name ?? "None"}");
+#endif
+        }
+
+        private void LogAuthoritativeMovementDebug(
+            string phase,
+            in MultiplayerLocomotionState authoritativeState,
+            bool hasPredictedState,
+            in MultiplayerLocomotionState predictedState,
+            int replayCount,
+            float replayInputMagnitude,
+            string reason)
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (!TryBeginMovementCorrectionDebugLog())
+            {
+                return;
+            }
+
+            Vector3 rootPosition = _playerController.transform.position;
+            float rootYaw = _playerController.transform.eulerAngles.y;
+            float animSpeed = _playerController.Animator != null
+                ? _playerController.Animator.GetFloat(PlayerController.ANIM_PARAM_SPEED)
+                : 0f;
+
+            string predictedText = hasPredictedState
+                ? $"predPos=({predictedState.Position.x:F3},{predictedState.Position.y:F3},{predictedState.Position.z:F3}) " +
+                  $"predYaw={predictedState.Yaw:F3} " +
+                  $"posDelta={(authoritativeState.Position - predictedState.Position).magnitude:F3} " +
+                  $"yawDelta={Mathf.Abs(Mathf.DeltaAngle(predictedState.Yaw, authoritativeState.Yaw)):F3}"
+                : "predPos=n/a predYaw=n/a posDelta=n/a yawDelta=n/a";
+
+            Debug.Log(
+                $"[MoveDebug][{phase}] " +
+                $"seq={authoritativeState.InputSequence} " +
+                $"tick={authoritativeState.ServerTick} " +
+                $"allowPred={authoritativeState.AllowsPrediction} " +
+                $"reason={reason} " +
+                $"authPos=({authoritativeState.Position.x:F3},{authoritativeState.Position.y:F3},{authoritativeState.Position.z:F3}) " +
+                $"authYaw={authoritativeState.Yaw:F3} " +
+                $"{predictedText} " +
+                $"replay={replayCount} " +
+                $"replayMag={replayInputMagnitude:F3} " +
+                $"rootPos=({rootPosition.x:F3},{rootPosition.y:F3},{rootPosition.z:F3}) " +
+                $"rootYaw={rootYaw:F3} " +
+                $"animSpeed={animSpeed:F3} " +
+                $"state={_playerController.StateMachine?.CurrentState?.GetType().Name ?? "None"}");
+#endif
         }
 
         private bool ShouldPredictLocomotionThisTick(in PlayerInputPacket input)

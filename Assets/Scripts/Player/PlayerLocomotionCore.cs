@@ -152,6 +152,7 @@ namespace Core.Player
             }
 
             float locomotionBlendSpeed = ResolveLocomotionBlendSpeed(controller, input.moveDir.magnitude, nextPlanarVelocity);
+            bool shouldUseFrameDrivenLocomotionAnimatorSpeed = controller.ShouldUseFrameDrivenPredictedLocomotionAnimatorSpeed();
 
             if (updateAnimator && controller.Animator != null)
             {
@@ -162,11 +163,17 @@ namespace Core.Player
                 else if (dashEndedThisTick)
                 {
                     controller.Animator.CrossFade(PlayerController.ANIM_STATE_LOCOMOTION, 0.05f);
-                    controller.Animator.SetFloat(PlayerController.ANIM_PARAM_SPEED, locomotionBlendSpeed);
+                    if (!shouldUseFrameDrivenLocomotionAnimatorSpeed)
+                    {
+                        controller.SetLocomotionAnimatorSpeed(locomotionBlendSpeed, deltaTime);
+                    }
                 }
                 else if (!nextDashActive)
                 {
-                    controller.Animator.SetFloat(PlayerController.ANIM_PARAM_SPEED, locomotionBlendSpeed);
+                    if (!shouldUseFrameDrivenLocomotionAnimatorSpeed)
+                    {
+                        controller.SetLocomotionAnimatorSpeed(locomotionBlendSpeed, deltaTime);
+                    }
                 }
             }
 

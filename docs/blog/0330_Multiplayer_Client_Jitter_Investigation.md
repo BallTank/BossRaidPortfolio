@@ -334,7 +334,7 @@ render proxy를 넣고 나니 movement 쪽 계단 문제는 크게 줄었다.
 - 설계/후속 메모
   - `docs/technical/multiplayer/Multiplayer_Lazy_Boundary_Correction_Proposal.md`
 - 조사/수정 히스토리 요약
-  - `docs/technical/multiplayer/Multiplayer_Jitter_Investigation_Summary.md`
+  - `docs/technical/multiplayer/jitter/Multiplayer_Jitter_Investigation_Summary.md`
 - 당일 작업 로그
   - `docs/Progress_Log/2026-03-30.md`
 

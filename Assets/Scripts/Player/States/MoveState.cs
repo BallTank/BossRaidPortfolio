@@ -34,7 +34,7 @@ namespace Core.Player.States
             if (Controller.Animator != null)
             {
                 Controller.Animator.CrossFade(PlayerController.ANIM_STATE_LOCOMOTION, 0.1f);
-                Controller.Animator.SetFloat(PlayerController.ANIM_PARAM_SPEED, 0f);
+                Controller.SetLocomotionAnimatorSpeed(0f, true);
             }
         }
 
@@ -46,7 +46,7 @@ namespace Core.Player.States
 
             // Animation: Update locomotion blend
             if (Controller.Animator != null)
-                Controller.Animator.SetFloat(PlayerController.ANIM_PARAM_SPEED, input.moveDir.magnitude);
+                Controller.SetLocomotionAnimatorSpeed(input.moveDir.magnitude);
 
             // Attack Transition (지면/공중 모두 가능)
             bool attackPressed = input.HasFlag(InputFlag.Attack);
