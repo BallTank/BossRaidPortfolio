@@ -11,9 +11,14 @@ namespace Core.Boss.Attacks
     {
         private readonly BossController.LungeAttackSettings _settings;
         private const float FixedExitPhaseRatio = 1.0f;
+        private const float DamageTrailActiveRatio = 0.2f;
         private bool _damageWindowActive;
+        private bool _travelWindowActive;
         private bool _lungeStateObserved;
+        private bool _telegraphStarted;
         private int _damagePayload;
+        private float _warningDuration;
+        private float _activeDuration;
 
         public LungeAttackPattern(BossController.LungeAttackSettings settings)
         {
@@ -24,22 +29,23 @@ namespace Core.Boss.Attacks
         {
             controller.StopMoving();
             _damageWindowActive = false;
+            _travelWindowActive = false;
             _lungeStateObserved = false;
+            _telegraphStarted = false;
             _damagePayload = Mathf.RoundToInt(controller.AttackDamage * _settings.damageMultiplier);
+            _warningDuration = ResolveWarningDuration(controller);
+            _activeDuration = ResolveActiveDuration(controller);
 
             // 타겟 방향으로 즉시 회전
             if (controller.Target != null)
             {
                 controller.RotateTowardsImmediate(controller.Target.position);
-                controller.BeginLungeTravelDirectionLock(controller.Target.position);
-            }
-            else
-            {
-                controller.BeginLungeTravelDirectionLock(controller.transform.position + controller.transform.forward);
             }
 
-            // 도약 애니메이션의 루트 모션을 보스 루트 이동으로 전달
-            controller.Visual?.SetLungeRootMotionEnabled(true);
+            controller.BeginLungeTravelDirectionLockFromCurrentForward();
+            controller.StopConfiguredLungeTravel();
+            controller.Visual?.SetLungeRootMotionEnabled(false);
+            controller.HideLungeAttackTelegraph();
 
             // Lunge Attack 애니메이션 재생
             controller.Visual?.PlayLungeAttack();
@@ -66,30 +72,48 @@ namespace Core.Boss.Attacks
                 if (_lungeStateObserved)
                 {
                     CloseDamageWindow(controller);
+                    CloseTravelWindow(controller);
                     return true;
                 }
 
                 return false;
             }
 
-            _lungeStateObserved = true;
+            if (!_lungeStateObserved)
+            {
+                _lungeStateObserved = true;
+                StartTelegraph(controller);
+            }
+
             float progress = stateInfo.normalizedTime;
             float hitStart = _settings.damageCastNormalizedWindow.x;
             float hitEnd = _settings.damageCastNormalizedWindow.y;
+            float damageTrailEnd = ResolveDamageTrailEnd(hitStart, hitEnd);
 
             if (!_damageWindowActive && progress >= hitStart && progress < hitEnd)
             {
                 OpenDamageWindow(controller);
             }
 
-            if (_damageWindowActive && progress >= hitEnd)
+            if (_travelWindowActive && progress < hitEnd)
+            {
+                controller.UpdateConfiguredLungeTravel();
+            }
+
+            if (_damageWindowActive && progress >= damageTrailEnd)
             {
                 CloseDamageWindow(controller);
+            }
+
+            if (_travelWindowActive && progress >= hitEnd)
+            {
+                CloseTravelWindow(controller);
             }
 
             if (progress >= FixedExitPhaseRatio)
             {
                 CloseDamageWindow(controller);
+                CloseTravelWindow(controller);
                 return true;
             }
 
@@ -100,18 +124,34 @@ namespace Core.Boss.Attacks
 
         private void OpenDamageWindow(BossController controller)
         {
-            if (_damageWindowActive || _damagePayload <= 0) return;
+            if (_damageWindowActive) return;
 
-            controller.LungeDamageCaster?.EnableHitbox(_damagePayload);
             _damageWindowActive = true;
+            if (!_travelWindowActive)
+            {
+                _travelWindowActive = true;
+                controller.BeginConfiguredLungeTravel(_activeDuration);
+            }
         }
 
         private void CloseDamageWindow(BossController controller)
         {
-            if (!_damageWindowActive) return;
-
-            controller.LungeDamageCaster?.DisableHitbox();
+            controller.HideLungeAttackTelegraph();
             _damageWindowActive = false;
+        }
+
+        private void CloseTravelWindow(BossController controller)
+        {
+            controller.StopConfiguredLungeTravel();
+            _travelWindowActive = false;
+        }
+
+        private void StartTelegraph(BossController controller)
+        {
+            if (_telegraphStarted) return;
+
+            controller.ShowLungeAttackTelegraph(_warningDuration, _activeDuration, _damagePayload);
+            _telegraphStarted = true;
         }
 
         public void Exit(BossController controller)
@@ -120,7 +160,37 @@ namespace Core.Boss.Attacks
             controller.EndLungeTravelDirectionLock();
             controller.Visual?.SetLungeRootMotionEnabled(false);
             CloseDamageWindow(controller);
+            CloseTravelWindow(controller);
             controller.StopMoving();
+            _telegraphStarted = false;
+        }
+
+        private static float ResolveDamageTrailEnd(float hitStart, float hitEnd)
+        {
+            float normalizedWindow = Mathf.Max(0f, hitEnd - hitStart);
+            return hitStart + (normalizedWindow * DamageTrailActiveRatio);
+        }
+
+        private float ResolveWarningDuration(BossController controller)
+        {
+            return ResolveClipLength(controller) * Mathf.Clamp01(_settings.damageCastNormalizedWindow.x);
+        }
+
+        private float ResolveActiveDuration(BossController controller)
+        {
+            float normalizedWindow = Mathf.Clamp01(_settings.damageCastNormalizedWindow.y)
+                - Mathf.Clamp01(_settings.damageCastNormalizedWindow.x);
+            return ResolveClipLength(controller) * Mathf.Max(0f, normalizedWindow);
+        }
+
+        private static float ResolveClipLength(BossController controller)
+        {
+            if (controller.Visual == null)
+            {
+                return Mathf.Max(0.05f, controller.AttackDuration);
+            }
+
+            return controller.Visual.GetLungeAttackClipLengthOrDefault(controller.AttackDuration);
         }
     }
 }

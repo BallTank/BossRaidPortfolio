@@ -48,6 +48,10 @@ namespace Core.Boss
 
         private int _currentAnimState;
         private BossRootMotionRelay _rootMotionRelay;
+        private bool _hasBasicAttackEndPoseCache;
+        private int _basicAttackEndPoseSourceId;
+        private Vector3 _basicAttackEndLocalPosition;
+        private Quaternion _basicAttackEndLocalRotation = Quaternion.identity;
 
         private void Awake()
         {
@@ -97,6 +101,41 @@ namespace Core.Boss
         {
             return GetClipLengthOrDefault(ANIM_BASIC_ATTACK, fallback);
         }
+
+        public float GetLungeAttackClipLengthOrDefault(float fallback)
+        {
+            AnimationClip lungeClip = FindClipOrNull(ANIM_LUNGE_ATTACK);
+            if (lungeClip != null && lungeClip.length > 0f)
+            {
+                return lungeClip.length;
+            }
+
+            AnimationClip legacyClip = FindClipOrNull(ANIM_LEGACY_CLAW_ATTACK);
+            return legacyClip != null && legacyClip.length > 0f ? legacyClip.length : fallback;
+        }
+
+        public bool TryGetBasicAttackEndPose(Transform sourceAnchor, out Vector3 position, out Vector3 forward)
+        {
+            position = transform.position;
+            forward = transform.forward;
+
+            if (_animator == null || sourceAnchor == null)
+            {
+                return false;
+            }
+
+            if (!EnsureBasicAttackEndPoseCache(sourceAnchor))
+            {
+                return false;
+            }
+
+            Transform animatorTransform = _animator.transform;
+            position = animatorTransform.TransformPoint(_basicAttackEndLocalPosition);
+            Quaternion worldRotation = animatorTransform.rotation * _basicAttackEndLocalRotation;
+            forward = worldRotation * Vector3.forward;
+            return true;
+        }
+
         public void PlayLungeAttack()
         {
             if (_animator && _animator.HasState(0, AnimLungeAttack))
@@ -201,7 +240,13 @@ namespace Core.Boss
 
         private float GetClipLengthOrDefault(string clipName, float fallback)
         {
-            if (_animator == null || _animator.runtimeAnimatorController == null) return fallback;
+            AnimationClip clip = FindClipOrNull(clipName);
+            return clip != null && clip.length > 0f ? clip.length : fallback;
+        }
+
+        private AnimationClip FindClipOrNull(string clipName)
+        {
+            if (_animator == null || _animator.runtimeAnimatorController == null) return null;
 
             AnimationClip[] clips = _animator.runtimeAnimatorController.animationClips;
             for (int i = 0; i < clips.Length; i++)
@@ -209,10 +254,166 @@ namespace Core.Boss
                 AnimationClip clip = clips[i];
                 if (clip == null) continue;
                 if (!string.Equals(clip.name, clipName, System.StringComparison.OrdinalIgnoreCase)) continue;
-                return clip.length > 0f ? clip.length : fallback;
+                return clip;
             }
 
-            return fallback;
+            return null;
+        }
+
+        private bool EnsureBasicAttackEndPoseCache(Transform sourceAnchor)
+        {
+            int sourceId = sourceAnchor.GetInstanceID();
+            if (_hasBasicAttackEndPoseCache && _basicAttackEndPoseSourceId == sourceId)
+            {
+                return true;
+            }
+
+            AnimationClip basicAttackClip = FindClipOrNull(ANIM_BASIC_ATTACK);
+            if (basicAttackClip == null)
+            {
+                return false;
+            }
+
+            string anchorPath = BuildRelativePath(_animator.transform, sourceAnchor);
+            string parentPath = sourceAnchor.parent != null
+                ? BuildRelativePath(_animator.transform, sourceAnchor.parent)
+                : null;
+            if (anchorPath == null && parentPath == null)
+            {
+                return false;
+            }
+
+            GameObject sampler = Instantiate(_animator.gameObject);
+            sampler.name = $"{_animator.gameObject.name}_BasicAttackPoseSampler";
+            sampler.hideFlags = HideFlags.HideAndDontSave;
+            PrepareBasicAttackSampler(sampler);
+
+            basicAttackClip.SampleAnimation(sampler, basicAttackClip.length);
+
+            Transform samplerRoot = sampler.transform;
+            if (!TryResolveSampledAnchorPose(
+                    samplerRoot,
+                    anchorPath,
+                    parentPath,
+                    sourceAnchor,
+                    out Vector3 sampledWorldPosition,
+                    out Quaternion sampledWorldRotation))
+            {
+                Destroy(sampler);
+                return false;
+            }
+
+            _basicAttackEndLocalPosition = samplerRoot.InverseTransformPoint(sampledWorldPosition);
+            _basicAttackEndLocalRotation = Quaternion.Inverse(samplerRoot.rotation) * sampledWorldRotation;
+            _basicAttackEndPoseSourceId = sourceId;
+            _hasBasicAttackEndPoseCache = true;
+
+            Destroy(sampler);
+            return true;
+        }
+
+        private static void PrepareBasicAttackSampler(GameObject sampler)
+        {
+            if (sampler == null) return;
+
+            sampler.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+
+            Animator samplerAnimator = sampler.GetComponent<Animator>();
+            if (samplerAnimator != null)
+            {
+                samplerAnimator.enabled = false;
+            }
+
+            MonoBehaviour[] behaviours = sampler.GetComponentsInChildren<MonoBehaviour>(true);
+            for (int i = 0; i < behaviours.Length; i++)
+            {
+                if (behaviours[i] != null)
+                {
+                    behaviours[i].enabled = false;
+                }
+            }
+
+            Renderer[] renderers = sampler.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] != null)
+                {
+                    renderers[i].enabled = false;
+                }
+            }
+        }
+
+        private static bool TryResolveSampledAnchorPose(
+            Transform samplerRoot,
+            string anchorPath,
+            string parentPath,
+            Transform sourceAnchor,
+            out Vector3 worldPosition,
+            out Quaternion worldRotation)
+        {
+            worldPosition = Vector3.zero;
+            worldRotation = Quaternion.identity;
+
+            if (samplerRoot == null || sourceAnchor == null)
+            {
+                return false;
+            }
+
+            Transform sampledAnchor = ResolveRelativePath(samplerRoot, anchorPath);
+            if (sampledAnchor != null)
+            {
+                worldPosition = sampledAnchor.position;
+                worldRotation = sampledAnchor.rotation;
+                return true;
+            }
+
+            Transform sampledParent = ResolveRelativePath(samplerRoot, parentPath);
+            if (sampledParent == null)
+            {
+                return false;
+            }
+
+            worldPosition = sampledParent.TransformPoint(sourceAnchor.localPosition);
+            worldRotation = sampledParent.rotation * sourceAnchor.localRotation;
+            return true;
+        }
+
+        private static Transform ResolveRelativePath(Transform root, string relativePath)
+        {
+            if (root == null)
+            {
+                return null;
+            }
+
+            return string.IsNullOrEmpty(relativePath) ? root : root.Find(relativePath);
+        }
+
+        private static string BuildRelativePath(Transform root, Transform target)
+        {
+            if (root == null || target == null)
+            {
+                return null;
+            }
+
+            if (root == target)
+            {
+                return string.Empty;
+            }
+
+            if (!target.IsChildOf(root))
+            {
+                return null;
+            }
+
+            string path = target.name;
+            Transform current = target.parent;
+            while (current != null && current != root)
+            {
+                path = $"{current.name}/{path}";
+                current = current.parent;
+            }
+
+            return current == root ? path : null;
         }
 
         private void ResolveRootMotionRelay()

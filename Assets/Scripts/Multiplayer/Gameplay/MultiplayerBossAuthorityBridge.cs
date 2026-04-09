@@ -22,6 +22,11 @@ namespace Core.Multiplayer
         private const string FireballShootStateName = "Fireball Shoot";
         private const string TakeOffStateName = "takeOff";
         private const string TakeOffAltStateName = "TakeOff";
+        private const string FlyForwardStateName = "FlyForward";
+        private const string FlyForwardAltStateName = "Fly Forward";
+        private const string FlyIdleStateName = "FlyIdle";
+        private const string FlyIdleAltStateName = "Fly Idle";
+        private const string LandStateName = "Land";
         private readonly List<ulong> _remoteClientIds = new List<ulong>(2);
         private readonly List<BossReplicatedEffectEvent> _pendingOutgoingEffectBatch = new List<BossReplicatedEffectEvent>(8);
         private readonly Queue<BossReplicatedEffectEvent> _pendingReceivedEffectEvents = new Queue<BossReplicatedEffectEvent>(8);
@@ -315,7 +320,7 @@ namespace Core.Multiplayer
                 return;
             }
 
-            using FastBufferWriter writer = new FastBufferWriter(1024, Allocator.Temp);
+            using FastBufferWriter writer = new FastBufferWriter(2048, Allocator.Temp);
             writer.WriteValueSafe(_pendingOutgoingEffectBatch.Count);
             for (int i = 0; i < _pendingOutgoingEffectBatch.Count; i++)
             {
@@ -446,6 +451,24 @@ namespace Core.Multiplayer
                         effect.Radius,
                         effect.WarningDuration,
                         effect.ActiveDuration);
+                    break;
+
+                case BossReplicatedEffectKind.AttackWarningShow:
+                    _bossController.PlayReplicatedAttackWarning(
+                        effect.WarningChannel,
+                        effect.WarningShape,
+                        effect.StartPosition,
+                        effect.Direction,
+                        effect.WarningDuration,
+                        effect.ActiveDuration,
+                        effect.Radius,
+                        effect.Length,
+                        effect.Width,
+                        effect.SectorAngle);
+                    break;
+
+                case BossReplicatedEffectKind.AttackWarningHide:
+                    _bossController.HideReplicatedAttackWarning(effect.WarningChannel);
                     break;
             }
         }
@@ -586,6 +609,7 @@ namespace Core.Multiplayer
         private void ApplyDeathVisual(in BossAuthoritativeState state)
         {
             _bossController?.SetLocomotionVisualSuppressed(true);
+            _bossController?.HideReplicatedAttackWarnings();
             _bossVisual.SetLungeRootMotionEnabled(false);
             _bossVisual.SetAnimatorPlaybackSpeed(1f);
             _bossVisual.SetSpeed(0f);
@@ -601,6 +625,7 @@ namespace Core.Multiplayer
         private void ApplyPhaseIntroVisual(in BossAuthoritativeState state)
         {
             _bossController?.SetLocomotionVisualSuppressed(true);
+            _bossController?.HideReplicatedAttackWarnings();
             _bossVisual.SetLungeRootMotionEnabled(false);
             _bossVisual.SetAnimatorPlaybackSpeed(1f);
             _bossVisual.SetSpeed(0f);
@@ -617,6 +642,7 @@ namespace Core.Multiplayer
         private void ApplyHitVisual(in BossAuthoritativeState state)
         {
             _bossController?.SetLocomotionVisualSuppressed(true);
+            _bossController?.HideReplicatedAttackWarnings();
             _bossVisual.SetLungeRootMotionEnabled(false);
             _bossVisual.SetAnimatorPlaybackSpeed(1f);
             _bossVisual.SetSpeed(0f);
@@ -633,26 +659,30 @@ namespace Core.Multiplayer
         {
             _bossController?.SetLocomotionVisualSuppressed(true);
             _bossVisual.SetLungeRootMotionEnabled(false);
-            _bossVisual.SetAnimatorPlaybackSpeed(1f);
             _bossVisual.SetSpeed(0f);
 
             bool isNewAttack = !_hasLastAppliedState
                                || _lastAppliedState.CurrentAttackId != state.CurrentAttackId
                                || _lastAppliedState.AttackStartServerTick != state.AttackStartServerTick;
-            if (!isNewAttack)
-            {
-                return;
-            }
+            bool isNewAttackVisual = isNewAttack
+                                     || _lastAppliedState.AttackVisualState != state.AttackVisualState;
 
-            float normalizedTime = ResolveAttackNormalizedTime(state.CurrentAttackId, state.AttackStartServerTick, serverTick);
+            float normalizedTime = ResolveAttackPresentationNormalizedTime(state, serverTick);
             switch (state.CurrentAttackId)
             {
                 case BossAuthoritativeAttackId.Basic:
+                    _bossVisual.SetAnimatorPlaybackSpeed(ResolveAttackPresentationPlaybackSpeed(state));
                     _bossVisual.PlayAttack();
                     TryPlayAnimatorState(BasicAttackStateName, normalizedTime);
                     break;
 
                 case BossAuthoritativeAttackId.Lunge:
+                    _bossVisual.SetAnimatorPlaybackSpeed(1f);
+                    if (!isNewAttack)
+                    {
+                        return;
+                    }
+
                     _bossVisual.PlayLungeAttack();
                     if (!TryPlayAnimatorState(LungeAttackStateName, normalizedTime))
                     {
@@ -661,6 +691,12 @@ namespace Core.Multiplayer
                     break;
 
                 case BossAuthoritativeAttackId.Projectile:
+                    _bossVisual.SetAnimatorPlaybackSpeed(1f);
+                    if (!isNewAttack)
+                    {
+                        return;
+                    }
+
                     _bossVisual.PlayProjectileAttack();
                     if (!TryPlayAnimatorState(FlameAttackStateName, normalizedTime))
                     {
@@ -669,6 +705,45 @@ namespace Core.Multiplayer
                     break;
 
                 case BossAuthoritativeAttackId.AoE:
+                    _bossVisual.SetAnimatorPlaybackSpeed(1f);
+                    if (!isNewAttackVisual)
+                    {
+                        return;
+                    }
+
+                    ApplyAoEAttackVisual(state.AttackVisualState, normalizedTime);
+                    break;
+            }
+        }
+
+        private void ApplyAoEAttackVisual(BossAuthoritativeAttackVisualState visualState, float normalizedTime)
+        {
+            switch (visualState)
+            {
+                case BossAuthoritativeAttackVisualState.AoEFlyForward:
+                    _bossVisual.PlayFlyForward();
+                    if (!TryPlayAnimatorState(FlyForwardStateName, normalizedTime))
+                    {
+                        TryPlayAnimatorState(FlyForwardAltStateName, normalizedTime);
+                    }
+                    break;
+
+                case BossAuthoritativeAttackVisualState.AoEFlyIdle:
+                    _bossVisual.PlayFlyIdle();
+                    if (!TryPlayAnimatorState(FlyIdleStateName, normalizedTime))
+                    {
+                        TryPlayAnimatorState(FlyIdleAltStateName, normalizedTime);
+                    }
+                    break;
+
+                case BossAuthoritativeAttackVisualState.AoELand:
+                    _bossVisual.PlayLand();
+                    TryPlayAnimatorState(LandStateName, normalizedTime);
+                    break;
+
+                case BossAuthoritativeAttackVisualState.AoETakeOff:
+                case BossAuthoritativeAttackVisualState.None:
+                default:
                     _bossVisual.PlayTakeOff();
                     if (!TryPlayAnimatorState(TakeOffStateName, normalizedTime))
                     {
@@ -681,6 +756,7 @@ namespace Core.Multiplayer
         private void ApplyLocomotionVisual(in BossAuthoritativeState state, float planarSpeed)
         {
             _bossController?.SetLocomotionVisualSuppressed(false);
+            _bossController?.HideReplicatedAttackWarnings();
             _bossVisual.SetLungeRootMotionEnabled(false);
             _bossVisual.SetAnimatorPlaybackSpeed(1f);
 
@@ -722,6 +798,33 @@ namespace Core.Multiplayer
 
             float elapsedSeconds = (currentServerTick - attackStartServerTick) * ResolveFixedDeltaTime();
             return Mathf.Clamp01(elapsedSeconds / clipLength);
+        }
+
+        private float ResolveAttackPresentationNormalizedTime(
+            in BossAuthoritativeState state,
+            int currentServerTick)
+        {
+            if (state.HasAuthoritativeAttackProgress)
+            {
+                return Mathf.Clamp01(state.AttackNormalizedTime);
+            }
+
+            return ResolveAttackNormalizedTime(
+                state.CurrentAttackId,
+                state.AttackStartServerTick,
+                currentServerTick);
+        }
+
+        private float ResolveAttackPresentationPlaybackSpeed(in BossAuthoritativeState state)
+        {
+            if (!state.HasActiveAttack)
+            {
+                return 1f;
+            }
+
+            return state.AttackPlaybackSpeed > 0f
+                ? Mathf.Max(MinimumPlaybackSpeed, state.AttackPlaybackSpeed)
+                : 1f;
         }
 
         private float ResolveAttackClipLengthOrDefault(BossAuthoritativeAttackId attackId)
@@ -926,6 +1029,8 @@ namespace Core.Multiplayer
             {
                 _bossVisual.SetSearchingUI(false);
             }
+
+            _bossController?.HideReplicatedAttackWarnings();
 
             ResetBossHudState();
 

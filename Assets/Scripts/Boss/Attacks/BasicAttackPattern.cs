@@ -14,8 +14,8 @@ namespace Core.Boss.Attacks
         private const float MinReadySliceLength = 0.0001f;
         private const float MinFallbackTotalDuration = 0.05f;
 
-        private bool _damageWindowOpen;
         private bool _basicAttackStateObserved;
+        private bool _telegraphHidden;
         private float _fallbackElapsedTime;
         private float _fallbackDamageOpenTime;
         private float _fallbackExitTime;
@@ -33,10 +33,10 @@ namespace Core.Boss.Attacks
             // 공격 애니메이션 재생
             controller.Visual?.ResetAnimatorPlaybackSpeed();
             controller.Visual?.PlayAttack();
-            controller.HeadDamageCaster?.DisableHitbox();
+            controller.HideBasicAttackTelegraph();
 
-            _damageWindowOpen = false;
             _basicAttackStateObserved = false;
+            _telegraphHidden = false;
             _fallbackElapsedTime = 0f;
 
             BossController.BasicAttackSettings settings = controller.BasicAttackConfig;
@@ -44,6 +44,7 @@ namespace Core.Boss.Attacks
             _fallbackExitTime = Mathf.Max(
                 _fallbackDamageOpenTime,
                 Mathf.Max(MinFallbackTotalDuration, controller.AttackDuration + _fallbackDamageOpenTime));
+            controller.ShowBasicAttackTelegraph(_fallbackDamageOpenTime);
         }
 
         public bool Update(BossController controller)
@@ -60,7 +61,6 @@ namespace Core.Boss.Attacks
                 if (_basicAttackStateObserved)
                 {
                     RestorePlaybackSpeed(controller);
-                    CloseDamageWindow(controller);
                     return true;
                 }
 
@@ -71,19 +71,13 @@ namespace Core.Boss.Attacks
 
             BossController.BasicAttackSettings settings = controller.BasicAttackConfig;
             float progress = stateInfo.normalizedTime;
-            float readyEnd = settings != null ? settings.readyNormalizedWindow.y : 0f;
 
             ApplyReadyPlaybackSpeed(controller, settings, progress);
-
-            if (!_damageWindowOpen && progress >= readyEnd)
-            {
-                OpenDamageWindow(controller);
-            }
+            HideTelegraphIfNeeded(controller, progress);
 
             if (progress >= FixedExitNormalizedTime)
             {
                 RestorePlaybackSpeed(controller);
-                CloseDamageWindow(controller);
                 return true;
             }
 
@@ -93,22 +87,21 @@ namespace Core.Boss.Attacks
         public void Exit(BossController controller)
         {
             RestorePlaybackSpeed(controller);
-            // 히트박스 안전 정리
-            controller.HeadDamageCaster?.DisableHitbox();
+            controller.HideBasicAttackTelegraph();
         }
 
         private bool UpdateFallback(BossController controller)
         {
             _fallbackElapsedTime += Time.deltaTime;
-
-            if (!_damageWindowOpen && _fallbackElapsedTime >= _fallbackDamageOpenTime)
+            float hideTime = _fallbackExitTime * ResolveTelegraphHideNormalizedTime(controller.BasicAttackConfig);
+            if (!_telegraphHidden && _fallbackElapsedTime >= hideTime)
             {
-                OpenDamageWindow(controller);
+                controller.HideBasicAttackTelegraph();
+                _telegraphHidden = true;
             }
 
             if (_fallbackElapsedTime >= _fallbackExitTime)
             {
-                CloseDamageWindow(controller);
                 return true;
             }
 
@@ -154,20 +147,25 @@ namespace Core.Boss.Attacks
             controller.Visual.SetAnimatorPlaybackSpeed(targetPlaybackSpeed);
         }
 
-        private void OpenDamageWindow(BossController controller)
+        private void HideTelegraphIfNeeded(BossController controller, float progress)
         {
-            if (_damageWindowOpen) return;
+            if (_telegraphHidden || progress < ResolveTelegraphHideNormalizedTime(controller.BasicAttackConfig))
+            {
+                return;
+            }
 
-            controller.HeadDamageCaster?.EnableHitbox(controller.AttackDamage);
-            _damageWindowOpen = true;
+            controller.HideBasicAttackTelegraph();
+            _telegraphHidden = true;
         }
 
-        private void CloseDamageWindow(BossController controller)
+        private static float ResolveTelegraphHideNormalizedTime(BossController.BasicAttackSettings settings)
         {
-            if (!_damageWindowOpen) return;
+            if (settings == null)
+            {
+                return BossController.BasicAttackSettings.DefaultTelegraphHideNormalizedTime;
+            }
 
-            controller.HeadDamageCaster?.DisableHitbox();
-            _damageWindowOpen = false;
+            return Mathf.Clamp01(settings.telegraphHideNormalizedTime);
         }
 
         private static void RestorePlaybackSpeed(BossController controller)

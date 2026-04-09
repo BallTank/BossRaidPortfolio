@@ -50,6 +50,7 @@ classDiagram
     class BossAuthoritativeState { <<Struct>> }
     class BossAuthoritativeLocomotionState { <<Enumeration>> }
     class BossAuthoritativeAttackId { <<Enumeration>> }
+    class BossAuthoritativeAttackVisualState { <<Enumeration>> }
     class BossAuthoritativePhase { <<Enumeration>> }
     class BossAttackHitData { <<Struct>> }
     class BossAttackHitType { <<Enumeration>> }
@@ -83,6 +84,7 @@ classDiagram
         +ApplyAuthoritativeReactionSnapshot(...)
         +RefreshLocalPresentationBindings()
         +GetPreferredCameraFollowPosition() Vector3
+        +SetLocomotionAnimatorSpeed(...)
         +SetPendingComboHudStep(int)
         +ShowComboHud(int)
         +HideComboHud()
@@ -255,7 +257,7 @@ classDiagram
 *   **Visual**: `Assets/Scripts/Boss/BossVisual.cs`
 *   **States**: `Assets/Scripts/Boss/BossFSM.cs` (모든 Boss State 클래스 포함)
 *   **Attack Patterns**: `Assets/Scripts/Boss/Attacks/` (`IBossAttackPattern.cs`, `BasicAttackPattern.cs`, `LungeAttackPattern.cs`, `ProjectileAttackPattern.cs`, `AoEAttackPattern.cs`)
-*   **Combat**: `Assets/Scripts/Common/Combat/Health.cs`, `Assets/Scripts/Common/Combat/DamageCaster.cs`, `Assets/Scripts/Common/Combat/BossHitBox.cs`
+*   **Combat**: `Assets/Scripts/Common/Combat/Health.cs`, `Assets/Scripts/Boss/AttackWarningController.cs`, `Assets/Scripts/Common/Combat/BossHitBox.cs`
 
 ```mermaid
 classDiagram
@@ -277,8 +279,6 @@ classDiagram
         +IsLocomotionVisualSuppressed bool
         -StateMachine~BossBaseState~ _stateMachine
         +BossVisual Visual
-        +DamageCaster HeadDamageCaster
-        +DamageCaster LungeDamageCaster
         +BasicAttackSettings BasicAttackSettings
         +LungeAttackSettings LungeAttackSettings
         +ProjectileAttackSettings ProjectileAttackSettings
@@ -287,6 +287,7 @@ classDiagram
         +SetLocomotionVisualSuppressed(bool)
         +GetPlanarDistanceToTarget() float
         +GetPlanarDistanceFromBasicAttackOriginToTarget() float
+        +IsTargetInsideBasicAttackArc() bool
         +IsTargetInDetectionRange() bool
         +RegisterAggroContribution(GameObject, int) void
         +RefreshClosestLiveTarget(bool) void
@@ -294,6 +295,10 @@ classDiagram
         +CaptureAuthoritativeState(int, float) BossAuthoritativeState
         +BeginAuthoritativeAttack(IBossAttackPattern)
         +EndAuthoritativeAttack()
+        +ShowBasicAttackTelegraph(float)
+        +HideBasicAttackTelegraph()
+        +ShowLungeAttackTelegraph(float, float, int)
+        +HideLungeAttackTelegraph()
         +Update()
         +MoveRaw(Vector3, float)
         +RotateTowardsImmediate(Vector3)
@@ -334,11 +339,17 @@ classDiagram
         +ReportDamageContribution(GameObject, int)
     }
 
-    class DamageCaster { +EnableHitbox(int) +DisableHitbox() +SetOwner(GameObject) }
+    class AttackWarningController {
+        +StartWarningSector(...)
+        +StartDamageSector(...)
+        +StartDamageStrip(...)
+        +ForceEnd()
+    }
     class Health { +CurrentHP int +OnDamageTaken Action~int~ +OnDeath Action }
     class BossAuthoritativeState { <<Struct>> }
     class BossAuthoritativeLocomotionState { <<Enumeration>> }
     class BossAuthoritativeAttackId { <<Enumeration>> }
+    class BossAuthoritativeAttackVisualState { <<Enumeration>> }
     class BossAuthoritativePhase { <<Enumeration>> }
     class MultiplayerBossAuthorityBridge {
         <<MonoBehaviour>>
@@ -358,7 +369,7 @@ classDiagram
     BossController --> BossVisual : Controls
     BossController --> BlinkWhiteEffect : triggers (damage blink)
     BossController --> Health : Uses
-    BossController --> DamageCaster : Controls
+    BossController --> AttackWarningController : Controls/reuses
     BossController --> BossAuthoritativeState : captures host truth
     BossHitBox --> BossController : forwards dealer contribution
     MultiplayerBossAuthorityBridge --> BossController : captures host truth / applies display-only state
@@ -375,12 +386,13 @@ classDiagram
 
     IDamageable <|.. BossHitBox : Implements
     BossHitBox --> Health : Delegates
-    DamageCaster ..> IDamageable : Hits
+    AttackWarningController ..> IDamageable : Hits
 ```
 
 **현재 배치 원칙:**
-* `HeadDamageCaster`, `LungeDamageCaster`는 Boss 로직 계층(루트 또는 루트 하위 로직 오브젝트)에 둔다.
-* `HeadDamageCasterPlace`, `BodyDamageCasterPlace`는 Visual/Bone 계층에 남기고 `_castCenter` 앵커로만 사용한다.
+* Attack1/Attack2 판정과 경고 표시는 `AttackWarningController`를 source-of-truth로 사용한다.
+* `HeadDamageCaster`, `LungeDamageCaster`는 legacy reference만 유지하고 current basic/lunge damage truth에는 사용하지 않는다.
+* Attack1 bite hit는 sampled end-pose + front arc sector를 사용하고, Attack2는 fixed travel distance + strip path를 사용한다.
 * `Head`, `Body`의 `BossHitBox`와 Collider는 피격용이므로 Visual/Bone 계층에 유지한다.
 
 ### 2.3. Boss Attack System (Strategy Pattern)
@@ -420,7 +432,6 @@ classDiagram
     }
 
     class BasicAttackPattern {
-        -bool _damageWindowOpen
         +Enter(BossController)
         +Update(BossController) bool
         +Exit(BossController)
@@ -429,6 +440,8 @@ classDiagram
     class BasicAttackSettings {
         +readyDuration float
         +readyNormalizedWindow Vector2
+        +hitHalfAngle float
+        +telegraphHideNormalizedTime float
     }
 
     class LungeAttackPattern {
@@ -441,6 +454,8 @@ classDiagram
     class LungeAttackSettings {
         +damageMultiplier float
         +damageCastNormalizedWindow Vector2
+        +travelDistance float
+        +pathWidth float
     }
 
     class ProjectileAttackPattern {
@@ -571,7 +586,7 @@ classDiagram
 | **Physics & Pooling** | 물리 판정은 NonAlloc 경로를 기준으로 하며, 보스 투사체는 `BossProjectilePool`로 재사용한다. |
 | **Camera Module** | `ThirdPersonCameraController`가 `CameraRoot`와 look 입력 기반 orbit을 담당한다. 2026-04-07 spectator follow-up 기준 multiplayer에서 local avatar가 dead이고 partner가 alive면, local death edge 뒤 약 `2.5초`를 기다린 다음 local look/orbit ownership은 유지한 채 follow position만 alive partner 쪽으로 전환한다. |
 | **Multiplayer Runtime Bridge** | `MultiplayerPlayerAvatar`, `MultiplayerBossAuthorityBridge`, `PlayerLocomotionCore`, `MultiplayerPlayerPresentationDriver`가 각각 player authority glue, boss authority bridge, shared locomotion, local presentation을 분담한다. 2026-04-07 result flow follow-up 기준 avatar는 replicated HP/dead뿐 아니라 retry-ready bit와 active avatar registry도 같이 들고, `GameManager`는 이 shared multiplayer bridge surface를 result/retry count source로 재사용한다. same-day cleanup 이후 temporary action trace, disconnect/session continuity debug, boss lunge debug spam은 제거하고 current verify에는 warnings/errors 위주로 남긴다. |
-| **Balance Tooling** | `Assets/Editor/PlayerBossBalanceToolWindow.cs`는 `Tools/Balance/Open Player Boss Balance Tool` editor window를 제공한다. one combined JSON file 안에 `player` / `boss` section을 묶고, current scope에서는 `Health` max HP와 `PlayerController`/`BossController`의 selected balance field만 export/import 한다. target은 prefab asset과 verify scene 둘 다 지원하며, scene path는 `Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity`, default player prefab path는 `Assets/Resources/Multiplayer/MultiplayerPlayerAvatar.prefab`를 기준으로 한다. |
+| **Balance Tooling** | `Assets/Editor/PlayerBossBalanceToolWindow.cs`는 `Tools/Balance/Open Player Boss Balance Tool` editor window를 제공한다. one combined JSON file 안에 `player` / `boss` section을 묶고, current scope에서는 `Health` max HP와 `PlayerController`/`BossController`의 selected balance field를 export/import 한다. boss section에는 `basicAttackRange`도 포함되며, older JSON에 이 field가 없으면 current controller value를 유지하는 backward-safe import guard를 둔다. target은 prefab asset과 verify scene 둘 다 지원하며, scene path는 `Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity`, default player prefab path는 `Assets/Resources/Multiplayer/MultiplayerPlayerAvatar.prefab`를 기준으로 한다. |
 
 ### 3.2. Player System
 | Component | Note |
@@ -581,7 +596,7 @@ classDiagram
 | **Camera & Presentation** | 카메라 입력과 `CameraRoot` 관리는 `ThirdPersonCameraController`가 맡고, multiplayer local 화면 보정은 `MultiplayerPlayerPresentationDriver`가 visual-only helper로 담당한다. dead local player spectator는 alive partner의 exact camera를 공유하지 않고, dead player의 own orbit input을 유지한 채 약 `2.5초` 뒤 partner `GetPreferredCameraFollowPosition()`만 따라간다. |
 | **Hit & Reaction** | 플레이어는 `IBossAttackHitReceiver`를 통해 보스 공격 메타데이터를 받고, hit/stun/death 반응은 authoritative snapshot apply를 기준으로 정리한다. |
 | **HUD Binding** | `CombatHUDController`는 player/boss HP, combo, damage feedback을 관리한다. multiplayer에서는 player HUD는 avatar-driven authoritative path를 쓰고, boss HUD는 local boss `Health` 대신 `MultiplayerBossAuthorityBridge`가 boss authoritative snapshot으로 직접 갱신한다. same viewer-side HUD path는 portrait에도 적용되어, Host 화면은 Host portrait가 좌측 main HUD에, Client 화면은 Client portrait가 좌측 main HUD에 오도록 `MultiplayerPlayerAvatar`가 local viewer 기준으로 portrait layout도 다시 쓴다. `MultiplayerPlayerAvatar.TryGetReplicatedHealth(...)`도 same HUD replica를 result-flow read source로 재사용한다. |
-| **Animator & Validation** | `PlayerAnimatorGuard`가 플레이어 Animator 상태/이벤트 계약의 누락을 점검하고 복구 경로를 제공한다. |
+| **Animator & Validation** | `PlayerAnimatorGuard`가 플레이어 Animator 상태/이벤트 계약의 누락을 점검하고 복구 경로를 제공한다. 2026-04-08 player locomotion follow-up 기준 `PlayerController.SetLocomotionAnimatorSpeed(...)`가 solo `MoveState`, shared `PlayerLocomotionCore`, multiplayer `MultiplayerPlayerAvatar`의 `Speed` write path를 한곳으로 모으고, default `0.08s` damping으로 quick opposite turn neutral frame의 idle cut-in을 완화한다. same-day debug follow-up에서는 `PlayerController.enableMovementDebugLog`가 owner client의 root / authoritative correction / render proxy trace를 열고, `MultiplayerPlayerAvatar`와 `MultiplayerPlayerPresentationDriver`가 `ClientPredict/AuthBaseline/AuthSkip/AuthReplay/Proxy` 로그를 찍는다. same-day client jitter follow-up에서는 `PredictedLocomotion + ClientOwnerProxy + local presentation enabled + MoveState` 조합의 owner locomotion `Speed`를 network tick/replay path가 더 이상 supply하지 않고, `PlayerController` normal `Update`가 current input + latest predicted planar speed cache를 읽어 single writer로 적용한다. stop window polish로는 brief neutral frame은 damping을 유지하되, input과 predicted planar speed가 함께 `0`인 상태가 `0.03s`를 넘기면 immediate `0` settle을 걸어 lingering walk blend를 정리한다. dash clip transition은 existing network sim path에 남기고, gameplay move/rotate/correction truth는 바꾸지 않는다. |
 
 ### 3.3. Boss System (The Dragon)
 | Component | Note |
@@ -589,12 +604,12 @@ classDiagram
 | **Boss Logic (FSM)** | `BossController`는 Idle, Combat, Attack, Searching, Hit, Dead 흐름을 상태 머신으로 관리한다. |
 | **Boss Sensors** | 타겟 감지와 공격 거리 평가는 Y를 제외한 XZ 거리 기준으로 수행한다. 기본 타겟 획득 fallback은 closest live player지만, current target이 `AggroPriorityRange` 안에 있는 동안에는 attack 전/후에도 그 target을 계속 유지한다. boss가 어느 플레이어에게서든 첫 피격을 받으면 `AggroTime`이 시작되고, 타이머 동안 current target을 유지한 채 cycle damage를 누적한다. 타이머가 끝난 뒤 두 플레이어가 `AggroPriorityRange` 안에 함께 있으면 current cycle damage winner로 target을 한 번 교체하고, 새 피격이 들어오면 다음 cycle이 다시 시작된다. current implementation의 target refresh path는 `scan live targets -> resolve aggro priority -> apply target if changed` 순서로 분리해 유지한다. inspector tuning은 detection-related 값(`AggroPriorityRange`, `DetectionRange`, `BasicAttackRange`, `LungeAttackRange`, `SharedRangedAttackRange`, `ChaseReengageBuffer`, `SearchDuration`)을 `Detection Settings`에 모으고, `AggroTime`만 `Aggro Settings`에 분리한다. |
 | **Boss Navigation** | 추적 이동, 즉시 회전, attack-range hysteresis, locomotion visual suppression을 분리해 관리한다. aggro timer는 `AttackState`와 phase intro 중에는 pause되어 animation 전환을 방해하지 않는다. |
-| **Boss Combat** | 공격 선택은 pattern range filtering과 `Strategy Pattern`을 기준으로 구성되며, Basic/Lunge/Projectile/AoE 슬롯을 같은 attack state에서 위임한다. Phase1 Basic entry gate는 `BossController.BasicAttackRange`를 읽고, same value를 `HeadDamageCaster.radius`에도 동기화해 거리 판정과 실제 bite hit radius를 맞춘다. Phase2의 Projectile/AoE entry gate는 `SharedRangedAttackRange` 하나를 공용 source로 사용한다. |
-| **DamageCaster Ownership** | `HeadDamageCaster`, `LungeDamageCaster`는 Boss 로직 계층에 두고, 실제 위치 추종은 visual/bone 계층의 anchor를 사용한다. Attack1 radius source-of-truth는 `BossController.basicAttackRange`이며, `BossController`가 `HeadDamageCaster` 반경을 동기화한다. |
-| **Lunge Contract** | Lunge는 animation event + normalized-time fallback + root motion relay를 조합해 phase 전환과 이동을 제어한다. |
-| **Boss Authority Contract** | current `step 1-2` 기준 `BossController`는 `CaptureAuthoritativeState(...)`로 dedicated boss snapshot을 만들고, `MultiplayerBossAuthorityBridge`가 이 snapshot을 Host runtime-root에서 capture/send 한다. snapshot은 transform / locomotion state / current attack id / attack start server tick / HP / phase / dead flag만 담는다. |
-| **Boss Multiplayer Read** | multiplayer client는 boss gameplay truth를 직접 계산하지 않고, disabled local boss object에 `MultiplayerBossAuthorityBridge`가 latest dedicated state의 display-only transform/semantic animator state를 apply하는 구조를 기준으로 한다. current baseline은 direct apply이며, same received boss tick은 한 번만 consume하고, move/search locomotion speed는 weak packet delta에서도 host locomotion speed를 바닥값으로 유지한다. boss HUD도 같은 bridge가 `CurrentHealth/MaxHealth` snapshot을 local `CombatHUDController`에 직접 써서 local disabled boss `Health`와 분리한다. same bridge는 `TryGetLatestBossState(...)` / `IsBossDead` read surface로 later result flow의 boss truth source도 제공한다. client gameplay prediction/extrapolation은 넣지 않는다. |
-| **Boss Effect Replay** | attack 3/4의 spawned projectile/AoE visual은 `BossReplicatedEffectEvent`로 별도 전송한다. Host의 `ProjectileAttackPattern`/`AoEAttackPattern`이 실제 spawn 시점에 effect event를 큐에 적재하면, `MultiplayerBossAuthorityBridge`가 reliable named message로 remote client에 보내고, client는 local pooled `BossProjectile`/`AoECircleController`를 display-only로 재생한다. damage truth는 계속 Host-only다. |
+| **Boss Combat** | 공격 선택은 pattern range filtering과 `Strategy Pattern`을 기준으로 구성되며, Basic/Lunge/Projectile/AoE 슬롯을 같은 attack state에서 위임한다. Phase1 Basic entry gate는 `BossController.BasicAttackRange`와 `BossController.IsTargetInsideBasicAttackArc()`를 함께 읽어 target이 sampled bite end-pose 기준 mouth front hemisphere 안에 있을 때만 고른다. Basic/Lunge actual damage와 warning visual은 current build에서 `AttackWarningController`가 담당한다. Phase2의 Projectile/AoE entry gate는 `SharedRangedAttackRange` 하나를 공용 source로 사용한다. |
+| **Attack Warning Ownership** | Attack1/Attack2는 body/head `DamageCaster` 대신 `AttackWarningController`를 source-of-truth로 사용한다. Attack1은 sector warning + one-shot sector damage, Attack2는 strip warning + fixed-distance strip damage를 사용한다. legacy `HeadDamageCaster` / `LungeDamageCaster` reference는 old anchor fallback 용도로만 남긴다. |
+| **Lunge Contract** | Lunge는 fixed `travelDistance`와 `pathWidth`를 source-of-truth로 사용하고, target distance가 아니라 start facing direction만 잠근다. warning strip은 display rule에 따라 early hide될 수 있지만, actual boss travel은 `damageCastNormalizedWindow` 전체 구간을 기준으로 유지한다. |
+| **Boss Authority Contract** | current `step 1-2` 기준 `BossController`는 `CaptureAuthoritativeState(...)`로 dedicated boss snapshot을 만들고, `MultiplayerBossAuthorityBridge`가 이 snapshot을 Host runtime-root에서 capture/send 한다. snapshot은 transform / locomotion state / current attack id / current attack visual state / attack start server tick / current attack `normalized time` / current attack playback speed / HP / phase / dead flag를 담는다. `AttackStartServerTick`는 fallback attack clock으로 유지하고, basic ready-slice처럼 host animator speed override가 있는 경우에는 actual animator progress가 추가 source-of-truth가 된다. AoE airborne replay follow-up에서는 same snapshot의 `AttackVisualState`가 `TakeOff / FlyForward / FlyIdle / Land` semantic phase를 client에 직접 전달한다. |
+| **Boss Multiplayer Read** | multiplayer client는 boss gameplay truth를 직접 계산하지 않고, disabled local boss object에 `MultiplayerBossAuthorityBridge`가 latest dedicated state의 display-only transform/semantic animator state를 apply하는 구조를 기준으로 한다. current baseline은 direct apply이며, same received boss tick은 한 번만 consume하고, move/search locomotion speed는 weak packet delta에서도 host locomotion speed를 바닥값으로 유지한다. basic attack은 `AttackNormalizedTime / AttackPlaybackSpeed` snapshot을 매 consume마다 다시 적용해 ready-slice drift를 줄이고, AoE는 `AttackVisualState` 변화를 기준으로 `TakeOff -> FlyForward -> FlyIdle -> Land` 비행 phase를 순서대로 재생한다. boss HUD도 같은 bridge가 `CurrentHealth/MaxHealth` snapshot을 local `CombatHUDController`에 직접 써서 local disabled boss `Health`와 분리한다. same bridge는 `TryGetLatestBossState(...)` / `IsBossDead` read surface로 later result flow의 boss truth source도 제공한다. client gameplay prediction/extrapolation은 넣지 않는다. |
+| **Boss Effect Replay** | attack 1/2 warning과 attack 3/4의 spawned projectile/AoE visual은 `BossReplicatedEffectEvent`로 별도 전송한다. Host는 basic sector / lunge strip warning의 `show/hide`, projectile shot, AoE spawn을 same reliable named message batch에 큐잉하고, `MultiplayerBossAuthorityBridge`가 remote client에 보낸다. client는 local `AttackWarningController`, pooled `BossProjectile`, `AoECircleController`를 display-only로 재생한다. damage truth는 계속 Host-only다. |
 
 ### 3.4. User Interface (UI)
 | Component | Note |

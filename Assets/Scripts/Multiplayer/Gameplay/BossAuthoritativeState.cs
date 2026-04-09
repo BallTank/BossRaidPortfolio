@@ -31,6 +31,21 @@ namespace Core.Multiplayer
     }
 
     /// <summary>
+    /// Host가 remote client에 재생시킬 공격 비주얼 세부 단계.
+    /// </summary>
+    public enum BossAuthoritativeAttackVisualState : byte
+    {
+        None = 0,
+        Basic = 1,
+        Lunge = 2,
+        Projectile = 3,
+        AoETakeOff = 4,
+        AoEFlyForward = 5,
+        AoEFlyIdle = 6,
+        AoELand = 7
+    }
+
+    /// <summary>
     /// 보스 페이즈의 dedicated replicated 표현.
     /// </summary>
     public enum BossAuthoritativePhase : byte
@@ -49,13 +64,17 @@ namespace Core.Multiplayer
         public Quaternion Rotation;
         public BossAuthoritativeLocomotionState LocomotionState;
         public BossAuthoritativeAttackId CurrentAttackId;
+        public BossAuthoritativeAttackVisualState AttackVisualState;
         public int AttackStartServerTick;
+        public float AttackNormalizedTime;
+        public float AttackPlaybackSpeed;
         public int CurrentHealth;
         public int MaxHealth;
         public BossAuthoritativePhase Phase;
         public bool IsDead;
 
         public bool HasActiveAttack => CurrentAttackId != BossAuthoritativeAttackId.None;
+        public bool HasAuthoritativeAttackProgress => HasActiveAttack && AttackNormalizedTime >= 0f;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
@@ -63,7 +82,10 @@ namespace Core.Multiplayer
             serializer.SerializeValue(ref Rotation);
             serializer.SerializeValue(ref LocomotionState);
             serializer.SerializeValue(ref CurrentAttackId);
+            serializer.SerializeValue(ref AttackVisualState);
             serializer.SerializeValue(ref AttackStartServerTick);
+            serializer.SerializeValue(ref AttackNormalizedTime);
+            serializer.SerializeValue(ref AttackPlaybackSpeed);
             serializer.SerializeValue(ref CurrentHealth);
             serializer.SerializeValue(ref MaxHealth);
             serializer.SerializeValue(ref Phase);

@@ -176,7 +176,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   playerTransform: {fileID: 1585844235}
   animator: {fileID: 1487502255}
-  damageBlinkEffect: {fileID: 0}
+  damageBlinkEffect: {fileID: 1487502256}
   basicAttackRangeOrigin: {fileID: 1470039690}
   moveSpeed: 3.5
   searchingMoveSpeed: 2
@@ -184,27 +184,31 @@ MonoBehaviour:
   phaseTwoHealthThreshold: 0.5
   aggroPriorityRange: 18.6
   detectionRange: 64.1
+  basicAttackRange: 7.37
   lungeAttackRange: 30.7
   sharedRangedAttackRange: 48.7
   chaseReengageBuffer: 1
   searchDuration: 5
   aggroTime: 5
-  basicAttackRange: 2.7
-  attackDamage: 5
+  attackDamage: 10
   attackDuration: 1
   attackCooldown: 4
   basicAttackSettings:
-    readyDuration: 0.2
-    readyNormalizedWindow: {x: 0.15, y: 0.45}
+    readyDuration: 2.2
+    readyNormalizedWindow: {x: 0, y: 0.32999998}
+    hitHalfAngle: 90
+    telegraphHideNormalizedTime: 0.45
   _headDamageCaster: {fileID: 423284611}
   _lungeDamageCaster: {fileID: 1189825118}
   lungeAttackSettings:
     damageMultiplier: 1.5
-    damageCastNormalizedWindow: {x: 0.15, y: 0.8}
+    damageCastNormalizedWindow: {x: 0.37, y: 0.8}
+    travelDistance: 63.9
+    pathWidth: 15.8
   projectileAttackSettings:
     warningDuration: 0.3
-    damage: 7
-    speed: 15
+    damage: 6
+    speed: 13
     lifetime: 4
     volleyCount: 7
     volleyInterval: 0.8
@@ -224,8 +228,8 @@ MonoBehaviour:
     castRange: 24
     landDuration: 0.8
     spawnInterval: 0.75
-    damage: 10
-    warningDuration: 0.78
+    damage: 20
+    warningDuration: 1
     activeDuration: 0.3
     tickInterval: 0.25
     targetMask:
@@ -233,7 +237,7 @@ MonoBehaviour:
       m_Bits: 128
     circleCount: 12
     maxCircleInstances: 12
-    radius: 3.4
+    radius: 3.2
     spawnSpreadRadius: 9
     headingLeadTime: 0.45
     maxHeadingLeadDistance: 8
@@ -251,10 +255,10 @@ MonoBehaviour:
   enableChase: 1
   enableRotation: 1
   enableBasicAttack: 1
-  enableLungeAttack: 0
-  enableProjectileAttack: 0
-  enableAoEAttack: 0
-  ignorePlayerCollision: 1
+  enableLungeAttack: 1
+  enableProjectileAttack: 1
+  enableAoEAttack: 1
+  ignorePlayerCollision: 0
   showPhaseDebugLabel: 0
 --- !u!143 &242866945
 CharacterController:
@@ -294,8 +298,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 29f8d572df6abc242b243fcd31b4d868, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _maxHealth: 500
-  _currentHealth: 500
+  _maxHealth: 200
+  _currentHealth: 1000
   _isInvincible: 0
   _runtimeWriteAuthorityMode: 0
 --- !u!1 &311313666
@@ -535,13 +539,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: e63d09e61f26b4b4db8c3a27731f4051, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _radius: 2.7
+  _radius: 4.28
   _targetLayer:
     serializedVersion: 2
     m_Bits: 128
   _maxTargets: 10
   _castCenter: {fileID: 1470039690}
   _bossAttackHitType: 0
+  _useDirectionalArcFilter: 1
+  _directionalArcHalfAngle: 90
+  _directionSource: {fileID: 1470039690}
   _showGizmos: 1
   _gizmoColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!1 &499507000
@@ -844,6 +851,9 @@ MonoBehaviour:
   _maxTargets: 10
   _castCenter: {fileID: 762737812}
   _bossAttackHitType: 0
+  _useDirectionalArcFilter: 0
+  _directionalArcHalfAngle: 180
+  _directionSource: {fileID: 0}
   _showGizmos: 1
   _gizmoColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!4 &768751870 stripped
@@ -1130,12 +1140,12 @@ CapsuleCollider:
     serializedVersion: 2
     m_Bits: 0
   m_LayerOverridePriority: 0
-  m_IsTrigger: 1
+  m_IsTrigger: 0
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 2
   m_Radius: 2.2
-  m_Height: 6.8
+  m_Height: 7.34
   m_Direction: 1
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!114 &1189825117
@@ -1171,6 +1181,9 @@ MonoBehaviour:
   _maxTargets: 10
   _castCenter: {fileID: 1165209285}
   _bossAttackHitType: 0
+  _useDirectionalArcFilter: 0
+  _directionalArcHalfAngle: 180
+  _directionSource: {fileID: 0}
   _showGizmos: 1
   _gizmoColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!4 &1265239899 stripped
@@ -1501,6 +1514,7 @@ MonoBehaviour:
   cameraRoot: {fileID: 2135559825}
   playerVisual: {fileID: 1583953028}
   blinkWhiteEffect: {fileID: 0}
+  locomotionAnimatorSpeedDampTime: 0.08
   dashDuration: 0.4
   dashSpeedMultiplier: 3
   dashCooldown: 1
@@ -1540,6 +1554,8 @@ MonoBehaviour:
   _multiplayerLocomotionCollisionShell: 0.02
   _multiplayerLocomotionGroundSnapDistance: 0.15
   _multiplayerLocomotionMaxSlideIterations: 1
+  enableMovementDebugLog: 1
+  movementDebugLogInterval: 0.01
   enableAttack2DebugLog: 1
   attack2DebugTraceDuration: 0.8
   attack2DebugLogInterval: 0.05

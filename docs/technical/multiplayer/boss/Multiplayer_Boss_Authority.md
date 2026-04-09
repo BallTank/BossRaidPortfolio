@@ -102,6 +102,8 @@ boss authority 문서는 exact packet shape를 고정하는 문서가 아니다.
 | locomotion state | idle / chase / turn / special move 표시 |
 | current attack id | 어떤 패턴이 재생 중인지 표시 |
 | attack start tick or time | telegraph / hit timing / recover timing 기준 |
+| attack visual state | same attack 안의 세부 animation phase 표시 |
+| attack normalized time / playback speed | host animator progress / speed override 동기화 |
 | HP | HUD와 phase 판단 결과 표시 |
 | phase | phase-specific visual / logic branch 표시 |
 | dead flag | death / result flow |
@@ -112,6 +114,7 @@ boss authority 문서는 exact packet shape를 고정하는 문서가 아니다.
 * Host는 이 state를 쓰는 쪽이다.
 * 가능하면 `minimal data transfer`를 유지한다.
 * exact field shape can change, but the authority rule should stay the same.
+* 2026-04-09 follow-up 기준 AoE airborne replay bug fix 때문에 `attack visual state`가 `TakeOff / FlyForward / FlyIdle / Land` semantic phase를 직접 담을 수 있다.
 
 ---
 
@@ -207,6 +210,7 @@ boss는 player보다 `client prediction` 필요성이 보통 더 낮다.
 * extrapolation은 필요할 때만 아주 제한적으로
 * attack timing은 Host tick 기준
 * local-only feedback은 허용
+* same-day AoE airborne follow-up 기준 attack id만으로 phase를 알 수 없는 패턴은 `attack visual state`를 같이 읽어 semantic clip transition을 맞춘다
 
 예:
 

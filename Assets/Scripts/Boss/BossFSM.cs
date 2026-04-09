@@ -168,7 +168,8 @@ namespace Core.Boss
         {
             float basicDistance = Controller.GetPlanarDistanceFromBasicAttackOriginToTarget();
             bool canBasic = Controller.EnableBasicAttack &&
-                            basicDistance <= Controller.BasicAttackRange;
+                            basicDistance <= Controller.BasicAttackRange &&
+                            Controller.IsTargetInsideBasicAttackArc();
             if (canBasic)
             {
                 // Lunge 범위까지 함께 충족해도 Phase1에서는 Basic을 우선한다.

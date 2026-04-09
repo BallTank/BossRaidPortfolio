@@ -64,7 +64,7 @@ namespace Core.Boss
         private float aggroPriorityRange = 6.0f;
         [SerializeField] private float detectionRange = 10.0f;
         [FormerlySerializedAs("attackRange")]
-        [SerializeField, Tooltip("Basic 공격 사거리. Head DamageCaster radius와 자동 동기화된다.")]
+        [SerializeField, Tooltip("Basic 공격 반경. 시각 경고와 실제 판정에 함께 사용된다.")]
         private float basicAttackRange = 2.5f;
         [SerializeField] private float lungeAttackRange = 4.5f;
         [FormerlySerializedAs("projectileAttackRange")]
@@ -87,10 +87,10 @@ namespace Core.Boss
         [Header("Basic Attack Settings")]
         [SerializeField] private BasicAttackSettings basicAttackSettings;
 
-        [Header("부위별 DamageCaster (Explicit per-part)")]
-        [Tooltip("Basic Attack(물기) 판정용 - Head Bone에 부착")]
+        [Header("Legacy DamageCaster References")]
+        [Tooltip("레거시 Head DamageCaster 참조 (Basic/Lunge는 더 이상 사용하지 않음)")]
         [SerializeField] private DamageCaster _headDamageCaster;
-        [Tooltip("Lunge Attack(도약) 판정용 - 앞발 Bone에 부착 (미설정 시 Head 사용)")]
+        [Tooltip("레거시 Lunge DamageCaster 참조 (Basic/Lunge는 더 이상 사용하지 않음)")]
         [FormerlySerializedAs("_clawDamageCaster")]
         [SerializeField] private DamageCaster _lungeDamageCaster;
 
@@ -139,6 +139,8 @@ namespace Core.Boss
         // Components
         private CharacterController _characterController;
         private Health _health;
+        private AttackWarningController _basicAttackTelegraph;
+        private AttackWarningController _lungeAttackTelegraph;
         private float _nextAttackTime;
         private BossAuthoritativeAttackId _currentAuthoritativeAttackId;
         private float _currentAttackStartTime = -1f;
@@ -155,6 +157,9 @@ namespace Core.Boss
         private bool _suppressLocomotionVisual;
         private Vector3 _lungeTravelDirection = Vector3.forward;
         private bool _isLungeTravelDirectionLocked;
+        private bool _isLungeTravelActive;
+        private float _remainingLungeTravelDistance;
+        private float _lungeTravelSpeed;
         private bool _hasAppliedPlayerCollisionIgnore;
         private int _ignoredPlayerRootInstanceId;
         private const float LungeRootMotionMinStep = 0.0001f;
@@ -200,7 +205,6 @@ namespace Core.Boss
             if (lungeAttackRange < 0f) lungeAttackRange = 0f;
             if (sharedRangedAttackRange < 0f) sharedRangedAttackRange = 0f;
             if (chaseReengageBuffer < 0f) chaseReengageBuffer = 0f;
-            SyncBasicAttackRangeToHeadDamageCaster();
 
             if (basicAttackSettings == null)
             {
@@ -224,6 +228,7 @@ namespace Core.Boss
                 projectileAttackSettings.exitNormalizedTime =
                     Mathf.Clamp(projectileAttackSettings.exitNormalizedTime, 0.5f, 1.2f);
             }
+
         }
 
         // Public Properties for States
@@ -235,7 +240,7 @@ namespace Core.Boss
         public float AggroPriorityRange => Mathf.Min(aggroPriorityRange, detectionRange);
         public float AggroTime => aggroTime;
         public float BasicAttackRange => Mathf.Max(0f, basicAttackRange);
-        public float LungeAttackRange => lungeAttackRange;
+        public float LungeAttackRange => ResolveConfiguredLungeTravelDistance();
         public float SharedRangedAttackRange => sharedRangedAttackRange;
         public float ProjectileAttackRange => sharedRangedAttackRange;
         public float AoEAttackRange => sharedRangedAttackRange;
@@ -245,9 +250,6 @@ namespace Core.Boss
         public float AttackDuration => attackDuration;
         public BasicAttackSettings BasicAttackConfig => basicAttackSettings;
         public bool CanAttack => Time.time >= _nextAttackTime;
-        public DamageCaster HeadDamageCaster => _headDamageCaster;
-        public DamageCaster LungeDamageCaster => _lungeDamageCaster;
-
         public bool EnableChase => enableChase;
         public bool EnableBasicAttack => enableBasicAttack;
         public bool EnableLungeAttack => enableLungeAttack;
@@ -273,9 +275,14 @@ namespace Core.Boss
             state.Rotation = transform.rotation;
             state.LocomotionState = ResolveAuthoritativeLocomotionState();
             state.CurrentAttackId = _currentAuthoritativeAttackId;
+            state.AttackVisualState = ResolveAuthoritativeAttackVisualState();
             state.AttackStartServerTick = ResolveAuthoritativeAttackStartServerTick(
                 currentServerTick,
                 networkFixedDeltaTime);
+            state.AttackNormalizedTime = ResolveAuthoritativeAttackNormalizedTime(
+                currentServerTick,
+                networkFixedDeltaTime);
+            state.AttackPlaybackSpeed = ResolveAuthoritativeAttackPlaybackSpeed();
             state.CurrentHealth = _health != null ? _health.CurrentHealth : 0;
             state.MaxHealth = _health != null ? _health.MaxHealth : 0;
             state.Phase = ResolveAuthoritativePhase();
@@ -315,6 +322,11 @@ namespace Core.Boss
             float homingDuration,
             float verticalFollowSpeed)
         {
+            if (!ShouldQueueReplicatedEffect())
+            {
+                return;
+            }
+
             BossReplicatedEffectEvent effect = default;
             effect.EffectKind = BossReplicatedEffectKind.ProjectileShot;
             effect.SequenceId = ++_nextReplicatedEffectSequenceId;
@@ -341,6 +353,11 @@ namespace Core.Boss
             float warningDuration,
             float activeDuration)
         {
+            if (!ShouldQueueReplicatedEffect())
+            {
+                return;
+            }
+
             BossReplicatedEffectEvent effect = default;
             effect.EffectKind = BossReplicatedEffectKind.AoESpawn;
             effect.SequenceId = ++_nextReplicatedEffectSequenceId;
@@ -349,6 +366,61 @@ namespace Core.Boss
             effect.Radius = Mathf.Max(0f, radius);
             effect.WarningDuration = Mathf.Max(0f, warningDuration);
             effect.ActiveDuration = Mathf.Max(0f, activeDuration);
+            _pendingReplicatedEffectEvents.Enqueue(effect);
+        }
+
+        /// <summary>
+        /// Host가 Basic/Lunge 경고 표시 이벤트를 remote client용으로 큐에 적재한다.
+        /// </summary>
+        public void EnqueueReplicatedAttackWarningShow(
+            BossReplicatedWarningChannel warningChannel,
+            BossReplicatedWarningShape warningShape,
+            Vector3 startPosition,
+            Vector3 forwardDirection,
+            float warningDuration,
+            float activeDuration,
+            float radius,
+            float length,
+            float width,
+            float sectorAngle)
+        {
+            if (!ShouldQueueReplicatedEffect())
+            {
+                return;
+            }
+
+            BossReplicatedEffectEvent effect = default;
+            effect.EffectKind = BossReplicatedEffectKind.AttackWarningShow;
+            effect.SequenceId = ++_nextReplicatedEffectSequenceId;
+            effect.WarningChannel = warningChannel;
+            effect.WarningShape = warningShape;
+            effect.StartPosition = startPosition;
+            effect.Direction = forwardDirection.sqrMagnitude > 0.0001f
+                ? forwardDirection.normalized
+                : transform.forward;
+            effect.WarningDuration = Mathf.Max(0f, warningDuration);
+            effect.ActiveDuration = Mathf.Max(0f, activeDuration);
+            effect.Radius = Mathf.Max(0f, radius);
+            effect.Length = Mathf.Max(0f, length);
+            effect.Width = Mathf.Max(0f, width);
+            effect.SectorAngle = Mathf.Clamp(sectorAngle, 0f, AttackWarningController.FullSectorAngle);
+            _pendingReplicatedEffectEvents.Enqueue(effect);
+        }
+
+        /// <summary>
+        /// Host가 Basic/Lunge 경고 종료 이벤트를 remote client용으로 큐에 적재한다.
+        /// </summary>
+        public void EnqueueReplicatedAttackWarningHide(BossReplicatedWarningChannel warningChannel)
+        {
+            if (!ShouldQueueReplicatedEffect())
+            {
+                return;
+            }
+
+            BossReplicatedEffectEvent effect = default;
+            effect.EffectKind = BossReplicatedEffectKind.AttackWarningHide;
+            effect.SequenceId = ++_nextReplicatedEffectSequenceId;
+            effect.WarningChannel = warningChannel;
             _pendingReplicatedEffectEvents.Enqueue(effect);
         }
 
@@ -373,6 +445,14 @@ namespace Core.Boss
         public void ClearPendingReplicatedEffectEvents()
         {
             _pendingReplicatedEffectEvents.Clear();
+        }
+
+        private static bool ShouldQueueReplicatedEffect()
+        {
+            return NetworkManager.Singleton != null
+                   && NetworkManager.Singleton.IsServer
+                   && MultiplayerSessionService.HasInstance
+                   && MultiplayerSessionService.Instance.HasActiveSession;
         }
 
         /// <summary>
@@ -431,6 +511,19 @@ namespace Core.Boss
 
         private void OnDestroy()
         {
+            HideBasicAttackTelegraph();
+            HideLungeAttackTelegraph();
+            if (_basicAttackTelegraph != null)
+            {
+                Destroy(_basicAttackTelegraph.gameObject);
+                _basicAttackTelegraph = null;
+            }
+            if (_lungeAttackTelegraph != null)
+            {
+                Destroy(_lungeAttackTelegraph.gameObject);
+                _lungeAttackTelegraph = null;
+            }
+
             if (_health != null)
             {
                 _health.OnDamageTaken -= HandleDamage;
@@ -440,20 +533,8 @@ namespace Core.Boss
 
         private void Start()
         {
-            SyncBasicAttackRangeToHeadDamageCaster();
-
-            // DamageCaster에 Owner 설정 (자해 방지)
-            if (_headDamageCaster != null)
-            {
-                _headDamageCaster.SetOwner(gameObject);
-                _headDamageCaster.SetBossAttackHitType(BossAttackHitType.Attack1);
-            }
-
-            if (_lungeDamageCaster != null)
-            {
-                _lungeDamageCaster.SetOwner(gameObject);
-                _lungeDamageCaster.SetBossAttackHitType(BossAttackHitType.Attack2);
-            }
+            _headDamageCaster?.ForceDisableHitbox();
+            _lungeDamageCaster?.ForceDisableHitbox();
 
             TryApplyPlayerCollisionIgnore();
             damageBlinkEffect?.StopBlink();
@@ -539,14 +620,50 @@ namespace Core.Boss
             }
         }
 
-        private void SyncBasicAttackRangeToHeadDamageCaster()
+        private bool TryResolveBasicAttackTelegraph(out AttackWarningController telegraph)
         {
-            if (_headDamageCaster == null)
+            return TryResolveAttackWarningController(ref _basicAttackTelegraph, out telegraph);
+        }
+
+        private bool TryResolveLungeAttackTelegraph(out AttackWarningController telegraph)
+        {
+            return TryResolveAttackWarningController(ref _lungeAttackTelegraph, out telegraph);
+        }
+
+        private bool TryResolveAttackWarningController(
+            ref AttackWarningController cachedTelegraph,
+            out AttackWarningController telegraph)
+        {
+            telegraph = cachedTelegraph;
+            if (telegraph != null)
             {
-                return;
+                return true;
             }
 
-            _headDamageCaster.SetRadius(Mathf.Max(0f, basicAttackRange));
+            if (aoeAttackSettings == null || aoeAttackSettings.circlePrefab == null)
+            {
+                return false;
+            }
+
+            GameObject telegraphObject = aoeAttackSettings.circleRoot != null
+                ? Instantiate(aoeAttackSettings.circlePrefab.gameObject, aoeAttackSettings.circleRoot)
+                : Instantiate(aoeAttackSettings.circlePrefab.gameObject);
+            telegraph = telegraphObject.GetComponent<AttackWarningController>();
+            if (telegraph == null)
+            {
+                AoECircleController circleController = telegraphObject.GetComponent<AoECircleController>();
+                telegraph = circleController != null ? circleController.WarningController : null;
+            }
+
+            if (telegraph == null)
+            {
+                Destroy(telegraphObject);
+                return false;
+            }
+
+            telegraph.gameObject.SetActive(false);
+            cachedTelegraph = telegraph;
+            return true;
         }
 
         private static ulong ResolveTargetNetworkObjectId(Transform target)
@@ -642,6 +759,149 @@ namespace Core.Boss
             float elapsedSeconds = Mathf.Max(0f, Time.time - _currentAttackStartTime);
             int elapsedTicks = Mathf.CeilToInt(elapsedSeconds / networkFixedDeltaTime);
             return Mathf.Max(0, currentServerTick - elapsedTicks);
+        }
+
+        private float ResolveAuthoritativeAttackNormalizedTime(int currentServerTick, float networkFixedDeltaTime)
+        {
+            if (_currentAuthoritativeAttackId == BossAuthoritativeAttackId.None)
+            {
+                return -1f;
+            }
+
+            if (TryResolveCurrentAttackAnimatorNormalizedTime(out float normalizedTime))
+            {
+                return normalizedTime;
+            }
+
+            float clipLength = ResolveAuthoritativeAttackClipLengthOrDefault();
+            if (_currentAttackStartTime < 0f || clipLength <= 0.0001f)
+            {
+                return -1f;
+            }
+
+            int attackStartServerTick = ResolveAuthoritativeAttackStartServerTick(
+                currentServerTick,
+                networkFixedDeltaTime);
+            if (attackStartServerTick <= 0 || networkFixedDeltaTime <= 0f)
+            {
+                float elapsedSeconds = Mathf.Max(0f, Time.time - _currentAttackStartTime);
+                return Mathf.Clamp01(elapsedSeconds / clipLength);
+            }
+
+            float elapsedByTick = Mathf.Max(0f, (currentServerTick - attackStartServerTick) * networkFixedDeltaTime);
+            return Mathf.Clamp01(elapsedByTick / clipLength);
+        }
+
+        private float ResolveAuthoritativeAttackPlaybackSpeed()
+        {
+            if (_currentAuthoritativeAttackId == BossAuthoritativeAttackId.None
+                || animator == null
+                || animator.Animator == null)
+            {
+                return 1f;
+            }
+
+            return Mathf.Max(0.01f, animator.Animator.speed);
+        }
+
+        private bool TryResolveCurrentAttackAnimatorNormalizedTime(out float normalizedTime)
+        {
+            normalizedTime = -1f;
+            if (animator == null || animator.Animator == null)
+            {
+                return false;
+            }
+
+            AnimatorStateInfo stateInfo = animator.Animator.GetCurrentAnimatorStateInfo(0);
+            if (!TryResolveCurrentAttackVisualState(_currentAuthoritativeAttackId, stateInfo, out _))
+            {
+                return false;
+            }
+
+            normalizedTime = Mathf.Clamp01(stateInfo.normalizedTime);
+            return true;
+        }
+
+        private BossAuthoritativeAttackVisualState ResolveAuthoritativeAttackVisualState()
+        {
+            if (_currentAuthoritativeAttackId == BossAuthoritativeAttackId.None)
+            {
+                return BossAuthoritativeAttackVisualState.None;
+            }
+
+            if (animator != null && animator.Animator != null)
+            {
+                AnimatorStateInfo stateInfo = animator.Animator.GetCurrentAnimatorStateInfo(0);
+                if (TryResolveCurrentAttackVisualState(_currentAuthoritativeAttackId, stateInfo, out BossAuthoritativeAttackVisualState visualState))
+                {
+                    return visualState;
+                }
+            }
+
+            return ResolveFallbackAuthoritativeAttackVisualState(_currentAuthoritativeAttackId);
+        }
+
+        private float ResolveAuthoritativeAttackClipLengthOrDefault()
+        {
+            if (animator == null)
+            {
+                return Mathf.Max(attackDuration, 0.1f);
+            }
+
+            return _currentAuthoritativeAttackId switch
+            {
+                BossAuthoritativeAttackId.Basic => animator.GetBasicAttackClipLengthOrDefault(attackDuration),
+                BossAuthoritativeAttackId.Lunge => animator.GetLungeAttackClipLengthOrDefault(attackDuration),
+                BossAuthoritativeAttackId.Projectile => Mathf.Max(attackDuration, 1f),
+                BossAuthoritativeAttackId.AoE => Mathf.Max(attackDuration, 1.2f),
+                _ => Mathf.Max(attackDuration, 0.1f)
+            };
+        }
+
+        private static bool TryResolveCurrentAttackVisualState(
+            BossAuthoritativeAttackId attackId,
+            AnimatorStateInfo stateInfo,
+            out BossAuthoritativeAttackVisualState visualState)
+        {
+            visualState = attackId switch
+            {
+                BossAuthoritativeAttackId.Basic when stateInfo.IsName("Basic Attack")
+                    => BossAuthoritativeAttackVisualState.Basic,
+                BossAuthoritativeAttackId.Lunge when stateInfo.IsName("Lunge Attack")
+                                                   || stateInfo.IsName("Claw Attack")
+                    => BossAuthoritativeAttackVisualState.Lunge,
+                BossAuthoritativeAttackId.Projectile when stateInfo.IsName("Flame Attack")
+                                                        || stateInfo.IsName("Fireball Shoot")
+                                                        || stateInfo.IsName("Basic Attack")
+                    => BossAuthoritativeAttackVisualState.Projectile,
+                BossAuthoritativeAttackId.AoE when stateInfo.IsName("takeOff")
+                                                 || stateInfo.IsName("TakeOff")
+                    => BossAuthoritativeAttackVisualState.AoETakeOff,
+                BossAuthoritativeAttackId.AoE when stateInfo.IsName("FlyForward")
+                                                 || stateInfo.IsName("Fly Forward")
+                    => BossAuthoritativeAttackVisualState.AoEFlyForward,
+                BossAuthoritativeAttackId.AoE when stateInfo.IsName("FlyIdle")
+                                                 || stateInfo.IsName("Fly Idle")
+                    => BossAuthoritativeAttackVisualState.AoEFlyIdle,
+                BossAuthoritativeAttackId.AoE when stateInfo.IsName("Land")
+                    => BossAuthoritativeAttackVisualState.AoELand,
+                _ => BossAuthoritativeAttackVisualState.None
+            };
+
+            return visualState != BossAuthoritativeAttackVisualState.None;
+        }
+
+        private static BossAuthoritativeAttackVisualState ResolveFallbackAuthoritativeAttackVisualState(
+            BossAuthoritativeAttackId attackId)
+        {
+            return attackId switch
+            {
+                BossAuthoritativeAttackId.Basic => BossAuthoritativeAttackVisualState.Basic,
+                BossAuthoritativeAttackId.Lunge => BossAuthoritativeAttackVisualState.Lunge,
+                BossAuthoritativeAttackId.Projectile => BossAuthoritativeAttackVisualState.Projectile,
+                BossAuthoritativeAttackId.AoE => BossAuthoritativeAttackVisualState.AoETakeOff,
+                _ => BossAuthoritativeAttackVisualState.None
+            };
         }
 
         private static BossAuthoritativeAttackId ResolveAuthoritativeAttackId(IBossAttackPattern pattern)
@@ -773,11 +1033,425 @@ namespace Core.Boss
         {
             if (playerTransform == null) return float.PositiveInfinity;
 
-            Vector3 origin = basicAttackRangeOrigin != null
-                ? basicAttackRangeOrigin.position
-                : transform.position;
+            Vector3 origin;
+            if (!TryResolveBasicAttackTelegraphPose(out origin, out _, Application.isPlaying))
+            {
+                origin = basicAttackRangeOrigin != null
+                    ? basicAttackRangeOrigin.position
+                    : transform.position;
+            }
 
             return GetPlanarDistance(origin, playerTransform.position);
+        }
+
+        /// <summary>
+        /// Basic bite가 현재 타겟을 입 전방 반구 안에서 맞출 수 있는지 판정한다.
+        /// </summary>
+        public bool IsTargetInsideBasicAttackArc()
+        {
+            if (playerTransform == null) return false;
+
+            Vector3 attackOrigin;
+            Vector3 attackForward;
+            if (!TryResolveBasicAttackTelegraphPose(out attackOrigin, out attackForward, Application.isPlaying))
+            {
+                Transform forwardSource = ResolveBasicAttackSourceAnchor();
+                attackOrigin = forwardSource.position;
+                attackForward = forwardSource.forward;
+            }
+
+            float hitHalfAngle = basicAttackSettings != null
+                ? basicAttackSettings.hitHalfAngle
+                : BasicAttackSettings.DefaultHitHalfAngle;
+
+            return IsInsideForwardArc(
+                attackOrigin,
+                attackForward,
+                playerTransform.position,
+                hitHalfAngle);
+        }
+
+        private static bool IsInsideForwardArc(
+            Vector3 origin,
+            Vector3 forward,
+            Vector3 targetPosition,
+            float halfAngle)
+        {
+            Vector3 toTarget = targetPosition - origin;
+            toTarget.y = 0f;
+            if (toTarget.sqrMagnitude <= 0.0001f)
+            {
+                return true;
+            }
+
+            forward.y = 0f;
+            if (forward.sqrMagnitude <= 0.0001f)
+            {
+                return true;
+            }
+
+            float minDot = Mathf.Cos(Mathf.Clamp(halfAngle, 0f, 180f) * Mathf.Deg2Rad);
+            return Vector3.Dot(forward.normalized, toTarget.normalized) >= minDot;
+        }
+
+        public void ShowBasicAttackTelegraph(float warningDuration)
+        {
+            if (BasicAttackRange <= 0f)
+            {
+                HideBasicAttackTelegraph();
+                return;
+            }
+
+            if (!TryResolveBasicAttackTelegraph(out AttackWarningController telegraph))
+            {
+                return;
+            }
+
+            if (!TryResolveBasicAttackTelegraphPose(out Vector3 telegraphPosition, out Vector3 telegraphForward))
+            {
+                return;
+            }
+
+            float sectorAngle = basicAttackSettings != null
+                ? Mathf.Clamp(basicAttackSettings.hitHalfAngle * 2f, 0.1f, 360f)
+                : 180f;
+            telegraph.StartDamageSector(
+                telegraphPosition,
+                BasicAttackRange,
+                Mathf.Max(0f, warningDuration),
+                0f,
+                sectorAngle,
+                telegraphForward,
+                CreateAttackWarningDamageSettings(attackDamage, BossAttackHitType.Attack1),
+                AttackWarningController.DamageMode.OnceOnActivePhaseStart);
+            EnqueueReplicatedAttackWarningShow(
+                BossReplicatedWarningChannel.BasicAttack,
+                BossReplicatedWarningShape.Sector,
+                telegraphPosition,
+                telegraphForward,
+                warningDuration,
+                0f,
+                BasicAttackRange,
+                0f,
+                0f,
+                sectorAngle);
+        }
+
+        public void HideBasicAttackTelegraph()
+        {
+            if (_basicAttackTelegraph == null)
+            {
+                EnqueueReplicatedAttackWarningHide(BossReplicatedWarningChannel.BasicAttack);
+                return;
+            }
+
+            _basicAttackTelegraph.ForceEnd();
+            EnqueueReplicatedAttackWarningHide(BossReplicatedWarningChannel.BasicAttack);
+        }
+
+        public void ShowLungeAttackTelegraph(float warningDuration, float activeDuration, int damage)
+        {
+            if (activeDuration <= 0f)
+            {
+                HideLungeAttackTelegraph();
+                return;
+            }
+
+            if (!TryResolveLungeAttackTelegraph(out AttackWarningController telegraph))
+            {
+                return;
+            }
+
+            Vector3 telegraphStart = ProjectPointToGround(transform.position);
+            Vector3 telegraphForward = ResolveCurrentLungeForward();
+
+            telegraph.StartDamageStrip(
+                telegraphStart,
+                ResolveConfiguredLungeTravelDistance(),
+                ResolveConfiguredLungePathWidth(),
+                Mathf.Max(0f, warningDuration),
+                Mathf.Max(0f, activeDuration),
+                telegraphForward,
+                CreateAttackWarningDamageSettings(damage, BossAttackHitType.Attack2),
+                AttackWarningController.DamageMode.ContinuousWhileActive);
+            EnqueueReplicatedAttackWarningShow(
+                BossReplicatedWarningChannel.LungeAttack,
+                BossReplicatedWarningShape.Strip,
+                telegraphStart,
+                telegraphForward,
+                warningDuration,
+                activeDuration,
+                0f,
+                ResolveConfiguredLungeTravelDistance(),
+                ResolveConfiguredLungePathWidth(),
+                0f);
+        }
+
+        public void HideLungeAttackTelegraph()
+        {
+            if (_lungeAttackTelegraph == null)
+            {
+                EnqueueReplicatedAttackWarningHide(BossReplicatedWarningChannel.LungeAttack);
+                return;
+            }
+
+            _lungeAttackTelegraph.ForceEnd();
+            EnqueueReplicatedAttackWarningHide(BossReplicatedWarningChannel.LungeAttack);
+        }
+
+        public void PlayReplicatedAttackWarning(
+            BossReplicatedWarningChannel warningChannel,
+            BossReplicatedWarningShape warningShape,
+            Vector3 startPosition,
+            Vector3 forwardDirection,
+            float warningDuration,
+            float activeDuration,
+            float radius,
+            float length,
+            float width,
+            float sectorAngle)
+        {
+            if (!TryResolveReplicatedAttackWarningController(warningChannel, out AttackWarningController telegraph))
+            {
+                return;
+            }
+
+            switch (warningShape)
+            {
+                case BossReplicatedWarningShape.Strip:
+                    telegraph.StartDamageStrip(
+                        startPosition,
+                        Mathf.Max(0.1f, length),
+                        Mathf.Max(0.1f, width),
+                        Mathf.Max(0f, warningDuration),
+                        Mathf.Max(0f, activeDuration),
+                        forwardDirection,
+                        default,
+                        AttackWarningController.DamageMode.None);
+                    break;
+
+                case BossReplicatedWarningShape.Sector:
+                    telegraph.StartWarningSector(
+                        startPosition,
+                        Mathf.Max(0.1f, radius),
+                        Mathf.Max(0f, warningDuration),
+                        Mathf.Max(0f, activeDuration),
+                        Mathf.Clamp(sectorAngle, 0.1f, AttackWarningController.FullSectorAngle),
+                        forwardDirection,
+                        false);
+                    break;
+            }
+        }
+
+        public void HideReplicatedAttackWarning(BossReplicatedWarningChannel warningChannel)
+        {
+            AttackWarningController telegraph = warningChannel switch
+            {
+                BossReplicatedWarningChannel.BasicAttack => _basicAttackTelegraph,
+                BossReplicatedWarningChannel.LungeAttack => _lungeAttackTelegraph,
+                _ => null
+            };
+
+            if (telegraph == null)
+            {
+                return;
+            }
+
+            telegraph.ForceEnd();
+        }
+
+        public void HideReplicatedAttackWarnings()
+        {
+            HideReplicatedAttackWarning(BossReplicatedWarningChannel.BasicAttack);
+            HideReplicatedAttackWarning(BossReplicatedWarningChannel.LungeAttack);
+        }
+
+        public void BeginConfiguredLungeTravel(float activeDuration)
+        {
+            float travelDistance = ResolveConfiguredLungeTravelDistance();
+            if (activeDuration <= 0f || travelDistance <= 0f)
+            {
+                StopConfiguredLungeTravel();
+                return;
+            }
+
+            _remainingLungeTravelDistance = travelDistance;
+            _lungeTravelSpeed = travelDistance / activeDuration;
+            _isLungeTravelActive = true;
+        }
+
+        public void UpdateConfiguredLungeTravel()
+        {
+            if (!_isLungeTravelActive || _characterController == null)
+            {
+                return;
+            }
+
+            float stepDistance = _lungeTravelSpeed * Time.deltaTime;
+            if (stepDistance <= 0f)
+            {
+                return;
+            }
+
+            stepDistance = Mathf.Min(stepDistance, _remainingLungeTravelDistance);
+            _remainingLungeTravelDistance -= stepDistance;
+            _characterController.Move(ResolveCurrentLungeForward() * stepDistance);
+
+            if (_remainingLungeTravelDistance <= 0.0001f)
+            {
+                StopConfiguredLungeTravel();
+            }
+        }
+
+        public void StopConfiguredLungeTravel()
+        {
+            _isLungeTravelActive = false;
+            _remainingLungeTravelDistance = 0f;
+            _lungeTravelSpeed = 0f;
+        }
+
+        private bool TryResolveReplicatedAttackWarningController(
+            BossReplicatedWarningChannel warningChannel,
+            out AttackWarningController telegraph)
+        {
+            switch (warningChannel)
+            {
+                case BossReplicatedWarningChannel.BasicAttack:
+                    return TryResolveBasicAttackTelegraph(out telegraph);
+
+                case BossReplicatedWarningChannel.LungeAttack:
+                    return TryResolveLungeAttackTelegraph(out telegraph);
+
+                default:
+                    telegraph = null;
+                    return false;
+            }
+        }
+
+        private bool TryResolveBasicAttackTelegraphPose(
+            out Vector3 telegraphPosition,
+            out Vector3 telegraphForward,
+            bool preferSampledEndPose = true)
+        {
+            Transform sourceAnchor = ResolveBasicAttackSourceAnchor();
+
+            telegraphPosition = sourceAnchor.position;
+            telegraphForward = sourceAnchor.forward;
+
+            if (preferSampledEndPose
+                && animator != null
+                && animator.TryGetBasicAttackEndPose(sourceAnchor, out Vector3 sampledPosition, out Vector3 sampledForward))
+            {
+                telegraphPosition = sampledPosition;
+                telegraphForward = sampledForward;
+            }
+
+            telegraphPosition = ProjectPointToGround(telegraphPosition);
+            telegraphForward.y = 0f;
+            if (telegraphForward.sqrMagnitude <= 0.0001f)
+            {
+                telegraphForward = transform.forward;
+                telegraphForward.y = 0f;
+            }
+
+            if (telegraphForward.sqrMagnitude <= 0.0001f)
+            {
+                telegraphForward = Vector3.forward;
+            }
+            else
+            {
+                telegraphForward.Normalize();
+            }
+
+            return true;
+        }
+
+        private Transform ResolveBasicAttackSourceAnchor()
+        {
+            if (basicAttackRangeOrigin != null)
+            {
+                return basicAttackRangeOrigin;
+            }
+
+            if (_headDamageCaster != null && _headDamageCaster.CastCenter != null)
+            {
+                return _headDamageCaster.CastCenter;
+            }
+
+            return transform;
+        }
+
+        private Vector3 ProjectPointToGround(Vector3 worldPosition)
+        {
+            float fallbackOffset = aoeAttackSettings != null ? aoeAttackSettings.groundOffset : 0f;
+            if (aoeAttackSettings == null)
+            {
+                worldPosition.y = transform.position.y + fallbackOffset;
+                return worldPosition;
+            }
+
+            Vector3 rayOrigin = worldPosition + Vector3.up * Mathf.Max(0.1f, aoeAttackSettings.groundRayHeight);
+            if (Physics.Raycast(
+                    rayOrigin,
+                    Vector3.down,
+                    out RaycastHit hit,
+                    Mathf.Max(0.1f, aoeAttackSettings.groundRayDistance),
+                    aoeAttackSettings.groundMask,
+                    QueryTriggerInteraction.Ignore))
+            {
+                worldPosition = hit.point;
+                worldPosition.y += aoeAttackSettings.groundOffset;
+                return worldPosition;
+            }
+
+            worldPosition.y = transform.position.y + fallbackOffset;
+            return worldPosition;
+        }
+
+        private AttackWarningController.DamageSettings CreateAttackWarningDamageSettings(
+            int damage,
+            BossAttackHitType hitType)
+        {
+            AttackWarningController.DamageSettings settings = default;
+            settings.damage = Mathf.Max(0, damage);
+            settings.targetMask = ~0;
+            settings.ownerInstanceId = gameObject.GetInstanceID();
+            settings.bossAttackHitType = hitType;
+            settings.maxTargets = 16;
+            settings.queryHeight = 4f;
+            return settings;
+        }
+
+        private float ResolveConfiguredLungeTravelDistance()
+        {
+            if (lungeAttackSettings == null || lungeAttackSettings.travelDistance <= 0f)
+            {
+                return Mathf.Max(0.1f, lungeAttackRange);
+            }
+
+            return Mathf.Max(0.1f, lungeAttackSettings.travelDistance);
+        }
+
+        private float ResolveConfiguredLungePathWidth()
+        {
+            if (lungeAttackSettings == null || lungeAttackSettings.pathWidth <= 0f)
+            {
+                return 1f;
+            }
+
+            return Mathf.Max(0.1f, lungeAttackSettings.pathWidth);
+        }
+
+        private Vector3 ResolveCurrentLungeForward()
+        {
+            Vector3 forward = _isLungeTravelDirectionLocked ? _lungeTravelDirection : transform.forward;
+            forward.y = 0f;
+            if (forward.sqrMagnitude <= 0.0001f)
+            {
+                forward = Vector3.forward;
+            }
+
+            return forward.normalized;
         }
 
         /// <summary>
@@ -1214,6 +1888,19 @@ namespace Core.Boss
         public void BeginLungeTravelDirectionLock(Vector3 targetPosition)
         {
             Vector3 direction = targetPosition - transform.position;
+            SetLungeTravelDirectionLock(direction);
+        }
+
+        /// <summary>
+        /// 현재 보스가 바라보는 방향으로 Lunge 이동 방향을 고정한다.
+        /// </summary>
+        public void BeginLungeTravelDirectionLockFromCurrentForward()
+        {
+            SetLungeTravelDirectionLock(transform.forward);
+        }
+
+        private void SetLungeTravelDirectionLock(Vector3 direction)
+        {
             direction.y = 0f;
             if (direction.sqrMagnitude <= 0.000001f)
             {
@@ -1350,13 +2037,27 @@ namespace Core.Boss
         private void OnDrawGizmosSelected()
         {
             Gizmos.color = Color.red;
-            Vector3 basicOrigin = basicAttackRangeOrigin != null
-                ? basicAttackRangeOrigin.position
-                : transform.position;
-            Gizmos.DrawWireSphere(basicOrigin, BasicAttackRange);
+            Vector3 basicOrigin;
+            Vector3 basicForward;
+            if (!TryResolveBasicAttackTelegraphPose(out basicOrigin, out basicForward, Application.isPlaying))
+            {
+                Transform sourceAnchor = ResolveBasicAttackSourceAnchor();
+                basicOrigin = sourceAnchor.position;
+                basicForward = sourceAnchor.forward;
+            }
+
+            DrawWireSectorGizmo(
+                basicOrigin,
+                basicForward,
+                BasicAttackRange,
+                basicAttackSettings != null ? basicAttackSettings.hitHalfAngle : BasicAttackSettings.DefaultHitHalfAngle);
 
             Gizmos.color = new Color(1f, 0.55f, 0f);
-            Gizmos.DrawWireSphere(transform.position, lungeAttackRange);
+            DrawWireStripGizmo(
+                transform.position,
+                ResolveCurrentLungeForward(),
+                ResolveConfiguredLungeTravelDistance(),
+                ResolveConfiguredLungePathWidth());
 
             Gizmos.color = Color.cyan;
             Gizmos.DrawWireSphere(transform.position, sharedRangedAttackRange);
@@ -1368,11 +2069,71 @@ namespace Core.Boss
             Gizmos.DrawWireSphere(transform.position, detectionRange);
         }
 
+        private static void DrawWireSectorGizmo(Vector3 origin, Vector3 forward, float radius, float halfAngle)
+        {
+            forward.y = 0f;
+            if (forward.sqrMagnitude <= 0.0001f || radius <= 0f)
+            {
+                return;
+            }
+
+            forward.Normalize();
+            Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
+            int segmentCount = 24;
+            float startAngle = -Mathf.Clamp(halfAngle, 0f, 180f);
+            float endAngle = Mathf.Clamp(halfAngle, 0f, 180f);
+            Vector3 previousPoint = origin + ResolvePlanarDirection(forward, right, startAngle) * radius;
+            Gizmos.DrawLine(origin, previousPoint);
+
+            for (int i = 1; i <= segmentCount; i++)
+            {
+                float t = i / (float)segmentCount;
+                float angle = Mathf.Lerp(startAngle, endAngle, t);
+                Vector3 nextPoint = origin + ResolvePlanarDirection(forward, right, angle) * radius;
+                Gizmos.DrawLine(previousPoint, nextPoint);
+                previousPoint = nextPoint;
+            }
+
+            Gizmos.DrawLine(origin, previousPoint);
+        }
+
+        private static Vector3 ResolvePlanarDirection(Vector3 forward, Vector3 right, float angleDegrees)
+        {
+            float angle = angleDegrees * Mathf.Deg2Rad;
+            return (forward * Mathf.Cos(angle)) + (right * Mathf.Sin(angle));
+        }
+
+        private static void DrawWireStripGizmo(Vector3 start, Vector3 forward, float length, float width)
+        {
+            forward.y = 0f;
+            if (forward.sqrMagnitude <= 0.0001f || length <= 0f || width <= 0f)
+            {
+                return;
+            }
+
+            forward.Normalize();
+            Vector3 right = Vector3.Cross(Vector3.up, forward).normalized * (width * 0.5f);
+            Vector3 end = start + (forward * length);
+
+            Vector3 a = start - right;
+            Vector3 b = start + right;
+            Vector3 c = end + right;
+            Vector3 d = end - right;
+
+            Gizmos.DrawLine(a, b);
+            Gizmos.DrawLine(b, c);
+            Gizmos.DrawLine(c, d);
+            Gizmos.DrawLine(d, a);
+        }
+
         #endregion
 
         [System.Serializable]
         public class BasicAttackSettings
         {
+            public const float DefaultHitHalfAngle = 90f;
+            public const float DefaultTelegraphHideNormalizedTime = 0.75f;
+
             [Tooltip("How long the selected ready slice should take in seconds")]
             public float readyDuration = 0.2f;
 
@@ -1380,12 +2141,22 @@ namespace Core.Boss
             [Tooltip("Attack1 ready slice in normalized time (x = start, y = end)")]
             public Vector2 readyNormalizedWindow = new Vector2(0.15f, 0.45f);
 
+            [Range(0f, 180f)]
+            [Tooltip("Attack1 front hit arc half-angle in degrees (90 = 180-degree bite)")]
+            public float hitHalfAngle = DefaultHitHalfAngle;
+
+            [Range(0f, 1f)]
+            [Tooltip("Attack1 warning half-circle hide timing in normalized time")]
+            public float telegraphHideNormalizedTime = DefaultTelegraphHideNormalizedTime;
+
             public void ClampValues()
             {
                 if (readyDuration < 0f) readyDuration = 0f;
 
                 readyNormalizedWindow.x = Mathf.Clamp01(readyNormalizedWindow.x);
                 readyNormalizedWindow.y = Mathf.Clamp(readyNormalizedWindow.y, readyNormalizedWindow.x, 1f);
+                hitHalfAngle = Mathf.Clamp(hitHalfAngle, 0f, 180f);
+                telegraphHideNormalizedTime = Mathf.Clamp01(telegraphHideNormalizedTime);
             }
         }
 
@@ -1399,12 +2170,22 @@ namespace Core.Boss
             [Tooltip("Attack2 판정 활성 normalized window (x = start, y = end)")]
             public Vector2 damageCastNormalizedWindow = new Vector2(0.15f, 0.8f);
 
+            [Min(0.1f)]
+            [Tooltip("Lunge 고정 이동 거리")]
+            public float travelDistance = 4.5f;
+
+            [Min(0.1f)]
+            [Tooltip("Lunge 직선 경고/판정의 전체 너비")]
+            public float pathWidth = 2.2f;
+
             public void ClampValues()
             {
                 if (damageMultiplier < 0f) damageMultiplier = 0f;
 
                 damageCastNormalizedWindow.x = Mathf.Clamp01(damageCastNormalizedWindow.x);
                 damageCastNormalizedWindow.y = Mathf.Clamp(damageCastNormalizedWindow.y, damageCastNormalizedWindow.x, 1f);
+                travelDistance = Mathf.Max(0.1f, travelDistance);
+                pathWidth = Mathf.Max(0.1f, pathWidth);
             }
         }
 

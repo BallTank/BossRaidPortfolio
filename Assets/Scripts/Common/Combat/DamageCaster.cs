@@ -25,6 +25,9 @@ namespace Core.Combat
         [SerializeField] private int _maxTargets = 10;
         [SerializeField] private Transform _castCenter; // 판정 중심점 (입력 안하면 자신의 위치)
         [SerializeField] private BossAttackHitType _bossAttackHitType = BossAttackHitType.Unknown;
+        [SerializeField] private bool _useDirectionalArcFilter = false;
+        [SerializeField, Range(0f, 180f)] private float _directionalArcHalfAngle = 180f;
+        [SerializeField] private Transform _directionSource; // 방향 기준점 (입력 안하면 castCenter/자신 사용)
 
         [Header("Debug")]
         [SerializeField] private bool _showGizmos = true;
@@ -38,6 +41,7 @@ namespace Core.Combat
         private bool _attackWindowHasConfirmedHit = false;
 
         public float Radius => Mathf.Max(0f, _radius);
+        public Transform CastCenter => _castCenter != null ? _castCenter : transform;
 
         // 한 번의 공격(Enable~Disable 기간) 동안 중복 피격을 방지하기 위한 Set
         private HashSet<int> _hitTargets = new HashSet<int>();
@@ -68,6 +72,8 @@ namespace Core.Combat
             {
                 _maxTargets = 1;
             }
+
+            _directionalArcHalfAngle = Mathf.Clamp(_directionalArcHalfAngle, 0f, 180f);
         }
 
         /// <summary>
@@ -139,6 +145,13 @@ namespace Core.Combat
             _bossAttackHitType = hitType;
         }
 
+        public void ConfigureDirectionalArcFilter(bool enabled, float halfAngle, Transform directionSource)
+        {
+            _useDirectionalArcFilter = enabled;
+            _directionalArcHalfAngle = Mathf.Clamp(halfAngle, 0f, 180f);
+            _directionSource = directionSource;
+        }
+
         private void FixedUpdate()
         {
             if (!_isCasting) return;
@@ -150,11 +163,14 @@ namespace Core.Combat
 
             // NonAlloc을 사용하여 가비지 컬렉션 방지
             int hitCount = Physics.OverlapSphereNonAlloc(_castCenter.position, _radius, _hitResults, _targetLayer);
+            Transform directionSource = ResolveDirectionSource();
+            float directionalArcMinDot = Mathf.Cos(_directionalArcHalfAngle * Mathf.Deg2Rad);
 
             for (int i = 0; i < hitCount; i++)
             {
                 Collider col = _hitResults[i];
                 if (col == null) continue;
+                if (!PassesDirectionalArcFilter(col, directionSource, directionalArcMinDot)) continue;
 
                 // 이미 타격한 대상인지 확인 (InstanceID 사용)
                 int targetID = col.GetInstanceID();
@@ -246,6 +262,44 @@ namespace Core.Combat
                     // Debug.Log($"⚔️ Hit: {col.name} -> RealTarget: {realTargetID}");
                 }
             }
+        }
+
+        private Transform ResolveDirectionSource()
+        {
+            if (_directionSource != null)
+            {
+                return _directionSource;
+            }
+
+            if (_castCenter != null)
+            {
+                return _castCenter;
+            }
+
+            return transform;
+        }
+
+        private bool PassesDirectionalArcFilter(Collider col, Transform directionSource, float directionalArcMinDot)
+        {
+            if (!_useDirectionalArcFilter || directionSource == null)
+            {
+                return true;
+            }
+
+            // 입 전방 반구 안쪽 대상만 유효한 bite 후보로 본다.
+            Vector3 toTarget = col.bounds.center - directionSource.position;
+            if (toTarget.sqrMagnitude <= 0.0001f)
+            {
+                return true;
+            }
+
+            Vector3 forward = directionSource.forward;
+            if (forward.sqrMagnitude <= 0.0001f)
+            {
+                return true;
+            }
+
+            return Vector3.Dot(forward.normalized, toTarget.normalized) >= directionalArcMinDot;
         }
 
         private void OnDrawGizmos()
