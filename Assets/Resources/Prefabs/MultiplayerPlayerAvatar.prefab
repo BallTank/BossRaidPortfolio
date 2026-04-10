@@ -887,6 +887,7 @@ MonoBehaviour:
   _multiplayerLocomotionGroundSnapDistance: 0.15
   _multiplayerLocomotionMaxSlideIterations: 1
   enableMovementDebugLog: 1
+  movementDebugLogInterval: 0.01
   enableAttack2DebugLog: 1
   attack2DebugTraceDuration: 0.8
   attack2DebugLogInterval: 0.05
@@ -2376,6 +2377,9 @@ MonoBehaviour:
   _maxTargets: 10
   _castCenter: {fileID: 4332253269062783257}
   _bossAttackHitType: 0
+  _useDirectionalArcFilter: 0
+  _directionalArcHalfAngle: 180
+  _directionSource: {fileID: 0}
   _showGizmos: 1
   _gizmoColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!1 &4436665463476287479
