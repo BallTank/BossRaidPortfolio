@@ -280,6 +280,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         HitState = new HitState(this);
         StunState = new StunState(this);
         DeadState = new DeadState(this);
+        HitTraceLogger.Log($"[HitTrace][BOOT][PlayerController][Awake] object={name} mode={_actionAuthorityMode} sim={_simulationMode}");
     }
 
     private void OnDestroy()
@@ -303,6 +304,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         _damageCaster?.ForceDisableHitbox();
         blinkWhiteEffect?.StopBlink();
         UpdateHealthInvincibilityByState();
+        HitTraceLogger.Log($"[HitTrace][BOOT][PlayerController][Start] object={name} state=Move");
         if (_isLocalPresentationEnabled)
         {
             InitializeCombatHUD();
@@ -674,29 +676,41 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     public BossAttackHitResolution ReceiveBossAttackHit(in BossAttackHitData hitData)
     {
         BossAttackHitResolution resolution = BossAttackHitResolution.Ignored;
+        string attackLabel = ResolveBossAttackTypeLabel(hitData.HitType);
+        string hpText = _health != null ? $"{_health.CurrentHealth}/{_health.MaxHealth}" : "null";
+        HitTraceLogger.Log(
+            $"[HitTrace][S08][{attackLabel}][ENTER] player={name} mode={_actionAuthorityMode} hp={hpText} " +
+            $"stunned={_isStunned} postInvul={_isPostStunInvulnerable} damage={hitData.Damage}");
 
         if (!CanResolveBossHitLocally)
         {
+            HitTraceLogger.Log($"[HitTrace][S09][{attackLabel}][FAIL] player={name} gate=Authority mode={_actionAuthorityMode}");
             NotifyBossAttackResolved(hitData, resolution);
             return resolution;
         }
 
         if (_health == null || _health.IsDead)
         {
+            HitTraceLogger.Log($"[HitTrace][S09][{attackLabel}][FAIL] player={name} gate=HealthDeadOrMissing");
             NotifyBossAttackResolved(hitData, resolution);
             return resolution;
         }
 
         if (_isStunned || _isPostStunInvulnerable)
         {
+            HitTraceLogger.Log(
+                $"[HitTrace][S09][{attackLabel}][FAIL] player={name} gate=StunOrPostInvul " +
+                $"stunned={_isStunned} postInvul={_isPostStunInvulnerable}");
             NotifyBossAttackResolved(hitData, resolution);
             return resolution;
         }
 
+        HitTraceLogger.Log($"[HitTrace][S09][{attackLabel}][PASS] player={name} gate=All");
+
         switch (hitData.HitType)
         {
             case BossAttackHitType.Attack1:
-                resolution = ApplyDamageAndHitReaction(hitData.Damage)
+                resolution = ApplyDamageAndHitReaction(hitData.Damage, hitData.HitType)
                     ? BossAttackHitResolution.Damaged
                     : BossAttackHitResolution.Ignored;
                 break;
@@ -711,12 +725,13 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
                 break;
 
             default:
-                resolution = ApplyDamageAndHitReaction(hitData.Damage)
+                resolution = ApplyDamageAndHitReaction(hitData.Damage, hitData.HitType)
                     ? BossAttackHitResolution.Damaged
                     : BossAttackHitResolution.Ignored;
                 break;
         }
 
+        HitTraceLogger.Log($"[HitTrace][S08][{attackLabel}][EXIT] player={name} resolution={resolution}");
         NotifyBossAttackResolved(hitData, resolution);
         return resolution;
     }
@@ -735,7 +750,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     {
         BeginAttack2DebugTrace("Hit", hitData.Damage, hitData.ForceDirection);
 
-        bool didDamage = TryApplyDamage(hitData.Damage);
+        bool didDamage = TryApplyDamage(hitData.Damage, hitData.HitType);
         if (!didDamage)
         {
             return BossAttackHitResolution.Ignored;
@@ -751,7 +766,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
     private BossAttackHitResolution HandleProjectileHit(in BossAttackHitData hitData)
     {
-        bool didDamage = ApplyDamageAndHitReaction(hitData.Damage);
+        bool didDamage = ApplyDamageAndHitReaction(hitData.Damage, hitData.HitType);
         if (!didDamage)
         {
             return BossAttackHitResolution.Ignored;
@@ -775,12 +790,16 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         return BossAttackHitResolution.Damaged;
     }
 
-    private bool TryApplyDamage(int damage)
+    private bool TryApplyDamage(int damage, BossAttackHitType hitType)
     {
         if (_health == null || _health.IsDead) return false;
         if (damage <= 0) return false;
 
+        string attackLabel = ResolveBossAttackTypeLabel(hitType);
         int previousHp = _health.CurrentHealth;
+        HitTraceLogger.Log(
+            $"[HitTrace][S10][{attackLabel}][ENTER] player={name} beforeHp={previousHp}/{_health.MaxHealth} " +
+            $"damage={damage}");
         _suppressDamageTakenReaction = true;
         try
         {
@@ -791,18 +810,34 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
             _suppressDamageTakenReaction = false;
         }
 
-        return _health.CurrentHealth < previousHp;
+        bool didDamage = _health.CurrentHealth < previousHp;
+        HitTraceLogger.Log(
+            $"[HitTrace][S10][{attackLabel}][{(didDamage ? "PASS" : "FAIL")}] player={name} " +
+            $"afterHp={_health.CurrentHealth}/{_health.MaxHealth} hpChanged={didDamage}");
+        return didDamage;
     }
 
-    private bool ApplyDamageAndHitReaction(int damage)
+    private bool ApplyDamageAndHitReaction(int damage, BossAttackHitType hitType)
     {
-        bool didDamage = TryApplyDamage(damage);
+        bool didDamage = TryApplyDamage(damage, hitType);
         if (didDamage && !_health.IsDead)
         {
             EnterHitReactionState();
         }
 
         return didDamage;
+    }
+
+    private static string ResolveBossAttackTypeLabel(BossAttackHitType hitType)
+    {
+        return hitType switch
+        {
+            BossAttackHitType.Attack1 => "Basic",
+            BossAttackHitType.Attack2 => "Lunge",
+            BossAttackHitType.Attack3Projectile => "Projectile",
+            BossAttackHitType.Attack4Projectile => "AoE",
+            _ => "Unknown"
+        };
     }
 
     private void EnterHitReactionState()

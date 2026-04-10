@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using Core.Common;
+using UnityEngine;
 
 namespace Core.Boss.Attacks
 {
@@ -19,6 +20,10 @@ namespace Core.Boss.Attacks
         private float _fallbackElapsedTime;
         private float _fallbackDamageOpenTime;
         private float _fallbackExitTime;
+        private float _telegraphElapsedTime;
+        private bool _damageOpenRequested;
+        private bool _hasPreviousProgressSample;
+        private float _previousNormalizedProgress;
 
         public void Enter(BossController controller)
         {
@@ -33,11 +38,15 @@ namespace Core.Boss.Attacks
             // 공격 애니메이션 재생
             controller.Visual?.ResetAnimatorPlaybackSpeed();
             controller.Visual?.PlayAttack();
-            controller.HideBasicAttackTelegraph();
+            controller.HideBasicAttackTelegraph("Basic.Enter.PreClear", true);
 
             _basicAttackStateObserved = false;
             _telegraphHidden = false;
             _fallbackElapsedTime = 0f;
+            _telegraphElapsedTime = 0f;
+            _damageOpenRequested = false;
+            _hasPreviousProgressSample = false;
+            _previousNormalizedProgress = 0f;
 
             BossController.BasicAttackSettings settings = controller.BasicAttackConfig;
             _fallbackDamageOpenTime = settings != null ? Mathf.Max(0f, settings.readyDuration) : 0f;
@@ -49,6 +58,8 @@ namespace Core.Boss.Attacks
 
         public bool Update(BossController controller)
         {
+            _telegraphElapsedTime += Time.deltaTime;
+
             if (controller.Visual?.Animator == null)
             {
                 return UpdateFallback(controller);
@@ -73,7 +84,10 @@ namespace Core.Boss.Attacks
             float progress = stateInfo.normalizedTime;
 
             ApplyReadyPlaybackSpeed(controller, settings, progress);
+            TryOpenDamagePhaseAtReadyWindowEnd(controller, settings, progress);
             HideTelegraphIfNeeded(controller, progress);
+            _previousNormalizedProgress = progress;
+            _hasPreviousProgressSample = true;
 
             if (progress >= FixedExitNormalizedTime)
             {
@@ -87,16 +101,17 @@ namespace Core.Boss.Attacks
         public void Exit(BossController controller)
         {
             RestorePlaybackSpeed(controller);
-            controller.HideBasicAttackTelegraph();
+            controller.HideBasicAttackTelegraph("Basic.Exit");
         }
 
         private bool UpdateFallback(BossController controller)
         {
             _fallbackElapsedTime += Time.deltaTime;
             float hideTime = _fallbackExitTime * ResolveTelegraphHideNormalizedTime(controller.BasicAttackConfig);
-            if (!_telegraphHidden && _fallbackElapsedTime >= hideTime)
+            float safeHideTime = Mathf.Max(_fallbackDamageOpenTime, hideTime);
+            if (!_telegraphHidden && _fallbackElapsedTime >= safeHideTime)
             {
-                controller.HideBasicAttackTelegraph();
+                controller.HideBasicAttackTelegraph("Basic.Fallback.HideTimeReached");
                 _telegraphHidden = true;
             }
 
@@ -149,13 +164,51 @@ namespace Core.Boss.Attacks
 
         private void HideTelegraphIfNeeded(BossController controller, float progress)
         {
-            if (_telegraphHidden || progress < ResolveTelegraphHideNormalizedTime(controller.BasicAttackConfig))
+            if (_telegraphHidden)
             {
                 return;
             }
 
-            controller.HideBasicAttackTelegraph();
+            if (_telegraphElapsedTime < _fallbackDamageOpenTime)
+            {
+                return;
+            }
+
+            if (progress < ResolveTelegraphHideNormalizedTime(controller.BasicAttackConfig))
+            {
+                return;
+            }
+
+            controller.HideBasicAttackTelegraph("Basic.Update.HideTelegraphIfNeeded");
             _telegraphHidden = true;
+        }
+
+        private void TryOpenDamagePhaseAtReadyWindowEnd(
+            BossController controller,
+            BossController.BasicAttackSettings settings,
+            float progress)
+        {
+            if (_damageOpenRequested || settings == null)
+            {
+                return;
+            }
+
+            float readyWindowEnd = Mathf.Clamp01(settings.readyNormalizedWindow.y);
+            bool crossedReadyWindowEnd = !_hasPreviousProgressSample
+                ? progress >= readyWindowEnd
+                : (_previousNormalizedProgress < readyWindowEnd && progress >= readyWindowEnd);
+
+            if (!crossedReadyWindowEnd)
+            {
+                return;
+            }
+
+            bool entered = controller.TryEnterBasicAttackTelegraphActiveNow(
+                $"Basic.ReadyWindowEnd progress={progress:F3} end={readyWindowEnd:F3}");
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][BasicAttackPattern][ReadyWindowEndOpen] progress={progress:F3} end={readyWindowEnd:F3} " +
+                $"result={(entered ? "PASS" : "SKIP")}");
+            _damageOpenRequested = true;
         }
 
         private static float ResolveTelegraphHideNormalizedTime(BossController.BasicAttackSettings settings)

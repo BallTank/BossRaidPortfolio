@@ -1,4 +1,5 @@
 ﻿using System;
+using Core.Common;
 using Core.Interfaces;
 using UnityEngine;
 
@@ -34,15 +35,37 @@ namespace Core.Combat
         private void Awake()
         {
             _currentHealth = _maxHealth;
+            HitTraceLogger.Log($"[HitTrace][BOOT][Health][Awake] object={gameObject.name} hp={_currentHealth}/{_maxHealth}");
         }
 
         public void TakeDamage(int damage)
         {
-            if (!HasRuntimeWriteAuthority) return;
-            if (IsDead || _isInvincible) return;
-            if (damage <= 0) return;
+            if (!HasRuntimeWriteAuthority)
+            {
+                HitTraceLogger.Log($"[HitTrace][S11][FAIL] target={gameObject.name} reason=NoWriteAuthority damage={damage}");
+                return;
+            }
+
+            if (IsDead)
+            {
+                HitTraceLogger.Log($"[HitTrace][S11][FAIL] target={gameObject.name} reason=AlreadyDead damage={damage}");
+                return;
+            }
+
+            if (_isInvincible)
+            {
+                HitTraceLogger.Log($"[HitTrace][S11][FAIL] target={gameObject.name} reason=Invincible damage={damage}");
+                return;
+            }
+
+            if (damage <= 0)
+            {
+                HitTraceLogger.Log($"[HitTrace][S11][FAIL] target={gameObject.name} reason=NonPositiveDamage damage={damage}");
+                return;
+            }
 
             _currentHealth -= damage;
+            HitTraceLogger.Log($"[HitTrace][S11][PASS] target={gameObject.name} damage={damage} hp={_currentHealth}/{_maxHealth}");
             Debug.Log($"{gameObject.name} took {damage} damage. HP: {_currentHealth}/{_maxHealth}");
 
             OnDamageTaken?.Invoke(damage);

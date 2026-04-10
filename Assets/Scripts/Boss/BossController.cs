@@ -507,12 +507,16 @@ namespace Core.Boss
                 _health.OnDamageTaken += HandleDamage;
                 _health.OnDeath += HandleDeath;
             }
+
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][BossController][Awake] object={name} attackDamage={attackDamage} " +
+                $"basicRange={basicAttackRange:F2} lungeRange={lungeAttackRange:F2}");
         }
 
         private void OnDestroy()
         {
-            HideBasicAttackTelegraph();
-            HideLungeAttackTelegraph();
+            HideBasicAttackTelegraph("OnDestroy.InitialCleanup", true);
+            HideLungeAttackTelegraph("OnDestroy.InitialCleanup", true);
             if (_basicAttackTelegraph != null)
             {
                 Destroy(_basicAttackTelegraph.gameObject);
@@ -539,6 +543,7 @@ namespace Core.Boss
             TryApplyPlayerCollisionIgnore();
             damageBlinkEffect?.StopBlink();
             _stateMachine.ChangeState(IdleState);
+            HitTraceLogger.Log($"[HitTrace][BOOT][BossController][Start] object={name} state=Idle");
         }
 
         private void Update()
@@ -1096,19 +1101,24 @@ namespace Core.Boss
 
         public void ShowBasicAttackTelegraph(float warningDuration)
         {
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][BossController][ShowBasicAttackTelegraph][ENTER] object={name} warning={warningDuration:F3} range={BasicAttackRange:F2}");
             if (BasicAttackRange <= 0f)
             {
-                HideBasicAttackTelegraph();
+                HitTraceLogger.Log("[HitTrace][BOOT][BossController][ShowBasicAttackTelegraph][FAIL] reason=BasicRangeNonPositive");
+                HideBasicAttackTelegraph("ShowBasicAttackTelegraph.BasicRangeNonPositive", true);
                 return;
             }
 
             if (!TryResolveBasicAttackTelegraph(out AttackWarningController telegraph))
             {
+                HitTraceLogger.Log("[HitTrace][BOOT][BossController][ShowBasicAttackTelegraph][FAIL] reason=TelegraphResolveFailed");
                 return;
             }
 
             if (!TryResolveBasicAttackTelegraphPose(out Vector3 telegraphPosition, out Vector3 telegraphForward))
             {
+                HitTraceLogger.Log("[HitTrace][BOOT][BossController][ShowBasicAttackTelegraph][FAIL] reason=TelegraphPoseResolveFailed");
                 return;
             }
 
@@ -1124,6 +1134,9 @@ namespace Core.Boss
                 telegraphForward,
                 CreateAttackWarningDamageSettings(attackDamage, BossAttackHitType.Attack1),
                 AttackWarningController.DamageMode.OnceOnActivePhaseStart);
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][BossController][ShowBasicAttackTelegraph][PASS] pos={telegraphPosition} forward={telegraphForward} " +
+                $"sectorAngle={sectorAngle:F1}");
             EnqueueReplicatedAttackWarningShow(
                 BossReplicatedWarningChannel.BasicAttack,
                 BossReplicatedWarningShape.Sector,
@@ -1137,28 +1150,63 @@ namespace Core.Boss
                 sectorAngle);
         }
 
-        public void HideBasicAttackTelegraph()
+        public bool HideBasicAttackTelegraph(string reason = "Unspecified", bool forceImmediate = false)
         {
             if (_basicAttackTelegraph == null)
             {
+                HitTraceLogger.Log(
+                    $"[HitTrace][BOOT][BossController][HideBasicAttackTelegraph][SKIP] reason={reason} telegraph=null");
                 EnqueueReplicatedAttackWarningHide(BossReplicatedWarningChannel.BasicAttack);
-                return;
+                return false;
             }
 
-            _basicAttackTelegraph.ForceEnd();
+            if (!forceImmediate && _basicAttackTelegraph.IsRunning && !_basicAttackTelegraph.IsActivePhase)
+            {
+                HitTraceLogger.Log(
+                    $"[HitTrace][BOOT][BossController][HideBasicAttackTelegraph][DEFER_PREACTIVE] reason={reason} " +
+                    $"running={_basicAttackTelegraph.IsRunning} active={_basicAttackTelegraph.IsActivePhase}");
+                return false;
+            }
+
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][BossController][HideBasicAttackTelegraph][CALL] reason={reason} " +
+                $"running={_basicAttackTelegraph.IsRunning} active={_basicAttackTelegraph.IsActivePhase} force={forceImmediate}");
+            _basicAttackTelegraph.ForceEnd($"BossController.Basic:{reason}");
             EnqueueReplicatedAttackWarningHide(BossReplicatedWarningChannel.BasicAttack);
+            return true;
+        }
+
+        public bool TryEnterBasicAttackTelegraphActiveNow(string reason = "Unspecified")
+        {
+            if (_basicAttackTelegraph == null)
+            {
+                HitTraceLogger.Log(
+                    $"[HitTrace][BOOT][BossController][TryEnterBasicAttackTelegraphActiveNow][SKIP] reason={reason} telegraph=null");
+                return false;
+            }
+
+            bool entered = _basicAttackTelegraph.TryEnterActivePhaseNow($"BossController.Basic:{reason}");
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][BossController][TryEnterBasicAttackTelegraphActiveNow][{(entered ? "PASS" : "SKIP")}] reason={reason} " +
+                $"running={_basicAttackTelegraph.IsRunning} active={_basicAttackTelegraph.IsActivePhase}");
+            return entered;
         }
 
         public void ShowLungeAttackTelegraph(float warningDuration, float activeDuration, int damage)
         {
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][BossController][ShowLungeAttackTelegraph][ENTER] object={name} warning={warningDuration:F3} " +
+                $"active={activeDuration:F3} damage={damage}");
             if (activeDuration <= 0f)
             {
-                HideLungeAttackTelegraph();
+                HitTraceLogger.Log("[HitTrace][BOOT][BossController][ShowLungeAttackTelegraph][FAIL] reason=ActiveDurationNonPositive");
+                HideLungeAttackTelegraph("ShowLungeAttackTelegraph.ActiveDurationNonPositive", true);
                 return;
             }
 
             if (!TryResolveLungeAttackTelegraph(out AttackWarningController telegraph))
             {
+                HitTraceLogger.Log("[HitTrace][BOOT][BossController][ShowLungeAttackTelegraph][FAIL] reason=TelegraphResolveFailed");
                 return;
             }
 
@@ -1174,6 +1222,9 @@ namespace Core.Boss
                 telegraphForward,
                 CreateAttackWarningDamageSettings(damage, BossAttackHitType.Attack2),
                 AttackWarningController.DamageMode.ContinuousWhileActive);
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][BossController][ShowLungeAttackTelegraph][PASS] start={telegraphStart} forward={telegraphForward} " +
+                $"length={ResolveConfiguredLungeTravelDistance():F2} width={ResolveConfiguredLungePathWidth():F2}");
             EnqueueReplicatedAttackWarningShow(
                 BossReplicatedWarningChannel.LungeAttack,
                 BossReplicatedWarningShape.Strip,
@@ -1187,16 +1238,30 @@ namespace Core.Boss
                 0f);
         }
 
-        public void HideLungeAttackTelegraph()
+        public bool HideLungeAttackTelegraph(string reason = "Unspecified", bool forceImmediate = false)
         {
             if (_lungeAttackTelegraph == null)
             {
+                HitTraceLogger.Log(
+                    $"[HitTrace][BOOT][BossController][HideLungeAttackTelegraph][SKIP] reason={reason} telegraph=null");
                 EnqueueReplicatedAttackWarningHide(BossReplicatedWarningChannel.LungeAttack);
-                return;
+                return false;
             }
 
-            _lungeAttackTelegraph.ForceEnd();
+            if (!forceImmediate && _lungeAttackTelegraph.IsRunning && !_lungeAttackTelegraph.IsActivePhase)
+            {
+                HitTraceLogger.Log(
+                    $"[HitTrace][BOOT][BossController][HideLungeAttackTelegraph][DEFER_PREACTIVE] reason={reason} " +
+                    $"running={_lungeAttackTelegraph.IsRunning} active={_lungeAttackTelegraph.IsActivePhase}");
+                return false;
+            }
+
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][BossController][HideLungeAttackTelegraph][CALL] reason={reason} " +
+                $"running={_lungeAttackTelegraph.IsRunning} active={_lungeAttackTelegraph.IsActivePhase} force={forceImmediate}");
+            _lungeAttackTelegraph.ForceEnd($"BossController.Lunge:{reason}");
             EnqueueReplicatedAttackWarningHide(BossReplicatedWarningChannel.LungeAttack);
+            return true;
         }
 
         public void PlayReplicatedAttackWarning(
@@ -1257,7 +1322,7 @@ namespace Core.Boss
                 return;
             }
 
-            telegraph.ForceEnd();
+            telegraph.ForceEnd($"HideReplicatedAttackWarning:{warningChannel}");
         }
 
         public void HideReplicatedAttackWarnings()

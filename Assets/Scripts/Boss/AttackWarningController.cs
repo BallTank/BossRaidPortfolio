@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using Core.Combat;
+using Core.Common;
 using Core.Interfaces;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -117,6 +118,9 @@ namespace Core.Boss
         private float _damageQueryHeight = DefaultDamageQueryHeight;
         private Collider[] _hitResults = Array.Empty<Collider>();
         private readonly HashSet<int> _hitTargetIds = new HashSet<int>(16);
+        private static int s_traceSequence;
+        private int _traceId;
+        private int _damageLoopCallCount;
 
         public event Action WarningCompleted;
         public event Action PlaybackCompleted;
@@ -130,6 +134,8 @@ namespace Core.Boss
         private void Awake()
         {
             InitializeVisualRuntime();
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][AttackWarningController][Awake] object={name} active={gameObject.activeInHierarchy} path={HitTraceLogger.LogPath}");
         }
 
         private void Update()
@@ -162,7 +168,7 @@ namespace Core.Boss
             _phaseTimer += Time.deltaTime;
             if (_phaseTimer >= _activeDuration)
             {
-                FinishPlayback();
+                FinishPlayback("ActiveDurationElapsed");
             }
         }
 
@@ -276,14 +282,42 @@ namespace Core.Boss
                 activeDuration);
         }
 
-        public void ForceEnd()
+        public void ForceEnd(string reason = "Unspecified")
         {
             if (!_isRunning && !gameObject.activeSelf)
             {
+                HitTraceLogger.Log(
+                    $"[HitTrace][BOOT][AttackWarningController][ForceEndSkip] traceId={_traceId} reason={reason} running={_isRunning} activeSelf={gameObject.activeSelf}");
                 return;
             }
 
-            FinishPlayback();
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][AttackWarningController][ForceEnd] traceId={_traceId} reason={reason} " +
+                $"shape={_shape} mode={_damageMode} isActivePhase={_isActivePhase} phaseTimer={_phaseTimer:F3} warning={_warningDuration:F3} active={_activeDuration:F3}");
+            FinishPlayback($"ForceEnd:{reason}");
+        }
+
+        public bool TryEnterActivePhaseNow(string reason = "Unspecified")
+        {
+            if (!_isRunning)
+            {
+                HitTraceLogger.Log(
+                    $"[HitTrace][BOOT][AttackWarningController][TryEnterActivePhaseNow][SKIP] traceId={_traceId} reason={reason} running={_isRunning}");
+                return false;
+            }
+
+            if (_isActivePhase)
+            {
+                HitTraceLogger.Log(
+                    $"[HitTrace][BOOT][AttackWarningController][TryEnterActivePhaseNow][SKIP] traceId={_traceId} reason={reason} alreadyActive=true");
+                return false;
+            }
+
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][AttackWarningController][TryEnterActivePhaseNow][CALL] traceId={_traceId} reason={reason} " +
+                $"phaseTimer={_phaseTimer:F3} warning={_warningDuration:F3} active={_activeDuration:F3}");
+            EnterActivePhase();
+            return true;
         }
 
         private void StartWarningInternal(
@@ -308,9 +342,15 @@ namespace Core.Boss
             _isActivePhase = false;
             _isRunning = true;
             _hitTargetIds.Clear();
+            _traceId = ++s_traceSequence;
+            _damageLoopCallCount = 0;
 
             transform.position = position;
             ApplySectorOrientation(forwardDirection);
+
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][AttackWarningController][StartWarning] traceId={_traceId} shape={shape} mode={_damageMode} " +
+                $"attack={ResolveAttackTypeLabel(_bossAttackHitType)} damage={_damage} warning={_warningDuration:F3} active={_activeDuration:F3}");
 
             PrepareVisualForCurrentShape();
             EnsureFallbackMeshMatchesShape();
@@ -349,6 +389,9 @@ namespace Core.Boss
             _isActivePhase = true;
             _phaseTimer = 0f;
             ApplyVisual(1f, activeColor);
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][AttackWarningController][EnterActivePhase] traceId={_traceId} shape={_shape} mode={_damageMode} " +
+                $"attack={ResolveAttackTypeLabel(_bossAttackHitType)} damage={_damage}");
             WarningCompleted?.Invoke();
 
             if (_damageMode == DamageMode.OnceOnActivePhaseStart)
@@ -358,13 +401,17 @@ namespace Core.Boss
 
             if (_activeDuration <= 0f)
             {
-                FinishPlayback();
+                FinishPlayback("ActiveDurationNonPositive");
             }
         }
 
-        private void FinishPlayback()
+        private void FinishPlayback(string reason = "Unspecified")
         {
             bool shouldNotify = _isRunning;
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][AttackWarningController][FinishPlayback] traceId={_traceId} reason={reason} " +
+                $"shape={_shape} mode={_damageMode} wasRunning={_isRunning} wasActive={_isActivePhase} " +
+                $"phaseTimer={_phaseTimer:F3} warning={_warningDuration:F3} active={_activeDuration:F3}");
 
             _isRunning = false;
             _isActivePhase = false;
@@ -672,8 +719,15 @@ namespace Core.Boss
         {
             if (_damageMode == DamageMode.None || _damage <= 0)
             {
+                HitTraceLogger.Log(
+                    $"[HitTrace][BOOT][AttackWarningController][DealDamageSkip] traceId={_traceId} mode={_damageMode} damage={_damage}");
                 return;
             }
+
+            _damageLoopCallCount++;
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][AttackWarningController][DealDamageTick] traceId={_traceId} call={_damageLoopCallCount} " +
+                $"shape={_shape} mode={_damageMode} attack={ResolveAttackTypeLabel(_bossAttackHitType)}");
 
             switch (_shape)
             {
@@ -690,6 +744,9 @@ namespace Core.Boss
         private void DealDamageInSector()
         {
             int hitCount = Physics.OverlapSphereNonAlloc(transform.position, Mathf.Max(0.1f, _radius), _hitResults, _damageTargetMask);
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][AttackWarningController][SectorQuery] traceId={_traceId} hitCount={hitCount} " +
+                $"radius={_radius:F2} mask={_damageTargetMask.value}");
             float halfAngle = Mathf.Clamp(_sectorAngle * 0.5f, 0f, 180f);
             float minDot = Mathf.Cos(halfAngle * Mathf.Deg2Rad);
 
@@ -752,6 +809,9 @@ namespace Core.Boss
                 transform.rotation,
                 _damageTargetMask,
                 QueryTriggerInteraction.Ignore);
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][AttackWarningController][StripQuery] traceId={_traceId} hitCount={hitCount} " +
+                $"length={_stripLength:F2} width={_stripWidth:F2} mask={_damageTargetMask.value}");
 
             Vector3 forceDirection = transform.forward;
             forceDirection.y = 0f;
@@ -776,6 +836,9 @@ namespace Core.Boss
 
         private void ApplyDamageToCollider(Collider col, Vector3 forceDirection)
         {
+            string attackLabel = ResolveAttackTypeLabel(_bossAttackHitType);
+            string targetLabel = col != null ? col.transform.root.name : "null";
+
             IDamageable damageable = col.GetComponent<IDamageable>();
             if (damageable == null)
             {
@@ -784,13 +847,32 @@ namespace Core.Boss
 
             if (damageable == null)
             {
+                HitTraceLogger.Log($"[HitTrace][S05][{attackLabel}][FAIL] traceId={_traceId} target={targetLabel} reason=IDamageableNotFound");
                 return;
             }
 
+            HitTraceLogger.Log($"[HitTrace][S05][{attackLabel}][PASS] traceId={_traceId} target={targetLabel} damageable={damageable.GetType().Name}");
+
             int targetId = ExtractTargetInstanceId(damageable, col);
-            if (targetId == 0) return;
-            if (_ownerInstanceId != 0 && targetId == _ownerInstanceId) return;
-            if (_hitTargetIds.Contains(targetId)) return;
+            if (targetId == 0)
+            {
+                HitTraceLogger.Log($"[HitTrace][S06][{attackLabel}][FAIL] traceId={_traceId} target={targetLabel} reason=TargetIdZero");
+                return;
+            }
+
+            if (_ownerInstanceId != 0 && targetId == _ownerInstanceId)
+            {
+                HitTraceLogger.Log($"[HitTrace][S06][{attackLabel}][FAIL] traceId={_traceId} target={targetLabel} reason=OwnerSelfFiltered");
+                return;
+            }
+
+            if (_hitTargetIds.Contains(targetId))
+            {
+                HitTraceLogger.Log($"[HitTrace][S06][{attackLabel}][FAIL] traceId={_traceId} target={targetLabel} reason=AlreadyHitThisPlayback targetId={targetId}");
+                return;
+            }
+
+            HitTraceLogger.Log($"[HitTrace][S06][{attackLabel}][PASS] traceId={_traceId} target={targetLabel} targetId={targetId}");
 
             if (_bossAttackHitType != BossAttackHitType.Unknown)
             {
@@ -802,18 +884,30 @@ namespace Core.Boss
 
                 if (bossHitReceiver != null)
                 {
+                    HitTraceLogger.Log(
+                        $"[HitTrace][S07][{attackLabel}][CALL] traceId={_traceId} target={targetLabel} receiver={bossHitReceiver.GetType().Name} " +
+                        $"damage={_damage}");
                     BossAttackHitResolution resolution = bossHitReceiver.ReceiveBossAttackHit(
                         new BossAttackHitData(_damage, _bossAttackHitType, forceDirection));
                     if (resolution != BossAttackHitResolution.Ignored)
                     {
                         _hitTargetIds.Add(targetId);
+                        HitTraceLogger.Log($"[HitTrace][S07][{attackLabel}][PASS] traceId={_traceId} target={targetLabel} resolution={resolution}");
+                    }
+                    else
+                    {
+                        HitTraceLogger.Log($"[HitTrace][S07][{attackLabel}][FAIL] traceId={_traceId} target={targetLabel} resolution=Ignored");
+                        HitTraceLogger.Log($"[HitTrace][S12][{attackLabel}][FAIL] traceId={_traceId} target={targetLabel} reason=ReceiverIgnored_NoFallback");
                     }
                     return;
                 }
+
+                HitTraceLogger.Log($"[HitTrace][S07][{attackLabel}][FAIL] traceId={_traceId} target={targetLabel} reason=IBossAttackHitReceiverNotFound");
             }
 
             damageable.TakeDamage(_damage);
             _hitTargetIds.Add(targetId);
+            HitTraceLogger.Log($"[HitTrace][S07][{attackLabel}][PASS] traceId={_traceId} target={targetLabel} path=DirectDamageableFallback damage={_damage}");
         }
 
         private static int ExtractTargetInstanceId(IDamageable damageable, Collider hitCollider)
@@ -834,6 +928,18 @@ namespace Core.Boss
             }
 
             return 0;
+        }
+
+        private static string ResolveAttackTypeLabel(BossAttackHitType hitType)
+        {
+            return hitType switch
+            {
+                BossAttackHitType.Attack1 => "Basic",
+                BossAttackHitType.Attack2 => "Lunge",
+                BossAttackHitType.Attack3Projectile => "Projectile",
+                BossAttackHitType.Attack4Projectile => "AoE",
+                _ => "Unknown"
+            };
         }
 
         private static Mesh BuildDiscMesh(int segments, float sectorAngle)

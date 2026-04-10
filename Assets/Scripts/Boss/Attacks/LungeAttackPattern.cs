@@ -16,6 +16,7 @@ namespace Core.Boss.Attacks
         private bool _travelWindowActive;
         private bool _lungeStateObserved;
         private bool _telegraphStarted;
+        private bool _damageWindowCloseApplied;
         private int _damagePayload;
         private float _warningDuration;
         private float _activeDuration;
@@ -32,6 +33,7 @@ namespace Core.Boss.Attacks
             _travelWindowActive = false;
             _lungeStateObserved = false;
             _telegraphStarted = false;
+            _damageWindowCloseApplied = false;
             _damagePayload = Mathf.RoundToInt(controller.AttackDamage * _settings.damageMultiplier);
             _warningDuration = ResolveWarningDuration(controller);
             _activeDuration = ResolveActiveDuration(controller);
@@ -45,7 +47,7 @@ namespace Core.Boss.Attacks
             controller.BeginLungeTravelDirectionLockFromCurrentForward();
             controller.StopConfiguredLungeTravel();
             controller.Visual?.SetLungeRootMotionEnabled(false);
-            controller.HideLungeAttackTelegraph();
+            controller.HideLungeAttackTelegraph("Lunge.Enter.PreClear", true);
 
             // Lunge Attack 애니메이션 재생
             controller.Visual?.PlayLungeAttack();
@@ -90,7 +92,7 @@ namespace Core.Boss.Attacks
             float hitEnd = _settings.damageCastNormalizedWindow.y;
             float damageTrailEnd = ResolveDamageTrailEnd(hitStart, hitEnd);
 
-            if (!_damageWindowActive && progress >= hitStart && progress < hitEnd)
+            if (!_damageWindowCloseApplied && !_damageWindowActive && progress >= hitStart && progress < hitEnd)
             {
                 OpenDamageWindow(controller);
             }
@@ -100,7 +102,7 @@ namespace Core.Boss.Attacks
                 controller.UpdateConfiguredLungeTravel();
             }
 
-            if (_damageWindowActive && progress >= damageTrailEnd)
+            if (!_damageWindowCloseApplied && _damageWindowActive && progress >= damageTrailEnd)
             {
                 CloseDamageWindow(controller);
             }
@@ -112,7 +114,7 @@ namespace Core.Boss.Attacks
 
             if (progress >= FixedExitPhaseRatio)
             {
-                CloseDamageWindow(controller);
+                CloseDamageWindow(controller, true);
                 CloseTravelWindow(controller);
                 return true;
             }
@@ -134,9 +136,20 @@ namespace Core.Boss.Attacks
             }
         }
 
-        private void CloseDamageWindow(BossController controller)
+        private void CloseDamageWindow(BossController controller, bool forceImmediate = false)
         {
-            controller.HideLungeAttackTelegraph();
+            if (_damageWindowCloseApplied)
+            {
+                return;
+            }
+
+            bool didClose = controller.HideLungeAttackTelegraph("Lunge.CloseDamageWindow", forceImmediate);
+            if (!didClose)
+            {
+                return;
+            }
+
+            _damageWindowCloseApplied = true;
             _damageWindowActive = false;
         }
 
@@ -159,7 +172,7 @@ namespace Core.Boss.Attacks
             // 판정 종료 및 이동 정지 (사망 등 강제 전환 시에도 안전하게 정리)
             controller.EndLungeTravelDirectionLock();
             controller.Visual?.SetLungeRootMotionEnabled(false);
-            CloseDamageWindow(controller);
+            CloseDamageWindow(controller, true);
             CloseTravelWindow(controller);
             controller.StopMoving();
             _telegraphStarted = false;
