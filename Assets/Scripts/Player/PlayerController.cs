@@ -1,6 +1,6 @@
 ﻿using Core.Combat;
-using Core.Common;
 using System;
+using Core.Common;
 using Core.Common.Interfaces;
 using Core.Common.Patterns;
 using Core.Multiplayer;
@@ -96,7 +96,6 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     [SerializeField] private float attack2DebugTraceDuration = 0.8f;
     [SerializeField, Range(0.01f, 0.5f)] private float attack2DebugLogInterval = 0.05f;
     [SerializeField] private float attack2DebugNearDistance = 2.5f;
-
     // Animation Constants
     public const string ANIM_PARAM_SPEED = "Speed";
     public const string ANIM_STATE_LOCOMOTION = "Locomotion";
@@ -150,11 +149,12 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     private int _pendingComboHudStep;
     private bool _hasPendingAuthoritativeAttackFacingYaw;
     private float _pendingAuthoritativeAttackFacingYaw;
+    private int _activeAttackWindowComboStep;
     private float _latestPredictedPlanarSpeedMagnitude;
     private bool _hasLatestPredictedPlanarSpeedMagnitude;
     private float _predictedLocomotionStopTimer;
 
-    public event Action<int> AttackDamageResolved;
+    public event Action<int, int> AttackDamageResolved;
     public event Action<int> AuthoritativeAttackStepStarted;
     public event BossAttackResolvedHandler BossAttackResolved;
 
@@ -280,7 +280,6 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         HitState = new HitState(this);
         StunState = new StunState(this);
         DeadState = new DeadState(this);
-        HitTraceLogger.Log($"[HitTrace][BOOT][PlayerController][Awake] object={name} mode={_actionAuthorityMode} sim={_simulationMode}");
     }
 
     private void OnDestroy()
@@ -304,7 +303,6 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         _damageCaster?.ForceDisableHitbox();
         blinkWhiteEffect?.StopBlink();
         UpdateHealthInvincibilityByState();
-        HitTraceLogger.Log($"[HitTrace][BOOT][PlayerController][Start] object={name} state=Move");
         if (_isLocalPresentationEnabled)
         {
             InitializeCombatHUD();
@@ -678,34 +676,25 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         BossAttackHitResolution resolution = BossAttackHitResolution.Ignored;
         string attackLabel = ResolveBossAttackTypeLabel(hitData.HitType);
         string hpText = _health != null ? $"{_health.CurrentHealth}/{_health.MaxHealth}" : "null";
-        HitTraceLogger.Log(
-            $"[HitTrace][S08][{attackLabel}][ENTER] player={name} mode={_actionAuthorityMode} hp={hpText} " +
-            $"stunned={_isStunned} postInvul={_isPostStunInvulnerable} damage={hitData.Damage}");
 
         if (!CanResolveBossHitLocally)
         {
-            HitTraceLogger.Log($"[HitTrace][S09][{attackLabel}][FAIL] player={name} gate=Authority mode={_actionAuthorityMode}");
             NotifyBossAttackResolved(hitData, resolution);
             return resolution;
         }
 
         if (_health == null || _health.IsDead)
         {
-            HitTraceLogger.Log($"[HitTrace][S09][{attackLabel}][FAIL] player={name} gate=HealthDeadOrMissing");
             NotifyBossAttackResolved(hitData, resolution);
             return resolution;
         }
 
         if (_isStunned || _isPostStunInvulnerable)
         {
-            HitTraceLogger.Log(
-                $"[HitTrace][S09][{attackLabel}][FAIL] player={name} gate=StunOrPostInvul " +
-                $"stunned={_isStunned} postInvul={_isPostStunInvulnerable}");
             NotifyBossAttackResolved(hitData, resolution);
             return resolution;
         }
 
-        HitTraceLogger.Log($"[HitTrace][S09][{attackLabel}][PASS] player={name} gate=All");
 
         switch (hitData.HitType)
         {
@@ -731,7 +720,6 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
                 break;
         }
 
-        HitTraceLogger.Log($"[HitTrace][S08][{attackLabel}][EXIT] player={name} resolution={resolution}");
         NotifyBossAttackResolved(hitData, resolution);
         return resolution;
     }
@@ -797,9 +785,6 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
         string attackLabel = ResolveBossAttackTypeLabel(hitType);
         int previousHp = _health.CurrentHealth;
-        HitTraceLogger.Log(
-            $"[HitTrace][S10][{attackLabel}][ENTER] player={name} beforeHp={previousHp}/{_health.MaxHealth} " +
-            $"damage={damage}");
         _suppressDamageTakenReaction = true;
         try
         {
@@ -811,9 +796,6 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         }
 
         bool didDamage = _health.CurrentHealth < previousHp;
-        HitTraceLogger.Log(
-            $"[HitTrace][S10][{attackLabel}][{(didDamage ? "PASS" : "FAIL")}] player={name} " +
-            $"afterHp={_health.CurrentHealth}/{_health.MaxHealth} hpChanged={didDamage}");
         return didDamage;
     }
 
@@ -1214,11 +1196,14 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
     private void HandleAttackWindowResolved(bool isHit, int totalDamage)
     {
+        int resolvedComboStep = _activeAttackWindowComboStep;
+        _activeAttackWindowComboStep = 0;
+
         _combatHUD?.ShowDamageFeedback(isHit, totalDamage);
 
         if (isHit && totalDamage > 0)
         {
-            AttackDamageResolved?.Invoke(totalDamage);
+            AttackDamageResolved?.Invoke(totalDamage, resolvedComboStep);
         }
     }
 
@@ -1246,6 +1231,22 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     {
         _pendingComboHudStep = 0;
         _combatHUD?.HideCombo();
+    }
+
+    public void ApplyAuthoritativeAttackHudFeedback(int totalDamage, int comboStep)
+    {
+        if (totalDamage <= 0)
+        {
+            return;
+        }
+
+        int resolvedComboStep = comboStep > 0 ? comboStep : _pendingComboHudStep;
+
+        _combatHUD?.ShowDamageFeedback(true, totalDamage);
+        if (resolvedComboStep > 0)
+        {
+            ShowComboHud(resolvedComboStep);
+        }
     }
 
     private void InitializeCombatHUD()
@@ -1297,12 +1298,16 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         int damage = Mathf.RoundToInt(CurrentAttackDamage);
         if (damage <= 0) return;
 
+        _activeAttackWindowComboStep = CurrentAttackComboIndex >= 0
+            ? CurrentAttackComboIndex + 1
+            : 0;
         _damageCaster.EnableHitbox(damage);
     }
 
     public void OnHitEnd()
     {
         if (_damageCaster != null) _damageCaster.DisableHitbox();
+        _activeAttackWindowComboStep = 0;
     }
 
     internal void SetPendingAuthoritativeAttackFacingYaw(float authoritativeFacingYaw)
@@ -1505,3 +1510,4 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         BossAttackResolved?.Invoke(hitData, resolution);
     }
 }
+

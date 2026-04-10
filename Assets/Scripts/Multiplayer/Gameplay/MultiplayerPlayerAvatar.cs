@@ -328,6 +328,20 @@ namespace Core.Multiplayer
             ApplyAuthoritativeReactionLocally(snapshot);
         }
 
+        [ClientRpc(Delivery = RpcDelivery.Reliable)]
+        private void PushAttackHitFeedbackClientRpc(
+            int totalDamage,
+            int comboStep,
+            ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsSpawned || IsServer || !IsOwner || _playerController == null)
+            {
+                return;
+            }
+
+            _playerController.ApplyAuthoritativeAttackHudFeedback(totalDamage, comboStep);
+        }
+
         private void CacheComponents()
         {
             _playerController = GetComponent<PlayerController>();
@@ -1061,7 +1075,7 @@ namespace Core.Multiplayer
             ClearPendingApprovedComboActionIntent();
         }
 
-        private void HandleAttackDamageResolved(int totalDamage)
+        private void HandleAttackDamageResolved(int totalDamage, int comboStep)
         {
             if (!IsSpawned || !IsServer)
             {
@@ -1077,6 +1091,11 @@ namespace Core.Multiplayer
                     out HostPlayerReactionResolver.RawHitLogEntry rawHitLogEntry))
             {
                 _ = rawHitLogEntry;
+            }
+
+            if (!IsOwner)
+            {
+                PushAttackHitFeedbackClientRpc(totalDamage, comboStep, _authoritativeStateClientRpcParams);
             }
         }
 
@@ -1513,11 +1532,13 @@ namespace Core.Multiplayer
                 int approvedComboIndex = hostPlayerState.LastAcceptedComboIndex >= 0
                     ? hostPlayerState.LastAcceptedComboIndex
                     : 0;
-                _playerController.TryStartAuthoritativeAttackComboStep(approvedComboIndex, authoritativeElapsedTime, actionIntent.FacingYaw);
+                bool started = _playerController.TryStartAuthoritativeAttackComboStep(approvedComboIndex, authoritativeElapsedTime, actionIntent.FacingYaw);
+                _ = started;
                 return;
             }
 
-            _playerController.TryStartAuthoritativeDash(authoritativeElapsedTime, actionIntent.FacingYaw);
+            bool dashStarted = _playerController.TryStartAuthoritativeDash(authoritativeElapsedTime, actionIntent.FacingYaw);
+            _ = dashStarted;
         }
 
         private void ApplyAuthoritativeReactionLocally(in HostToClientPlayerReactionSnapshot snapshot)
