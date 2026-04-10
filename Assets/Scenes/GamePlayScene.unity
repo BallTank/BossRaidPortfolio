@@ -194,6 +194,9 @@ MonoBehaviour:
   attackDamage: 4
   attackDuration: 1
   attackCooldown: 2
+  basicAttackSettings:
+    readyDuration: 0.2
+    readyNormalizedWindow: {x: 0.15, y: 0.45}
   _headDamageCaster: {fileID: 375716743}
   _lungeDamageCaster: {fileID: 1119454101}
   lungeAttackSettings:
@@ -2519,10 +2522,12 @@ MonoBehaviour:
   _bossHpFill: {fileID: 1560240102}
   _bossNameText: {fileID: 1261948895}
   _bossNameLabel: Dragon
+  _partnerHudRoot: {fileID: 0}
   _damageFeedbackText: {fileID: 1261948895}
   _hitColor: {r: 1, g: 0.88, b: 0.15, a: 1}
   _hitScale: 1.15
   _feedbackDuration: 0.3
+  _comboText: {fileID: 0}
   _playerHealthSource: {fileID: 0}
   _bossHealthSource: {fileID: 0}
 --- !u!1 &1869639981
