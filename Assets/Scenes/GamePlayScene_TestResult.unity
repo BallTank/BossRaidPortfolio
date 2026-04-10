@@ -612,6 +612,9 @@ MonoBehaviour:
   attackDamage: 2
   attackDuration: 1
   attackCooldown: 4
+  basicAttackSettings:
+    readyDuration: 0.2
+    readyNormalizedWindow: {x: 0.15, y: 0.45}
   _headDamageCaster: {fileID: 423284611}
   _lungeDamageCaster: {fileID: 1189825118}
   lungeAttackSettings:

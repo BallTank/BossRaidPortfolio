@@ -44,7 +44,7 @@ MonoBehaviour:
   stripBeautifyNightVision: 1
   stripBeautifyThermalVision: 1
   stripBeautifyFrame: 1
-  stripBeautifyFilmGrain: 1
+  stripBeautifyFilmGrain: 0
   stripUnityFilmGrain: 0
   stripUnityDithering: 0
   stripUnityTonemapping: 0
