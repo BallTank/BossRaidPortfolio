@@ -63,7 +63,7 @@ MonoBehaviour:
     m_Value: 0
   sharpenIntensity:
     m_OverrideState: 1
-    m_Value: 16.2
+    m_Value: 13.3
   sharpenDepthThreshold:
     m_OverrideState: 0
     m_Value: 0.035
@@ -121,28 +121,28 @@ MonoBehaviour:
     m_Value: 1
   saturate:
     m_OverrideState: 1
-    m_Value: -0.18
+    m_Value: 1.36
   brightness:
     m_OverrideState: 1
-    m_Value: 0.92
+    m_Value: 0.96
   contrast:
     m_OverrideState: 1
     m_Value: 0.978
   daltonize:
     m_OverrideState: 1
-    m_Value: 0.5
+    m_Value: 2
   sepia:
     m_OverrideState: 0
     m_Value: 0
   tintColor:
     m_OverrideState: 1
-    m_Value: {r: 1, g: 0.3915094, b: 0.41055375, a: 0.59607846}
+    m_Value: {r: 0.46118155, g: 0.35294122, b: 0.81960785, a: 0.2901961}
   colorTempBlend:
     m_OverrideState: 0
-    m_Value: 1
+    m_Value: 0
   colorTemp:
     m_OverrideState: 0
-    m_Value: 7848
+    m_Value: 9473
   lut:
     m_OverrideState: 0
     m_Value: 0
@@ -158,7 +158,7 @@ MonoBehaviour:
     m_Value: 3
   bloomThreshold:
     m_OverrideState: 1
-    m_Value: 1.7
+    m_Value: 1.5
   bloomConservativeThreshold:
     m_OverrideState: 0
     m_Value: 0
@@ -440,7 +440,7 @@ MonoBehaviour:
     m_OverrideState: 0
     m_Value: 0
   depthOfField:
-    m_OverrideState: 0
+    m_OverrideState: 1
     m_Value: 1
   depthOfFieldFocusMode:
     m_OverrideState: 1
@@ -485,7 +485,7 @@ MonoBehaviour:
     m_Value: 0
   depthOfFieldFocalLength:
     m_OverrideState: 1
-    m_Value: 0.1
+    m_Value: 0.14
   depthOfFieldAperture:
     m_OverrideState: 1
     m_Value: 3
@@ -653,7 +653,7 @@ MonoBehaviour:
     m_Value: 1
   outlineColor:
     m_OverrideState: 1
-    m_Value: {r: 0.05660379, g: 0.021092921, b: 0.034768354, a: 1}
+    m_Value: {r: 0.011612245, g: 0.011612245, b: 0.012286487, a: 1}
   outlineTechnique:
     m_OverrideState: 1
     m_Value: 0
@@ -673,7 +673,7 @@ MonoBehaviour:
     m_OverrideState: 1
     m_Value: 0.5
   outlineCustomize:
-    m_OverrideState: 0
+    m_OverrideState: 1
     m_Value: 0
   outlineLayerMask:
     m_OverrideState: 1
@@ -726,8 +726,8 @@ MonoBehaviour:
     m_OverrideState: 0
     m_Value: 9
   ditherIntensity:
-    m_OverrideState: 0
-    m_Value: 0.02
+    m_OverrideState: 1
+    m_Value: 0.005
   frame:
     m_OverrideState: 0
     m_Value: 0
@@ -763,14 +763,14 @@ MonoBehaviour:
     m_OverrideState: 0
     m_Value: 0
   filmGrainIntensity:
-    m_OverrideState: 1
-    m_Value: 0.133
-  filmGrainResolution:
-    m_OverrideState: 1
-    m_Value: 1
-  filmGrainLumaAttenuation:
-    m_OverrideState: 1
+    m_OverrideState: 0
     m_Value: 0
+  filmGrainResolution:
+    m_OverrideState: 0
+    m_Value: 0.85
+  filmGrainLumaAttenuation:
+    m_OverrideState: 0
+    m_Value: 0.8
   filmGrainDirtSpotsAmount:
     m_OverrideState: 0
     m_Value: 0
@@ -785,7 +785,7 @@ MonoBehaviour:
     m_Value: 0.3
   blurIntensity:
     m_OverrideState: 0
-    m_Value: 0.0001
+    m_Value: 0
   blurStyle:
     m_OverrideState: 0
     m_Value: 0
