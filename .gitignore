@@ -80,6 +80,37 @@ crashlytics-build.properties
 
 # Local keep-out paths for multiplayer iteration
 /Assets/Animations/CombatGirlsCharacterPack/
-/Assets/PixPlays/
 /docs/temp_console_log.txt
+/%SystemDrive%/
+/Python/
+/Assets/Scripts/Test/MissingArtSceneScript_*.cs
+/Assets/Scripts/Test/MissingArtSceneScript_*.cs.meta
+
+# Third-party imported packs are distributed via Google Drive
+/Assets/ApocalypticEnvironment/
+/Assets/ApocalypticEnvironment.meta
+/Assets/CombatGirlsCharacterPack/
+/Assets/CombatGirlsCharacterPack.meta
+/Assets/Fantasy Skybox FREE/
+/Assets/Fantasy Skybox FREE.meta
+/Assets/FourEvilDragonsPBR/
+/Assets/FourEvilDragonsPBR.meta
+/Assets/Hits Effects FREE/
+/Assets/Hits Effects FREE.meta
+/Assets/InfographicElements_UI/
+/Assets/InfographicElements_UI.meta
+/Assets/Lunar Landscape 3D/
+/Assets/Lunar Landscape 3D.meta
+/Assets/Map/
+/Assets/Map.meta
+/Assets/PixPlays/
+/Assets/PixPlays.meta
+/Assets/UNI VFX/
+/Assets/UNI VFX.meta
+/Assets/GabrielAguiarProductions/
+/Assets/GabrielAguiarProductions.meta
+/Assets/Material/
+/Assets/Material.meta
+/Assets/Sprites/
+/Assets/Sprites.meta
 

@@ -1,16 +1,2 @@
 # Auto detect text files and perform LF normalization
 * text=auto
-Assets/CombatGirlsCharacterPack/**/*.fbx filter=lfs diff=lfs merge=lfs -text
-Assets/FourEvilDragonsPBR/**/*.fbx filter=lfs diff=lfs merge=lfs -text
-Assets/FourEvilDragonsPBR/Texture/DragonUsurper/Red/*.png filter=lfs diff=lfs merge=lfs -text
-Assets/UNI[[:space:]]VFX/**/*.fbx filter=lfs diff=lfs merge=lfs -text
-Assets/ApocalypticEnvironment/**/*.[Ff][Bb][Xx] filter=lfs diff=lfs merge=lfs -text
-Assets/ApocalypticEnvironment/**/*.[Tt][Gg][Aa] filter=lfs diff=lfs merge=lfs -text
-Assets/ApocalypticEnvironment/**/*.[Pp][Ss][Dd] filter=lfs diff=lfs merge=lfs -text
-Assets/ApocalypticEnvironment/**/*.[Ee][Xx][Rr] filter=lfs diff=lfs merge=lfs -text
-Assets/ApocalypticEnvironment/**/LightingData.asset filter=lfs diff=lfs merge=lfs -text
-Assets/Fantasy[[:space:]]Skybox[[:space:]]FREE/**/*.[Pp][Nn][Gg] filter=lfs diff=lfs merge=lfs -text
-Assets/Fantasy[[:space:]]Skybox[[:space:]]FREE/**/*.[Ee][Xx][Rr] filter=lfs diff=lfs merge=lfs -text
-Assets/Fantasy[[:space:]]Skybox[[:space:]]FREE/**/*.asset filter=lfs diff=lfs merge=lfs -text
-Assets/Map/Garbage_Truck/**/*.tga filter=lfs diff=lfs merge=lfs -text
-Assets/Map/RustyCarsFree/**/*.fbx filter=lfs diff=lfs merge=lfs -text

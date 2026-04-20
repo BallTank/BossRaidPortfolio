@@ -1,0 +1,209 @@
+﻿{
+  "schemaVersion": 1,
+  "unityEditorVersion": "2022.3.62f3",
+  "googleDrive": {
+    "rootFolderUrl": "https://drive.google.com/drive/folders/1umDzKU03On8M5AFUz-QiZQr9-y8Qelj9?usp=drive_link",
+    "branchFolderStrategy": "branch-name",
+    "branchFolderNameOverrides": {
+      "feature/integration-art-multiplayer": "feature/integration-art-multiplayer"
+    }
+  },
+  "unity_roots": [
+    {
+      "path": "Assets/Project/Logic",
+      "category": "project-owned-logic",
+      "exportByDefault": true,
+      "notes": "Future home for scenes, prefabs, ScriptableObjects, and other behavior-side Unity assets. Script source files stay in Git."
+    },
+    {
+      "path": "Assets/Project/Content",
+      "category": "project-owned-content",
+      "exportByDefault": true,
+      "notes": "Future home for non-behavior project-owned Unity assets."
+    },
+    {
+      "path": "Assets/Balance",
+      "category": "legacy-project-owned",
+      "exportByDefault": true,
+      "notes": "Current project-owned balance data until it moves under Assets/Project."
+    },
+    {
+      "path": "Assets/Image",
+      "category": "legacy-project-owned",
+      "exportByDefault": true,
+      "notes": "Current project-owned image assets until they move under Assets/Project/Content."
+    },
+    {
+      "path": "Assets/Prefabs",
+      "category": "legacy-project-owned",
+      "exportByDefault": true,
+      "notes": "Current project-owned prefab assets until they move under Assets/Project."
+    },
+    {
+      "path": "Assets/RecoveredArt",
+      "category": "legacy-project-owned",
+      "exportByDefault": true,
+      "notes": "Recovered project-owned assets that still need migration and cleanup."
+    },
+    {
+      "path": "Assets/Shaders",
+      "category": "legacy-project-owned",
+      "exportByDefault": true,
+      "notes": "Project-owned shader assets until they move under Assets/Project/Content."
+    },
+    {
+      "path": "Assets/Animations",
+      "category": "legacy-project-owned-large",
+      "exportByDefault": false,
+      "notes": "Large animation bucket. Include it explicitly only when the branch intentionally ships those assets."
+    },
+    {
+      "path": "Assets/Fonts",
+      "category": "legacy-project-owned-large",
+      "exportByDefault": false,
+      "notes": "Large font bucket. Include it explicitly only when needed."
+    },
+    {
+      "path": "Assets/Material",
+      "category": "legacy-project-owned-large",
+      "exportByDefault": false,
+      "notes": "Large material bucket. Include it explicitly only when needed."
+    },
+    {
+      "path": "Assets/Modelings",
+      "category": "legacy-project-owned-large",
+      "exportByDefault": false,
+      "notes": "Large modeling bucket. Include it explicitly only when needed."
+    },
+    {
+      "path": "Assets/Scenes",
+      "category": "legacy-logic",
+      "exportByDefault": false,
+      "notes": "Scene changes normally stay in Git. Export them only when a branch needs scene-only asset delivery."
+    },
+    {
+      "path": "Assets/Sprites",
+      "category": "legacy-project-owned-large",
+      "exportByDefault": false,
+      "notes": "Large sprite bucket. Include it explicitly only when needed."
+    },
+    {
+      "path": "Assets/ApocalypticEnvironment",
+      "category": "vendor-baseline",
+      "exportByDefault": false,
+      "notes": "Vendor baseline pack managed through Google Drive. Export only when this branch intentionally modifies it."
+    },
+    {
+      "path": "Assets/CombatGirlsCharacterPack",
+      "category": "vendor-baseline",
+      "exportByDefault": false,
+      "notes": "Vendor baseline pack managed through Google Drive."
+    },
+    {
+      "path": "Assets/Fantasy Skybox FREE",
+      "category": "vendor-baseline",
+      "exportByDefault": false,
+      "notes": "Vendor baseline pack managed through Google Drive."
+    },
+    {
+      "path": "Assets/FourEvilDragonsPBR",
+      "category": "vendor-baseline",
+      "exportByDefault": false,
+      "notes": "Vendor baseline pack managed through Google Drive."
+    },
+    {
+      "path": "Assets/GabrielAguiarProductions",
+      "category": "vendor-baseline",
+      "exportByDefault": false,
+      "notes": "Large imported VFX/content bucket managed outside Git."
+    },
+    {
+      "path": "Assets/Hits Effects FREE",
+      "category": "vendor-baseline",
+      "exportByDefault": false,
+      "notes": "Vendor baseline pack managed through Google Drive."
+    },
+    {
+      "path": "Assets/InfographicElements_UI",
+      "category": "vendor-baseline",
+      "exportByDefault": false,
+      "notes": "Vendor baseline pack managed through Google Drive."
+    },
+    {
+      "path": "Assets/Lunar Landscape 3D",
+      "category": "vendor-baseline",
+      "exportByDefault": false,
+      "notes": "Vendor baseline pack managed through Google Drive."
+    },
+    {
+      "path": "Assets/Map",
+      "category": "vendor-baseline",
+      "exportByDefault": false,
+      "notes": "Vendor baseline pack managed through Google Drive."
+    },
+    {
+      "path": "Assets/PixPlays",
+      "category": "vendor-baseline",
+      "exportByDefault": false,
+      "notes": "Vendor baseline pack managed through Google Drive."
+    },
+    {
+      "path": "Assets/Samples",
+      "category": "vendor-baseline",
+      "exportByDefault": false,
+      "notes": "Sample content should stay opt-in for branch exports."
+    },
+    {
+      "path": "Assets/UNI VFX",
+      "category": "vendor-baseline",
+      "exportByDefault": false,
+      "notes": "Vendor baseline pack managed through Google Drive."
+    }
+  ],
+  "raw_roots": [
+    {
+      "path": "downloaded_art_things",
+      "category": "raw-source",
+      "exportByDefault": true,
+      "notes": "Raw downloaded source archive. Preserve folder structure in the zip and do not treat it as a Unity package."
+    }
+  ],
+  "exclude_globs": [
+    "Assets/**/*.cs",
+    "Assets/**/*.asmdef",
+    "Assets/**/*.asmref",
+    "Assets/**/*.rsp",
+    "Assets/**/Editor/**",
+    "Assets/Scripts/**",
+    "Assets/Tests/**",
+    "Assets/Scripts/Test/MissingLegacySceneScript_*.cs",
+    "Assets/Scripts/Test/MissingLegacySceneScript_*.cs.meta",
+    "Assets/Scripts/Test/MissingArtSceneScript_*.cs",
+    "Assets/Scripts/Test/MissingArtSceneScript_*.cs.meta",
+    "Build/**",
+    "Builds/**",
+    "Library/**",
+    "Logs/**",
+    "Temp/**",
+    "UserSettings/**",
+    "docs/**",
+    "obj/**",
+    ".git/**",
+    ".vs/**"
+  ],
+  "special_resources_roots": [
+    {
+      "path": "Assets/Resources/Prefabs",
+      "category": "runtime-resources",
+      "exportByDefault": true,
+      "notes": "Current runtime prefab resources root. Keep it as an audited Resources exception until the multiplayer prefab path is normalized."
+    },
+    {
+      "path": "Assets/Map/Beautify/URP/Runtime/Resources",
+      "category": "vendor-runtime-resources",
+      "exportByDefault": false,
+      "notes": "Vendor runtime Resources path. Keep it special-case only and never use it as a generic content root."
+    }
+  ]
+}
+
