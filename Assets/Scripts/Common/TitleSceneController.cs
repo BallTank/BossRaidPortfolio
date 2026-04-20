@@ -54,6 +54,7 @@ namespace Core.GameFlow
         private float _hostStartTimer;
         private bool _requestedTransition;
         private bool _hostStartCountdownActive;
+        private bool _waitingForPressAnyKeyInput;
 
         private TMP_FontAsset _fontAsset;
         private Canvas _titleCanvas;
@@ -123,7 +124,7 @@ namespace Core.GameFlow
 
             SceneLoader.CancelPendingTransition();
             EnsureRuntimeUi();
-            ShowMainPanel();
+            EnterPressAnyKeyGate();
         }
 
         private void Update()
@@ -138,6 +139,16 @@ namespace Core.GameFlow
                 return;
             }
 
+            if (_waitingForPressAnyKeyInput)
+            {
+                if (IsKeyboardOrMouseInputDetected())
+                {
+                    RevealRuntimeUiFromPressAnyKey();
+                }
+
+                return;
+            }
+
             _elapsedTime += Time.deltaTime;
             UpdateHostStartCountdown();
         }
@@ -149,10 +160,11 @@ namespace Core.GameFlow
                 return false;
             }
 
-            Transform existingRoot = _titleCanvas.transform.Find("TitleRuntimeRoot");
+            Transform existingRoot = FindPreferredRuntimeRoot(_titleCanvas.transform);
             if (existingRoot != null)
             {
                 _runtimeRoot = existingRoot.gameObject;
+                ApplyRuntimeRootLayoutContract();
                 ResolveRuntimeReferences();
 
                 if (!HasRequiredRuntimeReferences())
@@ -161,12 +173,15 @@ namespace Core.GameFlow
                     return false;
                 }
 
+                ApplyMainPanelRuntimeLayoutGuard();
                 BindUiEvents();
                 InitializeDefaultSelections();
                 return false;
             }
 
             BuildRuntimeUi();
+            ApplyRuntimeRootLayoutContract();
+            ApplyMainPanelRuntimeLayoutGuard();
             BindUiEvents();
             InitializeDefaultSelections();
             return true;
@@ -195,13 +210,69 @@ namespace Core.GameFlow
                 return false;
             }
 
-            if (_legacyPrompt != null && _legacyPrompt.activeSelf)
+            if (!Application.isPlaying && _legacyPrompt != null && _legacyPrompt.activeSelf)
             {
                 _legacyPrompt.SetActive(false);
                 MarkSceneDirtyInEditor();
             }
 
             return true;
+        }
+
+        private static Transform FindPreferredRuntimeRoot(Transform canvasTransform)
+        {
+            if (canvasTransform == null)
+            {
+                return null;
+            }
+
+            Transform preferredRoot = canvasTransform.Find("TitleRuntimeRoot (1)");
+            if (preferredRoot != null)
+            {
+                return preferredRoot;
+            }
+
+            return canvasTransform.Find("TitleRuntimeRoot");
+        }
+
+        private void ApplyRuntimeRootLayoutContract()
+        {
+            if (_runtimeRoot == null)
+            {
+                return;
+            }
+
+            RectTransform runtimeRootRect = _runtimeRoot.GetComponent<RectTransform>();
+            if (runtimeRootRect != null)
+            {
+                if (Application.isPlaying)
+                {
+                    runtimeRootRect.anchorMin = new Vector2(0.5f, 0.5f);
+                    runtimeRootRect.anchorMax = new Vector2(0.5f, 0.5f);
+                    runtimeRootRect.anchoredPosition = Vector2.zero;
+                    runtimeRootRect.localPosition = Vector3.zero;
+
+                    if (runtimeRootRect.sizeDelta.x <= 0f || runtimeRootRect.sizeDelta.y <= 0f)
+                    {
+                        runtimeRootRect.sizeDelta = new Vector2(Screen.width, Screen.height);
+                    }
+                }
+
+                runtimeRootRect.pivot = new Vector2(0.5f, 0.5f);
+                runtimeRootRect.localScale = Vector3.one;
+                runtimeRootRect.localRotation = Quaternion.identity;
+            }
+
+            if (!Application.isPlaying)
+            {
+                return;
+            }
+
+            Animator runtimeRootAnimator = _runtimeRoot.GetComponent<Animator>();
+            if (runtimeRootAnimator != null && runtimeRootAnimator.enabled)
+            {
+                runtimeRootAnimator.enabled = false;
+            }
         }
 
         private void BuildRuntimeUi()
@@ -231,6 +302,20 @@ namespace Core.GameFlow
             BuildWrongKeyPopup(_wrongKeyPopup.transform);
 
             MarkSceneDirtyInEditor();
+        }
+
+        private void ApplyMainPanelRuntimeLayoutGuard()
+        {
+            if (!Application.isPlaying || _mainPanel == null)
+            {
+                return;
+            }
+
+            Animator mainPanelAnimator = _mainPanel.GetComponent<Animator>();
+            if (mainPanelAnimator != null && mainPanelAnimator.enabled)
+            {
+                mainPanelAnimator.enabled = false;
+            }
         }
 
         private void BuildMainPanel(Transform parent)
@@ -952,6 +1037,74 @@ namespace Core.GameFlow
             }
 
             EventSystem.current?.SetSelectedGameObject(_wrongKeyPopup != null ? _wrongKeyPopup.GetComponentInChildren<Button>(true)?.gameObject : null);
+        }
+
+        private void EnterPressAnyKeyGate()
+        {
+            ResetLobbyState();
+            CloseWrongKeyPopup();
+            _elapsedTime = 0f;
+            _waitingForPressAnyKeyInput = _legacyPrompt != null;
+
+            if (_runtimeRoot != null)
+            {
+                _runtimeRoot.SetActive(!_waitingForPressAnyKeyInput);
+            }
+
+            if (_legacyPrompt != null)
+            {
+                _legacyPrompt.SetActive(_waitingForPressAnyKeyInput);
+            }
+
+            if (!_waitingForPressAnyKeyInput)
+            {
+                ShowMainPanel();
+            }
+        }
+
+        private void RevealRuntimeUiFromPressAnyKey()
+        {
+            _waitingForPressAnyKeyInput = false;
+
+            if (_legacyPrompt != null)
+            {
+                _legacyPrompt.SetActive(false);
+            }
+
+            if (_runtimeRoot != null)
+            {
+                _runtimeRoot.SetActive(true);
+            }
+
+            ShowMainPanel();
+        }
+
+        private static bool IsKeyboardOrMouseInputDetected()
+        {
+            if (Input.GetMouseButtonDown(0) || Input.GetMouseButtonDown(1) || Input.GetMouseButtonDown(2))
+            {
+                return true;
+            }
+
+            if (!Input.anyKeyDown)
+            {
+                return false;
+            }
+
+            return !IsAnyJoystickButtonDown();
+        }
+
+        private static bool IsAnyJoystickButtonDown()
+        {
+            for (KeyCode keyCode = KeyCode.JoystickButton0; keyCode <= KeyCode.Joystick8Button19; keyCode++)
+            {
+                if (Input.GetKeyDown(keyCode))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         public bool CanAcceptMultiplayerMenuAction()
