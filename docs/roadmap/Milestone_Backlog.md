@@ -187,6 +187,86 @@
 
 
 ---
+### 10주차: 아트 멀티 합치기
+
+#### 버전 관리
+- [x] feature/integration-art-multiplayer git diff 정리
+- [ ] branch마다 커밋 안되는 애셋 나누고 구글드라이브에 올리기
+    
+
+#### 아트 멀티 합치기
+##### art
+- [ ] dust particle missing
+- [x] Terrain 낮춰서 플레이어 대쉬 때 바닥 보이게 하기
+- [x] press any key text panel 중간 아래에 보이게 하기
+- [x] 캐릭터 이미지 아래에 나오게 하기
+- [x] 아무 키를 누르면 `TitleRuntimeRoot`가 아니라 `TitleRuntimeRoot (1)`이 나타나도록 변경.
+- [x] 대시 UI 기능 구현
+- [x] 콤보 텍스트 감추기
+- [ ] 라이트 플레이어 프리팹 교체하고 안나온다. 라이트 적용하기
+
+##### programming
+- [x] `Solo Play`를 누른 뒤 `Loading Scene`으로 넘어갈 때, `Assets/Scenes/mutiplayer/GamePlayScene.unity`로 전환되도록 변경.
+- [x] 승리, 패배 이미지 보이게 하기
+- [ ] Death Test 해제하기
+###### 플레이어
+- [ ] 플레이어 프리팹 비주얼 이식하기 (솔로플레이용, 멀티플레이용)
+    - [x] 솔로
+    - [ ] 멀티
+- [x] 칼 사이즈 늘리기
+- [x] 플레이어 신장에 콜라이더 맞추기
+- [x] 플레이어 바닥 offset 줄이기
+- [x] 피격 하얀색이 프리팹과 다름
+
+###### 보스
+- [ ] 보스 프리팹 비주얼 이식하기
+- [ ] 보스 체력, 공격패턴 조정 (공격예상범위 넣기)
+- [ ] 보스 발사체 비주얼 보이게 하기
+
+
+#### 소리
+- [ ] UI
+- [ ] 배경음
+- [ ] 플레이어
+- [ ] 용
+
+---
+
+### 11주차: 아트 멀티 합치기
+
+#### 버전 관리
+- [x] feature/integration-art-multiplayer git diff 정리
+- [ ] branch마다 커밋 안되는 애셋 나누고 구글드라이브에 올리기
+    
+
+#### 아트 멀티 합치기
+##### art
+- [x] dust particle missing
+- [x] 라이트 플레이어 프리팹 교체하고 안나온다. 라이트 적용하기
+- [x] 칼 이펙트 달리는 도중 나오는 걸 수정하기
+
+##### programming
+- [x] Death Test 해제하기
+###### 플레이어
+- [ ] 플레이어 프리팹 비주얼 이식하기 (솔로플레이용, 멀티플레이용)
+    - [x] 솔로
+    - [ ] 멀티
+
+
+
+###### 보스
+- [ ] 보스 프리팹 비주얼 이식하기
+- [ ] 보스 체력, 공격패턴 조정 (공격예상범위 넣기)
+- [ ] 보스 발사체 비주얼 보이게 하기
+
+
+#### 소리
+- [ ] UI
+- [ ] 배경음
+- [ ] 플레이어
+- [ ] 용
+
+---
 
 
 ## 멀티플레이어
@@ -220,6 +300,21 @@
 5. [x] boss aggro 구현
 
 ##### 구현 안된 것
+
+---
+## 아트 멀티 합치기
+### 아트
+- [ ] Assets/Scenes/Legacy/GamePlayScene_Art3.unity 바닥 매터리얼 복구하기
+- [ ] 칼 vfx 수정하기
+- [ ] 대시 UI 작동하게 하기
+- [ ] Assets/Scenes/mutiplayer/LoadingScene.unity 로딩씬 작동하게 하기
+- [ ] Assets/Scenes/mutiplayer/GamePlayScene.unity player1, 2를 feature/multiplayer multiplayerAvatar prefab 쓰고 거기에 player1, 2의 애셋을 쓰게 하기. 
+### 멀티
+- [ ] feature/multiplayer titleScene에 있는 Solo, multiplayer UI, 패널을 feature/integration-art-multiplayer Assets/Scenes/mutiplayer/TitleScene.unity 여기에 넣기
+- [ ] Assets/Scenes/GamePlayScene_Art3.unity 여기에 feature/multiplayer에 있는 prefabs/boss, multiplayerAvater, singleplayer를 넣기
+- [ ] feature/integration-art-multiplayer Assets/Scenes/mutiplayer 폴더 안에서 titleScene -> LoadingScene -> GamePlayScene 흐름 연결하기
+- [ ] Assets/Scenes/mutiplayer/GamePlayScene.unity player UI 배치 host, client 따라 바뀌게 정하기
+
 
 ---
 

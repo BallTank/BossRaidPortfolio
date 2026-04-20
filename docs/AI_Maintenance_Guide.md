@@ -115,7 +115,6 @@
 `[S#] Action | Condition | File:line | Key value`
 
 ### 8.2. Writing Policy
-* 로직 설명은 쉬운 영어로 작성한다.
 * 한 카드에서 다루는 동작은 1개만 선택한다 (예: Attack4 AoE hit).
 * 카드 작성 후 필요한 줄만 상세 디버깅한다 (breakpoint/watch value).
 
