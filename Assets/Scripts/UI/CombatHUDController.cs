@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using Core.Combat;
 using TMPro;
 using UnityEngine;
@@ -63,6 +63,7 @@ namespace Core.UI
         private bool _isHealthEventsBound;
         private Coroutine _feedbackRoutine;
         private Vector3 _damageFeedbackBaseScale = Vector3.one;
+        private float _damageFeedbackVisibleAlpha = 1f;
         private bool _isHudVisible = true;
         private bool _isPartnerHudVisible;
         private GameObject _comboRoot;
@@ -95,6 +96,8 @@ namespace Core.UI
                 {
                     _damageFeedbackBaseScale = Vector3.one;
                 }
+
+                _damageFeedbackVisibleAlpha = ResolveDamageFeedbackVisibleAlpha();
             }
         }
 
@@ -378,6 +381,7 @@ namespace Core.UI
 
             _dashFillImage.fillAmount = Mathf.Clamp01(ratio);
         }
+
         /// <summary>
         /// 파트너 HUD 표시 상태를 전환한다.
         /// 실질적인 데이터 바인딩은 멀티플레이 gameplay sync 단계에서 확장한다.
@@ -423,7 +427,7 @@ namespace Core.UI
         {
             if (_damageFeedbackText == null) return;
 
-            if (!isHit)
+            if (!isHit || _damageFeedbackVisibleAlpha <= 0f)
             {
                 // 비적중 시에는 텍스트를 표시하지 않는다.
                 HideDamageFeedbackImmediate();
@@ -432,9 +436,7 @@ namespace Core.UI
 
             _damageFeedbackText.text = $"HIT {Mathf.Max(0, totalDamage)}";
 
-            Color feedbackColor = _hitColor;
-            feedbackColor.a = 1f;
-            _damageFeedbackText.color = feedbackColor;
+            _damageFeedbackText.color = GetDamageFeedbackVisibleColor();
             _damageFeedbackText.transform.localScale = _damageFeedbackBaseScale * _hitScale;
             _damageFeedbackText.gameObject.SetActive(true);
 
@@ -630,6 +632,7 @@ namespace Core.UI
                 _dashFillImage = dashFillTransform.GetComponent<Image>();
             }
         }
+
         private void CacheMultiplayerPortraitSprites()
         {
             if (_hasCachedMultiplayerPortraitSprites)
@@ -737,7 +740,7 @@ namespace Core.UI
             float elapsed = 0f;
             Vector3 startScale = _damageFeedbackBaseScale * _hitScale;
             Vector3 endScale = _damageFeedbackBaseScale;
-            Color baseColor = _hitColor;
+            Color baseColor = GetDamageFeedbackVisibleColor();
 
             while (elapsed < _feedbackDuration)
             {
@@ -751,7 +754,7 @@ namespace Core.UI
                 float t = Mathf.Clamp01(elapsed / _feedbackDuration);
 
                 Color frameColor = baseColor;
-                frameColor.a = 1f - t;
+                frameColor.a = Mathf.Lerp(_damageFeedbackVisibleAlpha, 0f, t);
                 _damageFeedbackText.color = frameColor;
                 _damageFeedbackText.transform.localScale = Vector3.Lerp(startScale, endScale, t);
 
@@ -773,10 +776,7 @@ namespace Core.UI
 
             _damageFeedbackText.gameObject.SetActive(false);
             _damageFeedbackText.transform.localScale = _damageFeedbackBaseScale;
-
-            Color resetColor = _hitColor;
-            resetColor.a = 1f;
-            _damageFeedbackText.color = resetColor;
+            _damageFeedbackText.color = GetDamageFeedbackVisibleColor();
         }
 
         private void HideComboImmediate()
@@ -789,6 +789,25 @@ namespace Core.UI
             }
 
             _comboRoot.SetActive(false);
+        }
+
+        private float ResolveDamageFeedbackVisibleAlpha()
+        {
+            if (_damageFeedbackText == null)
+            {
+                return 0f;
+            }
+
+            return Mathf.Min(
+                Mathf.Clamp01(_damageFeedbackText.color.a),
+                Mathf.Clamp01(_hitColor.a));
+        }
+
+        private Color GetDamageFeedbackVisibleColor()
+        {
+            Color color = _hitColor;
+            color.a = _damageFeedbackVisibleAlpha;
+            return color;
         }
     }
 }

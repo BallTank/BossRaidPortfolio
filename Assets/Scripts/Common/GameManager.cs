@@ -383,8 +383,13 @@ namespace Core.GameFlow
             }
 
             Scene activeScene = SceneManager.GetActiveScene();
-            return activeScene.IsValid()
-                   && string.Equals(activeScene.path, MultiplayerScenePaths.GamePlayScenePath, StringComparison.OrdinalIgnoreCase);
+            if (!activeScene.IsValid())
+            {
+                return false;
+            }
+
+            return string.Equals(activeScene.path, MultiplayerScenePaths.GamePlayScenePath, StringComparison.OrdinalIgnoreCase)
+                   || string.Equals(activeScene.path, MultiplayerScenePaths.FullGamePlayScenePath, StringComparison.OrdinalIgnoreCase);
         }
 
         private void UpdateMultiplayerDefeatedUi(bool force)
@@ -714,7 +719,12 @@ namespace Core.GameFlow
                 _defeatedImageRoot.SetActive(result == GameResult.Defeated);
             }
 
-            bool shouldShowText = !string.IsNullOrWhiteSpace(message);
+            // Victory는 공백을 유지하고, Defeated에서는 메시지를 표시한다.
+            bool shouldShowText = true;
+            const string blankResultText = " ";
+            string displayText = result == GameResult.Defeated && !string.IsNullOrWhiteSpace(message)
+                ? message
+                : blankResultText;
             if (_resultTextRoot != null)
             {
                 _resultTextRoot.SetActive(shouldShowText);
@@ -729,8 +739,8 @@ namespace Core.GameFlow
                     continue;
                 }
 
-                label.text = message;
                 label.gameObject.SetActive(shouldShowText);
+                label.text = displayText;
             }
         }
 
