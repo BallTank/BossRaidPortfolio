@@ -12,8 +12,20 @@ namespace Core.Common
     {
         private const string DefaultBlinkShaderName = "Custom/Common/BlinkWhiteLit";
         private const string LegacyBlinkShaderName = "Custom/Player/BlinkWhiteLit";
+        private const string BlinkBaseMapPropertyName = "_BaseMap";
+        private const string BlinkBaseColorPropertyName = "_BaseColor";
         private const float MinBlinkInterval = 0.01f;
         private static readonly int BlinkWhiteId = Shader.PropertyToID("_BlinkWhite");
+        private static readonly string[] SourceTexturePropertyCandidates =
+        {
+            BlinkBaseMapPropertyName,
+            "_MainTex"
+        };
+        private static readonly string[] SourceColorPropertyCandidates =
+        {
+            BlinkBaseColorPropertyName,
+            "_Color"
+        };
 
         private enum BlinkMode
         {
@@ -321,6 +333,9 @@ namespace Core.Common
                 shader = blinkShader
             };
 
+            // 기존 머티리얼이 _MainTex/_Color를 써도 blink 셰이더 입력명으로 다시 맞춘다.
+            CopySurfacePropertiesForBlink(sourceMaterial, blinkMaterial);
+
             if (blinkMaterial.HasProperty(BlinkWhiteId))
             {
                 blinkMaterial.SetFloat(BlinkWhiteId, 0f);
@@ -329,6 +344,49 @@ namespace Core.Common
             _runtimeBlinkMaterialMap[sourceMaterial] = blinkMaterial;
             _runtimeBlinkMaterials.Add(blinkMaterial);
             return blinkMaterial;
+        }
+
+        private static void CopySurfacePropertiesForBlink(Material sourceMaterial, Material blinkMaterial)
+        {
+            CopyTextureProperty(sourceMaterial, blinkMaterial, BlinkBaseMapPropertyName, SourceTexturePropertyCandidates);
+            CopyColorProperty(sourceMaterial, blinkMaterial, BlinkBaseColorPropertyName, SourceColorPropertyCandidates);
+        }
+
+        private static void CopyTextureProperty(Material sourceMaterial, Material targetMaterial, string targetPropertyName, string[] sourcePropertyCandidates)
+        {
+            if (sourceMaterial == null || targetMaterial == null) return;
+            if (string.IsNullOrEmpty(targetPropertyName) || !targetMaterial.HasProperty(targetPropertyName)) return;
+            if (sourcePropertyCandidates == null || sourcePropertyCandidates.Length == 0) return;
+
+            for (int i = 0; i < sourcePropertyCandidates.Length; i++)
+            {
+                string sourcePropertyName = sourcePropertyCandidates[i];
+                if (string.IsNullOrEmpty(sourcePropertyName) || !sourceMaterial.HasProperty(sourcePropertyName)) continue;
+
+                Texture sourceTexture = sourceMaterial.GetTexture(sourcePropertyName);
+                if (sourceTexture == null) continue;
+
+                targetMaterial.SetTexture(targetPropertyName, sourceTexture);
+                targetMaterial.SetTextureOffset(targetPropertyName, sourceMaterial.GetTextureOffset(sourcePropertyName));
+                targetMaterial.SetTextureScale(targetPropertyName, sourceMaterial.GetTextureScale(sourcePropertyName));
+                return;
+            }
+        }
+
+        private static void CopyColorProperty(Material sourceMaterial, Material targetMaterial, string targetPropertyName, string[] sourcePropertyCandidates)
+        {
+            if (sourceMaterial == null || targetMaterial == null) return;
+            if (string.IsNullOrEmpty(targetPropertyName) || !targetMaterial.HasProperty(targetPropertyName)) return;
+            if (sourcePropertyCandidates == null || sourcePropertyCandidates.Length == 0) return;
+
+            for (int i = 0; i < sourcePropertyCandidates.Length; i++)
+            {
+                string sourcePropertyName = sourcePropertyCandidates[i];
+                if (string.IsNullOrEmpty(sourcePropertyName) || !sourceMaterial.HasProperty(sourcePropertyName)) continue;
+
+                targetMaterial.SetColor(targetPropertyName, sourceMaterial.GetColor(sourcePropertyName));
+                return;
+            }
         }
 
         private void CacheBlinkPropertySupport()

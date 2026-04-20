@@ -1,4 +1,4 @@
-using Core.Combat;
+﻿using Core.Combat;
 using System;
 using Core.Common;
 using Core.Common.Interfaces;
@@ -41,6 +41,8 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     [Header("Visual")]
     [SerializeField] private PlayerVisual playerVisual;
     [SerializeField] private BlinkWhiteEffect blinkWhiteEffect;
+    [SerializeField] private bool _strictVisualBinding;
+    [SerializeField, TextArea(4, 8)] private string _visualBindingReport = "Binding report has not been generated yet.";
 
     [Header("Animation Settings")]
     [SerializeField, Range(0f, 0.2f)] private float locomotionAnimatorSpeedDampTime = 0.08f;
@@ -247,6 +249,10 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         if (_multiplayerLocomotionCollisionShell < 0f) _multiplayerLocomotionCollisionShell = 0f;
         if (_multiplayerLocomotionGroundSnapDistance < 0f) _multiplayerLocomotionGroundSnapDistance = 0f;
         if (_multiplayerLocomotionMaxSlideIterations < 1) _multiplayerLocomotionMaxSlideIterations = 1;
+
+        ResolvePlayerVisualBinding(logWarnings: false);
+        ResolveBlinkEffect(forceRefresh: !IsBlinkEffectBindingValid(blinkWhiteEffect));
+        RefreshVisualBindingReport(logWarnings: false);
     }
 
     private void Awake()
@@ -254,7 +260,9 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         _characterController = GetComponent<CharacterController>();
         _inputProvider = GetComponent<IInputProvider>();
         _health = GetComponent<Health>();
-        ResolveBlinkEffect();
+        ResolvePlayerVisualBinding(logWarnings: true);
+        ResolveBlinkEffect(forceRefresh: true);
+        RefreshVisualBindingReport(logWarnings: false);
         _multiplayerPresentationDriver = new MultiplayerPlayerPresentationDriver(this);
 
         if (_health != null)
@@ -632,8 +640,19 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
             return;
         }
 
+        ResolvePlayerVisualBinding(logWarnings: true);
+        ResolveBlinkEffect(forceRefresh: true);
+        RefreshVisualBindingReport(logWarnings: false);
         EnsureMultiplayerPresentationDriver().RefreshBindings();
         InitializeCombatHUD();
+    }
+
+    [ContextMenu("Validate Visual Bindings")]
+    private void ValidateVisualBindingsFromInspector()
+    {
+        ResolvePlayerVisualBinding(logWarnings: true);
+        ResolveBlinkEffect(forceRefresh: true);
+        RefreshVisualBindingReport(logWarnings: true);
     }
 
     public Vector3 GetPreferredCameraFollowPosition()
@@ -1101,9 +1120,156 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         }
     }
 
-    private void ResolveBlinkEffect()
+    private void ResolvePlayerVisualBinding(bool logWarnings)
     {
-        if (blinkWhiteEffect != null) return;
+        if (IsPlayerVisualBindingValid(playerVisual))
+        {
+            WarnIfMultipleChildPlayerVisuals(logWarnings, playerVisual);
+            RefreshVisualBindingReport(logWarnings: false);
+            return;
+        }
+
+        if (_strictVisualBinding)
+        {
+            if (logWarnings)
+            {
+                string issue = BuildPlayerVisualBindingIssue(playerVisual);
+                Debug.LogError(
+                    $"[PlayerController] '{name}' PlayerVisual binding is invalid in strict mode. Issue: {issue}",
+                    this);
+            }
+
+            RefreshVisualBindingReport(logWarnings: false);
+            return;
+        }
+
+        PlayerVisual resolvedVisual = FindPreferredChildPlayerVisual(logWarnings);
+        if (resolvedVisual == null)
+        {
+            if (playerVisual != null && logWarnings)
+            {
+                Debug.LogWarning($"[PlayerController] '{name}' has no valid PlayerVisual binding.", this);
+            }
+
+            playerVisual = null;
+            RefreshVisualBindingReport(logWarnings: false);
+            return;
+        }
+
+        if (playerVisual != resolvedVisual)
+        {
+            playerVisual = resolvedVisual;
+            if (logWarnings)
+            {
+                Debug.LogWarning(
+                    $"[PlayerController] '{name}' auto-bound PlayerVisual to '{resolvedVisual.name}'. Check the inspector if this was not intended.",
+                    this);
+            }
+        }
+
+        WarnIfMultipleChildPlayerVisuals(logWarnings, resolvedVisual);
+        RefreshVisualBindingReport(logWarnings: false);
+    }
+
+    private PlayerVisual FindPreferredChildPlayerVisual(bool logWarnings)
+    {
+        PlayerVisual[] childVisuals = GetComponentsInChildren<PlayerVisual>(true);
+        if (childVisuals == null || childVisuals.Length == 0)
+        {
+            return null;
+        }
+
+        PlayerVisual firstValid = null;
+        PlayerVisual firstActiveValid = null;
+
+        for (int i = 0; i < childVisuals.Length; i++)
+        {
+            PlayerVisual candidate = childVisuals[i];
+            if (!IsPlayerVisualBindingValid(candidate))
+            {
+                continue;
+            }
+
+            firstValid ??= candidate;
+            if (firstActiveValid == null && candidate.gameObject.activeInHierarchy)
+            {
+                firstActiveValid = candidate;
+            }
+        }
+
+        if (firstActiveValid == null && firstValid == null && logWarnings)
+        {
+            Debug.LogWarning($"[PlayerController] '{name}' found PlayerVisual components, but none has a valid Animator child binding.", this);
+        }
+
+        return firstActiveValid ?? firstValid;
+    }
+
+    private void WarnIfMultipleChildPlayerVisuals(bool logWarnings, PlayerVisual selectedVisual)
+    {
+        if (!logWarnings || selectedVisual == null)
+        {
+            return;
+        }
+
+        PlayerVisual[] childVisuals = GetComponentsInChildren<PlayerVisual>(true);
+        int validVisualCount = 0;
+
+        for (int i = 0; i < childVisuals.Length; i++)
+        {
+            if (IsPlayerVisualBindingValid(childVisuals[i]))
+            {
+                validVisualCount++;
+            }
+        }
+
+        if (validVisualCount > 1)
+        {
+            Debug.LogWarning(
+                $"[PlayerController] '{name}' has {validVisualCount} child PlayerVisual bindings. Using '{selectedVisual.name}'.",
+                this);
+        }
+    }
+
+    private bool IsPlayerVisualBindingValid(PlayerVisual candidate)
+    {
+        return candidate != null
+               && candidate.transform != transform
+               && candidate.transform.IsChildOf(transform)
+               && candidate.gameObject.activeSelf
+               && candidate.Animator != null;
+    }
+
+    private bool IsBlinkEffectBindingValid(BlinkWhiteEffect candidate)
+    {
+        if (candidate == null)
+        {
+            return false;
+        }
+
+        if (playerVisual != null && candidate.transform.IsChildOf(playerVisual.transform))
+        {
+            return candidate.gameObject.activeSelf;
+        }
+
+        return candidate.transform == transform && candidate.gameObject.activeSelf;
+    }
+
+    private void ResolveBlinkEffect(bool forceRefresh = false)
+    {
+        if (!forceRefresh && IsBlinkEffectBindingValid(blinkWhiteEffect))
+        {
+            RefreshVisualBindingReport(logWarnings: false);
+            return;
+        }
+
+        if (_strictVisualBinding && !IsBlinkEffectBindingValid(blinkWhiteEffect))
+        {
+            RefreshVisualBindingReport(logWarnings: false);
+            return;
+        }
+
+        blinkWhiteEffect = null;
 
         if (playerVisual != null)
         {
@@ -1118,6 +1284,133 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         {
             blinkWhiteEffect = GetComponent<BlinkWhiteEffect>();
         }
+
+        RefreshVisualBindingReport(logWarnings: false);
+    }
+
+    private void RefreshVisualBindingReport(bool logWarnings)
+    {
+        string visualIssue = BuildPlayerVisualBindingIssue(playerVisual);
+        string blinkIssue = BuildBlinkEffectBindingIssue(blinkWhiteEffect);
+        bool hasVisualIssue = !string.IsNullOrEmpty(visualIssue);
+        bool hasBlinkIssue = !string.IsNullOrEmpty(blinkIssue);
+
+        _visualBindingReport =
+            $"Strict mode: {(_strictVisualBinding ? "ON" : "OFF")}\n" +
+            $"PlayerVisual ref: {DescribeComponent(playerVisual)}\n" +
+            $"PlayerVisual state: {(hasVisualIssue ? $"INVALID - {visualIssue}" : "OK")}\n" +
+            $"BlinkWhiteEffect ref: {DescribeComponent(blinkWhiteEffect)}\n" +
+            $"BlinkWhiteEffect state: {(hasBlinkIssue ? $"INVALID - {blinkIssue}" : "OK")}\n" +
+            $"Valid child PlayerVisual count: {CountValidChildPlayerVisuals()}";
+
+        if (logWarnings && (hasVisualIssue || hasBlinkIssue))
+        {
+            Debug.LogWarning($"[PlayerController] '{name}' visual binding report:\n{_visualBindingReport}", this);
+        }
+    }
+
+    private string BuildPlayerVisualBindingIssue(PlayerVisual candidate)
+    {
+        if (candidate == null)
+        {
+            return "Reference is null.";
+        }
+
+        if (candidate.transform == transform)
+        {
+            return "PlayerVisual is bound to the root transform.";
+        }
+
+        if (!candidate.transform.IsChildOf(transform))
+        {
+            return "PlayerVisual is not a child of this PlayerController.";
+        }
+
+        if (!candidate.gameObject.activeSelf)
+        {
+            return "PlayerVisual GameObject is inactive.";
+        }
+
+        if (candidate.Animator == null)
+        {
+            return "PlayerVisual Animator reference is missing.";
+        }
+
+        return string.Empty;
+    }
+
+    private string BuildBlinkEffectBindingIssue(BlinkWhiteEffect candidate)
+    {
+        if (candidate == null)
+        {
+            return "Reference is null.";
+        }
+
+        if (!candidate.gameObject.activeSelf)
+        {
+            return "BlinkWhiteEffect GameObject is inactive.";
+        }
+
+        if (playerVisual != null && candidate.transform.IsChildOf(playerVisual.transform))
+        {
+            return string.Empty;
+        }
+
+        if (candidate.transform == transform)
+        {
+            return string.Empty;
+        }
+
+        return "BlinkWhiteEffect is not under current PlayerVisual and not on root.";
+    }
+
+    private int CountValidChildPlayerVisuals()
+    {
+        PlayerVisual[] childVisuals = GetComponentsInChildren<PlayerVisual>(true);
+        if (childVisuals == null || childVisuals.Length == 0)
+        {
+            return 0;
+        }
+
+        int count = 0;
+        for (int i = 0; i < childVisuals.Length; i++)
+        {
+            if (IsPlayerVisualBindingValid(childVisuals[i]))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static string DescribeComponent(Component component)
+    {
+        if (component == null)
+        {
+            return "None";
+        }
+
+        return $"{component.name} ({GetHierarchyPath(component.transform)})";
+    }
+
+    private static string GetHierarchyPath(Transform transform)
+    {
+        if (transform == null)
+        {
+            return "None";
+        }
+
+        string path = transform.name;
+        Transform cursor = transform.parent;
+
+        while (cursor != null)
+        {
+            path = $"{cursor.name}/{path}";
+            cursor = cursor.parent;
+        }
+
+        return path;
     }
 
     private void UpdateProjectileHitCountTimer()
@@ -1270,6 +1563,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
         _combatHUD.SetDashReadyNormalized(Mathf.Clamp01(dashFillAmount));
     }
+
     private void InitializeCombatHUD()
     {
         if (_combatHUD == null)
