@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using Core.Combat;
 using TMPro;
 using UnityEngine;
@@ -19,6 +19,7 @@ namespace Core.UI
         private const string PartnerPortraitImageName = "Image_PartnerPortrait_3P";
         private const string PartnerLegacyPortraitImageName = "Image_PartnerPortrait_2P";
         private const string ComboRootName = "Text_Combo";
+        private const string DashFillImageName = "Image_Dash_Icon_Active3";
 
         [Header("플레이어 HUD")]
         [SerializeField] private Image _playerTorsoImage;
@@ -49,6 +50,9 @@ namespace Core.UI
 
         [Header("콤보 UI")]
         [SerializeField] private TMP_Text _comboText;
+
+        [Header("Dash HUD")]
+        [SerializeField] private Image _dashFillImage;
 
         [Header("데이터 소스 (선택)")]
         [SerializeField] private Health _playerHealthSource;
@@ -362,6 +366,19 @@ namespace Core.UI
         }
 
         /// <summary>
+        /// 대시 준비도 UI fill 값을 갱신한다.
+        /// </summary>
+        public void SetDashReadyNormalized(float ratio)
+        {
+            ResolveDashHudBindings();
+            if (_dashFillImage == null)
+            {
+                return;
+            }
+
+            _dashFillImage.fillAmount = Mathf.Clamp01(ratio);
+        }
+        /// <summary>
         /// 파트너 HUD 표시 상태를 전환한다.
         /// 실질적인 데이터 바인딩은 멀티플레이 gameplay sync 단계에서 확장한다.
         /// </summary>
@@ -459,6 +476,11 @@ namespace Core.UI
             if (_bossNameText != null)
             {
                 _bossNameText.gameObject.SetActive(visible);
+            }
+
+            if (_dashFillImage != null)
+            {
+                _dashFillImage.gameObject.SetActive(visible);
             }
 
             ApplyPartnerHudVisibility();
@@ -590,6 +612,24 @@ namespace Core.UI
             }
         }
 
+        private void ResolveDashHudBindings()
+        {
+            if (_dashFillImage != null)
+            {
+                return;
+            }
+
+            Transform dashFillTransform = transform.Find("Panel_Dash/Dash_Icon_Active/Image_Dash_Icon_Active3");
+            if (dashFillTransform == null)
+            {
+                dashFillTransform = FindChildTransformByName(transform, DashFillImageName);
+            }
+
+            if (dashFillTransform != null)
+            {
+                _dashFillImage = dashFillTransform.GetComponent<Image>();
+            }
+        }
         private void CacheMultiplayerPortraitSprites()
         {
             if (_hasCachedMultiplayerPortraitSprites)

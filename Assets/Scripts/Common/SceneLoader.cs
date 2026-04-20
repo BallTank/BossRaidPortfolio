@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using UnityEngine.SceneManagement;
+using Core.Multiplayer;
 
 namespace Core.GameFlow
 {
@@ -14,7 +15,7 @@ namespace Core.GameFlow
     {
         public const string TitleSceneName = "TitleScene";
         public const string LoadingSceneName = "LoadingScene";
-        public const string GamePlaySceneName = "GamePlayScene";
+        public const string GamePlaySceneName = MultiplayerScenePaths.FullGamePlayScenePath;
 
         private static GameSceneId _targetSceneId = GameSceneId.GamePlay;
         private static bool _hasPendingTarget;

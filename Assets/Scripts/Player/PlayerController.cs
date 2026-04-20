@@ -1,4 +1,4 @@
-﻿using Core.Combat;
+using Core.Combat;
 using System;
 using Core.Common;
 using Core.Common.Interfaces;
@@ -347,6 +347,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
             EnsureMultiplayerPresentationDriver().ResetPresentationRotationToRoot();
         }
 
+        UpdateDashHudPresentation();
         UpdateAttack2DebugTrace();
     }
 
@@ -1249,6 +1250,26 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         }
     }
 
+    private void UpdateDashHudPresentation()
+    {
+        if (!_isLocalPresentationEnabled || _combatHUD == null)
+        {
+            return;
+        }
+
+        float dashFillAmount;
+        if (CanDash || DashCooldown <= 0f)
+        {
+            dashFillAmount = 1f;
+        }
+        else
+        {
+            float cooldownDuration = Mathf.Max(0.0001f, DashCooldown);
+            dashFillAmount = 1f - (DashCooldownRemaining / cooldownDuration);
+        }
+
+        _combatHUD.SetDashReadyNormalized(Mathf.Clamp01(dashFillAmount));
+    }
     private void InitializeCombatHUD()
     {
         if (_combatHUD == null)
@@ -1276,6 +1297,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         _combatHUD.SetBossName(_bossDisplayName);
         _combatHUD.SetPartnerHudVisible(isMultiplayerSession);
         HideComboHud();
+        UpdateDashHudPresentation();
     }
 
     private static bool ShouldShowPartnerHud()
