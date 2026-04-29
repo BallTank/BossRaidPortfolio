@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using Core.Multiplayer;
 #if UNITY_EDITOR
 using UnityEditor.SceneManagement;
 #endif
@@ -124,6 +125,7 @@ namespace Core.GameFlow
 
             SceneLoader.CancelPendingTransition();
             EnsureRuntimeUi();
+            EnsureMultiplayerDriverBound();
             EnterPressAnyKeyGate();
         }
 
@@ -1105,6 +1107,21 @@ namespace Core.GameFlow
             }
 
             return false;
+        }
+
+        private void EnsureMultiplayerDriverBound()
+        {
+            if (!MultiplayerScenePaths.IsMultiplayerTitleScene(gameObject.scene.path))
+            {
+                return;
+            }
+
+            if (GetComponent<MultiplayerTitleSceneDriver>() != null)
+            {
+                return;
+            }
+
+            gameObject.AddComponent<MultiplayerTitleSceneDriver>();
         }
 
         public bool CanAcceptMultiplayerMenuAction()

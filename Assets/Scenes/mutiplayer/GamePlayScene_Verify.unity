@@ -1,4 +1,4 @@
-%YAML 1.1
+﻿%YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
 --- !u!29 &1
 OcclusionCullingSettings:
@@ -864,7 +864,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &1585844235
 Transform:
   m_ObjectHideFlags: 0
@@ -879,7 +879,6 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1583953026}
-  - {fileID: 2135559825}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &1585844236
@@ -912,7 +911,21 @@ MonoBehaviour:
   rotationSpeed: 10
   cameraRoot: {fileID: 2135559825}
   playerVisual: {fileID: 1583953028}
-  blinkWhiteEffect: {fileID: 0}
+  blinkWhiteEffect: {fileID: 1583953029}
+  _strictVisualBinding: 0
+  _visualBindingReport: 'Strict mode: OFF
+
+    PlayerVisual ref: Visual (Player/Visual)
+
+    PlayerVisual
+    state: OK
+
+    BlinkWhiteEffect ref: Visual (Player/Visual)
+
+    BlinkWhiteEffect
+    state: OK
+
+    Valid child PlayerVisual count: 1'
   locomotionAnimatorSpeedDampTime: 0.08
   dashDuration: 0.4
   dashSpeedMultiplier: 3
@@ -2548,12 +2561,74 @@ Transform:
   m_GameObject: {fileID: 2135559824}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1.5, z: 0}
+  m_LocalPosition: {x: -3.71, y: 2.5, z: -16.42}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 963194228}
-  m_Father: {fileID: 1585844235}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2014981567
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2014981568}
+  m_Layer: 0
+  m_Name: SoloPlayerAvatar
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!4 &2014981568
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2014981567}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -8.48, y: 3.004, z: -16.42}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &2014981569
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2014981570}
+  m_Layer: 0
+  m_Name: MultiPlayerAvatar
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!4 &2014981570
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2014981569}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.003, y: 3.469, z: -16.42}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &3013900914460744621
 PrefabInstance:
@@ -2807,6 +2882,7 @@ SceneRoots:
   m_Roots:
   - {fileID: 705507995}
   - {fileID: 1585844235}
+  - {fileID: 2135559825}
   - {fileID: 5815963455239217423}
   - {fileID: 311313670}
   - {fileID: 3013900914460744621}
@@ -2814,3 +2890,7 @@ SceneRoots:
   - {fileID: 2014981566}
   - {fileID: 409074204}
   - {fileID: 746045140}
+  - {fileID: 2014981568}
+  - {fileID: 2014981570}
+
+

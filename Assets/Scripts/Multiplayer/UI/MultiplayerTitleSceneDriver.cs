@@ -95,19 +95,13 @@ namespace Core.Multiplayer
 
         private bool TryBindSceneButtons()
         {
-            Button[] allButtons = FindObjectsByType<Button>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-            List<Button> sceneButtonList = new List<Button>(allButtons.Length);
-
-            for (int i = 0; i < allButtons.Length; i++)
+            _sceneButtons = ResolveRuntimeButtons();
+            if (_sceneButtons == null || _sceneButtons.Length == 0)
             {
-                Button button = allButtons[i];
-                if (button != null && button.gameObject.scene == gameObject.scene)
-                {
-                    sceneButtonList.Add(button);
-                }
+                Debug.LogError("MultiplayerTitleSceneDriver: Could not resolve runtime root buttons.");
+                return false;
             }
 
-            _sceneButtons = sceneButtonList.ToArray();
             _soloPlayButton = FindSceneButton(SoloPlayButtonName);
             _createRoomButton = FindSceneButton(CreateRoomButtonName);
             _joinRoomButton = FindSceneButton(JoinRoomButtonName);
@@ -137,6 +131,60 @@ namespace Core.Multiplayer
             }
 
             return hasAllButtons;
+        }
+
+        private Button[] ResolveRuntimeButtons()
+        {
+            Transform runtimeRoot = ResolvePreferredRuntimeRoot();
+            if (runtimeRoot != null)
+            {
+                Button[] runtimeButtons = runtimeRoot.GetComponentsInChildren<Button>(true);
+                if (runtimeButtons != null && runtimeButtons.Length > 0)
+                {
+                    return runtimeButtons;
+                }
+            }
+
+            Button[] allButtons = FindObjectsByType<Button>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            List<Button> sceneButtonList = new List<Button>(allButtons.Length);
+
+            for (int i = 0; i < allButtons.Length; i++)
+            {
+                Button button = allButtons[i];
+                if (button != null && button.gameObject.scene == gameObject.scene)
+                {
+                    sceneButtonList.Add(button);
+                }
+            }
+
+            return sceneButtonList.ToArray();
+        }
+
+        private Transform ResolvePreferredRuntimeRoot()
+        {
+            Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            for (int i = 0; i < canvases.Length; i++)
+            {
+                Canvas canvas = canvases[i];
+                if (canvas == null || canvas.gameObject.scene != gameObject.scene)
+                {
+                    continue;
+                }
+
+                Transform preferredRoot = canvas.transform.Find("TitleRuntimeRoot (1)");
+                if (preferredRoot != null)
+                {
+                    return preferredRoot;
+                }
+
+                Transform fallbackRoot = canvas.transform.Find("TitleRuntimeRoot");
+                if (fallbackRoot != null)
+                {
+                    return fallbackRoot;
+                }
+            }
+
+            return null;
         }
 
         private Button FindSceneButton(string buttonName)

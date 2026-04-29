@@ -4,6 +4,7 @@ using Core.Boss;
 using Core.GameFlow;
 using Core.Player;
 using Core.UI;
+using System.Reflection;
 using Unity.Netcode;
 using Unity.Netcode.Components;
 using UnityEngine;
@@ -22,6 +23,7 @@ namespace Core.Multiplayer
         private const float FallbackFixedDeltaTime = 1f / 30f;
         private const float OwnerPositionCorrectionDeadzone = 0.03f;
         private const float OwnerYawCorrectionDeadzone = 1.25f;
+        private const string ClientVisualInstanceName = "ClientVisual";
         private static readonly List<MultiplayerPlayerAvatar> _activeAvatars = new List<MultiplayerPlayerAvatar>(2);
         private readonly NetworkVariable<int> _replicatedHudCurrentHealth = new NetworkVariable<int>(
             0,
@@ -62,6 +64,9 @@ namespace Core.Multiplayer
         private CharacterController _characterController;
         private Health _health;
         private NetworkTransform _networkTransform;
+        private NetworkAnimator _networkAnimator;
+        private PlayerVisual _hostVisual;
+        private PlayerVisual _clientVisual;
         private readonly HostPlayerActionValidator _hostPlayerActionValidator = new HostPlayerActionValidator();
         private readonly HostPlayerReactionResolver _hostPlayerReactionResolver = new HostPlayerReactionResolver();
         private readonly ClientInputHistoryEntry[] _clientInputHistory = new ClientInputHistoryEntry[PredictionBufferSize];
@@ -98,6 +103,9 @@ namespace Core.Multiplayer
         private byte _lastBufferedActionButtons;
         private MultiplayerPlayerAvatar _hudPartnerAvatar;
         private CombatHUDController _hudController;
+        private bool _didLogNonPlayerObjectSpawn;
+        private bool _didInitializeVisualVariants;
+        private bool _didWarnMissingClientVisualTemplate;
 
         public bool HasReplicatedHealthState => TryGetReplicatedHealth(out _, out _);
         public bool IsReplicatedDead => TryGetReplicatedHealth(out int currentHealth, out int maxHealth)
@@ -114,10 +122,13 @@ namespace Core.Multiplayer
         private void Awake()
         {
             CacheComponents();
+            EnsureVisualVariantsInitialized();
+            DisableEmbeddedCameras();
         }
 
         private void LateUpdate()
         {
+            EnsureRuntimeRoleConfiguration();
             RefreshLocalMultiplayerHud();
         }
 
@@ -132,6 +143,13 @@ namespace Core.Multiplayer
         public override void OnNetworkSpawn()
         {
             CacheComponents();
+            // 런타임으로 생성된 플레이어 아바타만 활성화하고, 씬 템플릿(NetworkSceneObject)은 비활성화한다.
+            if (NetworkObject == null || NetworkObject.IsSceneObject == true)
+            {
+                HandleNonPlayerObjectSpawn();
+                return;
+            }
+
             _authoritativeStateTargetClientIds[0] = OwnerClientId;
             _authoritativeStateClientRpcParams = new ClientRpcParams
             {
@@ -149,6 +167,44 @@ namespace Core.Multiplayer
             ConfigureRuntimeRole();
             ConfigureHostAuthorityContracts();
             SyncReplicatedHudHealthState();
+        }
+
+        private void HandleNonPlayerObjectSpawn()
+        {
+            if (ShouldPreserveSceneTemplateAvatar())
+            {
+                LogNonPlayerObjectSpawn("preserve_visible_missing_runtime_prefabs");
+                _localInputProvider?.SetRuntimeInputEnabled(false);
+                _bufferedInputProvider?.Clear();
+                _playerController?.SetInputProviderOverride(null);
+                _playerController?.SetSimulationMode(PlayerController.RuntimeSimulationMode.Disabled);
+                _playerController?.SetActionAuthorityMode(PlayerController.ActionAuthorityMode.RemoteDisplayOnly);
+                _playerController?.SetLocalPresentationEnabled(false);
+                _playerController?.SetLookDrivenCameraRootEnabled(false);
+                SetCharacterControllerEnabled(false);
+                SetOwnerTransformSyncEnabled(false);
+                return;
+            }
+
+            bool shouldDespawnSceneObject = IsServer && NetworkObject != null && NetworkObject.IsSpawned;
+            LogNonPlayerObjectSpawn(shouldDespawnSceneObject ? "despawn" : "set_inactive");
+            _localInputProvider?.SetRuntimeInputEnabled(false);
+            _bufferedInputProvider?.Clear();
+            _playerController?.SetInputProviderOverride(null);
+            _playerController?.SetSimulationMode(PlayerController.RuntimeSimulationMode.Disabled);
+            _playerController?.SetActionAuthorityMode(PlayerController.ActionAuthorityMode.RemoteDisplayOnly);
+            _playerController?.SetLocalPresentationEnabled(false);
+            _playerController?.SetLookDrivenCameraRootEnabled(false);
+            SetCharacterControllerEnabled(false);
+            SetOwnerTransformSyncEnabled(false);
+
+            if (shouldDespawnSceneObject)
+            {
+                NetworkObject.Despawn(true);
+                return;
+            }
+
+            gameObject.SetActive(false);
         }
 
         public override void OnNetworkDespawn()
@@ -209,7 +265,7 @@ namespace Core.Multiplayer
         [ClientRpc(Delivery = RpcDelivery.Unreliable)]
         private void PushAuthoritativeLocomotionStateClientRpc(MultiplayerLocomotionState state, ClientRpcParams clientRpcParams = default)
         {
-            if (!IsSpawned || !IsOwner || IsServer || _playerController == null)
+            if (!IsSpawned || IsServer || !IsLocallyOwnedAvatar() || _playerController == null)
             {
                 return;
             }
@@ -307,7 +363,7 @@ namespace Core.Multiplayer
             HostPlayerState hostPlayerState,
             ClientRpcParams clientRpcParams = default)
         {
-            if (!IsSpawned || IsServer || !IsOwner || _playerController == null)
+            if (!IsSpawned || IsServer || !IsLocallyOwnedAvatar() || _playerController == null)
             {
                 return;
             }
@@ -320,7 +376,7 @@ namespace Core.Multiplayer
             HostToClientPlayerReactionSnapshot snapshot,
             ClientRpcParams clientRpcParams = default)
         {
-            if (!IsSpawned || IsServer || !IsOwner || _playerController == null)
+            if (!IsSpawned || IsServer || !IsLocallyOwnedAvatar() || _playerController == null)
             {
                 return;
             }
@@ -334,7 +390,7 @@ namespace Core.Multiplayer
             int comboStep,
             ClientRpcParams clientRpcParams = default)
         {
-            if (!IsSpawned || IsServer || !IsOwner || _playerController == null)
+            if (!IsSpawned || IsServer || !IsLocallyOwnedAvatar() || _playerController == null)
             {
                 return;
             }
@@ -350,6 +406,248 @@ namespace Core.Multiplayer
             _characterController = GetComponent<CharacterController>();
             _health = GetComponent<Health>();
             _networkTransform = GetComponent<NetworkTransform>();
+            _networkAnimator = GetComponent<NetworkAnimator>();
+        }
+
+        private void EnsureVisualVariantsInitialized()
+        {
+            if (_didInitializeVisualVariants)
+            {
+                return;
+            }
+
+            CacheHostVisualReference();
+            EnsureClientVisualVariant();
+            _didInitializeVisualVariants = true;
+        }
+
+        private void CacheHostVisualReference()
+        {
+            if (_hostVisual != null)
+            {
+                return;
+            }
+
+            PlayerVisual[] visuals = GetComponentsInChildren<PlayerVisual>(true);
+            for (int i = 0; i < visuals.Length; i++)
+            {
+                PlayerVisual candidate = visuals[i];
+                if (candidate == null)
+                {
+                    continue;
+                }
+
+                if (candidate.transform == transform)
+                {
+                    continue;
+                }
+
+                if (candidate.name == ClientVisualInstanceName)
+                {
+                    continue;
+                }
+
+                _hostVisual = candidate;
+                return;
+            }
+        }
+
+        private void EnsureClientVisualVariant()
+        {
+            if (_clientVisual != null)
+            {
+                return;
+            }
+
+            GameObject clientVisualTemplatePrefab = ResolveClientVisualTemplatePrefab();
+            if (clientVisualTemplatePrefab == null)
+            {
+                if (!_didWarnMissingClientVisualTemplate)
+                {
+                    _didWarnMissingClientVisualTemplate = true;
+                    Debug.LogWarning($"MultiplayerPlayerAvatar '{name}' could not resolve a client visual template prefab.");
+                }
+
+                return;
+            }
+
+            PlayerVisual templateVisual = clientVisualTemplatePrefab.GetComponentInChildren<PlayerVisual>(true);
+            if (templateVisual == null)
+            {
+                if (!_didWarnMissingClientVisualTemplate)
+                {
+                    _didWarnMissingClientVisualTemplate = true;
+                    Debug.LogWarning($"MultiplayerPlayerAvatar '{name}' could not find a PlayerVisual child under '{clientVisualTemplatePrefab.name}'.");
+                }
+
+                return;
+            }
+
+            GameObject clientVisualInstance = Object.Instantiate(templateVisual.gameObject, transform, false);
+            clientVisualInstance.name = ClientVisualInstanceName;
+            clientVisualInstance.SetActive(false);
+            _clientVisual = clientVisualInstance.GetComponent<PlayerVisual>();
+            BindPresentationComponentReferences(clientVisualInstance.transform);
+            DisableEmbeddedCameras(clientVisualInstance.transform);
+        }
+
+        private GameObject ResolveClientVisualTemplatePrefab()
+        {
+            if (MultiplayerRuntimeRoot.HasInstance && MultiplayerRuntimeRoot.Instance.ClientPlayerAvatarPrefab != null)
+            {
+                return MultiplayerRuntimeRoot.Instance.ClientPlayerAvatarPrefab;
+            }
+
+            MultiplayerRuntimeConfig runtimeConfig = MultiplayerRuntimeConfig.LoadFromResources();
+            return runtimeConfig != null ? runtimeConfig.ClientPlayerAvatarPrefab : null;
+        }
+
+        private void BindPresentationComponentReferences(Transform visualRoot)
+        {
+            if (visualRoot == null || _playerController == null)
+            {
+                return;
+            }
+
+            MonoBehaviour[] presentationBehaviours = visualRoot.GetComponentsInChildren<MonoBehaviour>(true);
+            for (int i = 0; i < presentationBehaviours.Length; i++)
+            {
+                MonoBehaviour behaviour = presentationBehaviours[i];
+                if (behaviour == null)
+                {
+                    continue;
+                }
+
+                FieldInfo[] fields = behaviour.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                for (int fieldIndex = 0; fieldIndex < fields.Length; fieldIndex++)
+                {
+                    FieldInfo field = fields[fieldIndex];
+                    if (!typeof(PlayerController).IsAssignableFrom(field.FieldType))
+                    {
+                        continue;
+                    }
+
+                    field.SetValue(behaviour, _playerController);
+                }
+            }
+        }
+
+        private void DisableEmbeddedCameras()
+        {
+            DisableEmbeddedCameras(transform);
+        }
+
+        private static void DisableEmbeddedCameras(Transform root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            Camera[] childCameras = root.GetComponentsInChildren<Camera>(true);
+            for (int i = 0; i < childCameras.Length; i++)
+            {
+                Camera childCamera = childCameras[i];
+                if (childCamera == null)
+                {
+                    continue;
+                }
+
+                childCamera.gameObject.SetActive(false);
+            }
+        }
+
+        private void ApplyVisualRole(bool useHostVisual)
+        {
+            EnsureVisualVariantsInitialized();
+
+            if (_hostVisual != null)
+            {
+                _hostVisual.gameObject.SetActive(useHostVisual || _clientVisual == null);
+            }
+
+            if (_clientVisual != null)
+            {
+                _clientVisual.gameObject.SetActive(!useHostVisual);
+            }
+
+            _playerController?.RefreshVisualBindings();
+            RebindAnimatorDrivers();
+        }
+
+        private void ApplyOwnershipVisualRole()
+        {
+            ApplyVisualRole(IsHostOwnedAvatar());
+        }
+
+        private void RebindAnimatorDrivers()
+        {
+            if (_playerController == null || _networkAnimator == null)
+            {
+                return;
+            }
+
+            Animator activeAnimator = _playerController.Animator;
+            if (activeAnimator == null)
+            {
+                return;
+            }
+
+            _networkAnimator.Animator = activeAnimator;
+        }
+
+        private void LogNonPlayerObjectSpawn(string action)
+        {
+            if (_didLogNonPlayerObjectSpawn)
+            {
+                return;
+            }
+
+            _didLogNonPlayerObjectSpawn = true;
+            Debug.Log(
+                $"[MPDiag][SceneTemplate] name={gameObject.name} " +
+                $"path={BuildHierarchyPath(transform)} " +
+                $"isServer={IsServer} isClient={IsClient} " +
+                $"isSpawned={(NetworkObject != null && NetworkObject.IsSpawned)} " +
+                $"isSceneObject={(NetworkObject != null ? NetworkObject.IsSceneObject.ToString() : "n/a")} " +
+                $"ownerClientId={(NetworkObject != null ? NetworkObject.OwnerClientId.ToString() : "n/a")} " +
+                $"action={action}");
+        }
+
+        private static bool ShouldPreserveSceneTemplateAvatar()
+        {
+            MultiplayerRuntimeConfig runtimeConfig = MultiplayerRuntimeConfig.LoadFromResources();
+            if (runtimeConfig != null && runtimeConfig.HasResolvedPlayerAvatarPrefabs)
+            {
+                return false;
+            }
+
+            if (runtimeConfig == null)
+            {
+                Debug.LogError($"Multiplayer runtime config asset is missing. Create or restore {MultiplayerRuntimeConfig.AssetPath}.");
+                return true;
+            }
+
+            Debug.LogError(runtimeConfig.BuildValidationMessage());
+            return true;
+        }
+
+        private static string BuildHierarchyPath(Transform target)
+        {
+            if (target == null)
+            {
+                return string.Empty;
+            }
+
+            string path = target.name;
+            Transform current = target.parent;
+            while (current != null)
+            {
+                path = $"{current.name}/{path}";
+                current = current.parent;
+            }
+
+            return path;
         }
 
         private void ConfigureRuntimeRole()
@@ -359,6 +657,9 @@ namespace Core.Multiplayer
                 return;
             }
 
+            bool isLocallyOwnedAvatar = IsLocallyOwnedAvatar();
+            bool isHostOwnedAvatar = IsHostOwnedAvatar();
+
             ResetRuntimeState();
             _bufferedInputProvider?.Clear();
             _localInputProvider?.SetRuntimeInputEnabled(false);
@@ -367,7 +668,7 @@ namespace Core.Multiplayer
             _playerController.SetLocalPresentationEnabled(false);
             _playerController.SetLookDrivenCameraRootEnabled(false);
 
-            if (IsServer && IsOwner)
+            if (IsServer && isHostOwnedAvatar)
             {
                 ConfigureHostOwnedPlayer();
                 return;
@@ -379,7 +680,7 @@ namespace Core.Multiplayer
                 return;
             }
 
-            if (IsOwner)
+            if (isLocallyOwnedAvatar)
             {
                 ConfigureClientOwnedPlayer();
                 return;
@@ -442,6 +743,7 @@ namespace Core.Multiplayer
             _playerController.SetActionAuthorityMode(PlayerController.ActionAuthorityMode.HostAuthoritative);
             _playerController.SetLocalPresentationEnabled(true);
             _playerController.SetLookDrivenCameraRootEnabled(false);
+            ApplyOwnershipVisualRole();
             SetCharacterControllerEnabled(true);
             SetOwnerTransformSyncEnabled(true);
             BindLocalPresentation();
@@ -454,6 +756,7 @@ namespace Core.Multiplayer
             _playerController.SetActionAuthorityMode(PlayerController.ActionAuthorityMode.HostAuthoritative);
             _playerController.SetLocalPresentationEnabled(false);
             _playerController.SetLookDrivenCameraRootEnabled(false);
+            ApplyOwnershipVisualRole();
             SetCharacterControllerEnabled(true);
             SetOwnerTransformSyncEnabled(true);
             UpdateServerAuthorityMode(forceApply: true);
@@ -469,6 +772,7 @@ namespace Core.Multiplayer
             _playerController.SetActionAuthorityMode(PlayerController.ActionAuthorityMode.ClientOwnerProxy);
             _playerController.SetLocalPresentationEnabled(true);
             _playerController.SetLookDrivenCameraRootEnabled(false);
+            ApplyOwnershipVisualRole();
             SetCharacterControllerEnabled(true);
             SetOwnerTransformSyncEnabled(false);
             _hasReceivedInitialAuthoritativeBaseline = false;
@@ -486,6 +790,7 @@ namespace Core.Multiplayer
             _playerController.SetActionAuthorityMode(PlayerController.ActionAuthorityMode.RemoteDisplayOnly);
             _playerController.SetLocalPresentationEnabled(false);
             _playerController.SetLookDrivenCameraRootEnabled(false);
+            ApplyOwnershipVisualRole();
             SetCharacterControllerEnabled(false);
             SetOwnerTransformSyncEnabled(true);
         }
@@ -537,25 +842,117 @@ namespace Core.Multiplayer
                 return;
             }
 
+            EnsureRuntimeRoleConfiguration();
+
+            bool isHostOwnedAvatar = IsHostOwnedAvatar();
+            bool isLocallyOwnedAvatar = IsLocallyOwnedAvatar();
+
             if (IsServer)
             {
                 HandleHostAuthorityStateTick();
             }
 
-            if (IsServer && IsOwner)
+            if (IsServer && isHostOwnedAvatar)
             {
                 HandleHostOwnedActionIntentTick();
             }
 
-            if (IsServer && !IsOwner)
+            if (IsServer && !isHostOwnedAvatar)
             {
                 HandleServerAuthorityTick();
             }
 
-            if (IsOwner && !IsServer)
+            if (!IsServer && isLocallyOwnedAvatar)
             {
                 HandleClientPredictionTick();
             }
+        }
+
+        private bool IsLocallyOwnedAvatar()
+        {
+            return NetworkManager != null
+                   && OwnerClientId == NetworkManager.LocalClientId;
+        }
+
+        private bool IsHostOwnedAvatar()
+        {
+            return NetworkManager != null
+                   && OwnerClientId == NetworkManager.ServerClientId;
+        }
+
+        private void EnsureRuntimeRoleConfiguration()
+        {
+            if (!IsSpawned || _playerController == null)
+            {
+                return;
+            }
+
+            if (NetworkObject == null)
+            {
+                return;
+            }
+
+            if (NetworkObject.IsSceneObject == true)
+            {
+                return;
+            }
+
+            if (RequiresRuntimeRoleRefresh())
+            {
+                ConfigureRuntimeRole();
+                return;
+            }
+
+            if (ShouldOwnLocalPresentation()
+                && MultiplayerLocalPlayerRegistry.LocalPlayer != _playerController)
+            {
+                BindLocalPresentation();
+            }
+        }
+
+        private bool RequiresRuntimeRoleRefresh()
+        {
+            if (_playerController == null)
+            {
+                return false;
+            }
+
+            bool isHostOwnedAvatar = IsHostOwnedAvatar();
+            bool isLocallyOwnedAvatar = IsLocallyOwnedAvatar();
+
+            if (IsServer && isHostOwnedAvatar)
+            {
+                return _playerController.SimulationMode != PlayerController.RuntimeSimulationMode.Full
+                       || _playerController.CurrentActionAuthorityMode != PlayerController.ActionAuthorityMode.HostAuthoritative
+                       || !_playerController.IsLocalPresentationEnabled
+                       || !ReferenceEquals(_playerController.InputProvider, _localInputProvider);
+            }
+
+            if (IsServer)
+            {
+                return _playerController.CurrentActionAuthorityMode != PlayerController.ActionAuthorityMode.HostAuthoritative
+                       || _playerController.IsLocalPresentationEnabled
+                       || !ReferenceEquals(_playerController.InputProvider, _bufferedInputProvider);
+            }
+
+            if (isLocallyOwnedAvatar)
+            {
+                return _playerController.SimulationMode != PlayerController.RuntimeSimulationMode.PredictedLocomotion
+                       || _playerController.CurrentActionAuthorityMode != PlayerController.ActionAuthorityMode.ClientOwnerProxy
+                       || !_playerController.IsLocalPresentationEnabled
+                       || !ReferenceEquals(_playerController.InputProvider, _localInputProvider);
+            }
+
+            return _playerController.SimulationMode != PlayerController.RuntimeSimulationMode.Disabled
+                   || _playerController.CurrentActionAuthorityMode != PlayerController.ActionAuthorityMode.RemoteDisplayOnly
+                   || _playerController.IsLocalPresentationEnabled
+                   || _playerController.InputProvider != null;
+        }
+
+        private bool ShouldOwnLocalPresentation()
+        {
+            return (IsServer && IsHostOwnedAvatar())
+                   || (!IsServer && IsLocallyOwnedAvatar());
         }
 
         private void HandleHostAuthorityStateTick()
@@ -1048,7 +1445,7 @@ namespace Core.Multiplayer
 
             _hostPlayerReactionResolver.SyncRuntimeState(_playerController, _health, currentServerTick, ref _hostPlayerState);
 
-            if (!IsOwner
+            if (!IsHostOwnedAvatar()
                 && (actionIntent.RequestedFlag == InputFlag.Attack
                     || isExecutedDashCancel))
             {
@@ -1067,7 +1464,7 @@ namespace Core.Multiplayer
             _hostPlayerState.RecordAcceptedAction(_pendingApprovedComboActionIntent, _health, currentServerTick, comboIndex);
             _hostPlayerReactionResolver.SyncRuntimeState(_playerController, _health, currentServerTick, ref _hostPlayerState);
 
-            if (!IsOwner)
+            if (!IsHostOwnedAvatar())
             {
                 PushApprovedActionStartClientRpc(_pendingApprovedComboActionIntent, _hostPlayerState, _authoritativeStateClientRpcParams);
             }
@@ -1093,7 +1490,7 @@ namespace Core.Multiplayer
                 _ = rawHitLogEntry;
             }
 
-            if (!IsOwner)
+            if (!IsHostOwnedAvatar())
             {
                 PushAttackHitFeedbackClientRpc(totalDamage, comboStep, _authoritativeStateClientRpcParams);
             }
@@ -1125,7 +1522,7 @@ namespace Core.Multiplayer
                     ClearPendingApprovedComboActionIntent();
                 }
 
-                if (!IsOwner)
+                if (!IsHostOwnedAvatar())
                 {
                     PushReactionSnapshotClientRpc(snapshot, _authoritativeStateClientRpcParams);
                 }
@@ -1146,7 +1543,7 @@ namespace Core.Multiplayer
         private void RefreshLocalMultiplayerHud()
         {
             if (!IsSpawned
-                || !IsOwner
+                || !ShouldOwnLocalPresentation()
                 || _playerController == null
                 || !MultiplayerSessionService.HasInstance
                 || !MultiplayerSessionService.Instance.HasActiveSession)
@@ -1296,7 +1693,7 @@ namespace Core.Multiplayer
 
         public void SubmitRetryReadyIfOwner()
         {
-            if (!IsSpawned || !IsOwner || _replicatedRetryReady.Value)
+            if (!IsSpawned || !ShouldOwnLocalPresentation() || _replicatedRetryReady.Value)
             {
                 return;
             }
@@ -1336,7 +1733,10 @@ namespace Core.Multiplayer
             for (int i = 0; i < _activeAvatars.Count; i++)
             {
                 MultiplayerPlayerAvatar candidate = _activeAvatars[i];
-                if (candidate == null || !candidate.IsSpawned || !candidate.IsOwner)
+                if (candidate == null
+                    || !candidate.IsSpawned
+                    || candidate.NetworkManager == null
+                    || candidate.OwnerClientId != candidate.NetworkManager.LocalClientId)
                 {
                     continue;
                 }

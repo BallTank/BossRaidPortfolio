@@ -315,6 +315,8 @@ namespace Core.Multiplayer
                     allocation.Key,
                     allocation.ConnectionData,
                     string.Equals(relayEndpoint.ConnectionType, RelayConnectionType, StringComparison.OrdinalIgnoreCase) || relayEndpoint.Secure);
+                _runtimeRoot.LogNetworkManagerIdentity("host", "before_start_host");
+                _runtimeRoot.LogNetworkConfigFingerprint("host", "before_start_host");
                 if (!_runtimeRoot.NetworkManager.StartHost())
                 {
                     throw new InvalidOperationException("NGO Host failed to start.");
@@ -405,6 +407,8 @@ namespace Core.Multiplayer
                     string.Equals(relayEndpoint.ConnectionType, RelayConnectionType, StringComparison.OrdinalIgnoreCase) || relayEndpoint.Secure);
 
                 RegisterNetworkCallbacks();
+                _runtimeRoot.LogNetworkManagerIdentity("client", "before_start_client");
+                _runtimeRoot.LogNetworkConfigFingerprint("client", "before_start_client");
 
                 if (!_runtimeRoot.NetworkManager.StartClient())
                 {

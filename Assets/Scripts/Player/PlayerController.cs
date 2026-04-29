@@ -633,6 +633,19 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         _networkDashCooldownRemaining = Mathf.Max(0f, dashCooldownRemaining);
     }
 
+    public void RefreshVisualBindings()
+    {
+        ResolvePlayerVisualBinding(logWarnings: true);
+        ResolveBlinkEffect(forceRefresh: true);
+        RefreshVisualBindingReport(logWarnings: false);
+        EnsureMultiplayerPresentationDriver().RefreshBindings();
+
+        if (_isLocalPresentationEnabled)
+        {
+            InitializeCombatHUD();
+        }
+    }
+
     public void RefreshLocalPresentationBindings()
     {
         if (!_isLocalPresentationEnabled)
@@ -640,11 +653,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
             return;
         }
 
-        ResolvePlayerVisualBinding(logWarnings: true);
-        ResolveBlinkEffect(forceRefresh: true);
-        RefreshVisualBindingReport(logWarnings: false);
-        EnsureMultiplayerPresentationDriver().RefreshBindings();
-        InitializeCombatHUD();
+        RefreshVisualBindings();
     }
 
     [ContextMenu("Validate Visual Bindings")]

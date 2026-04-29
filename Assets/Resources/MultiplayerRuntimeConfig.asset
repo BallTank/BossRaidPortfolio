@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7a1f8c9b3e6d4f2a9b0c1d2e3f4a5b6c, type: 3}
+  m_Name: MultiplayerRuntimeConfig
+  m_EditorClassIdentifier: 
+  _playerAvatarPrefab: {fileID: 6200000000000000000, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
+  _hostPlayerAvatarPrefab: {fileID: 6200000000000000000, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
+  _clientPlayerAvatarPrefab: {fileID: 5716826396601669852, guid: d3344bcee24ee2b40a2324261b6c03a9, type: 3}

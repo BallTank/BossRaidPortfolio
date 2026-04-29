@@ -12,6 +12,8 @@ namespace Core.Multiplayer
     public static class MultiplayerGameplaySceneCoordinator
     {
         private const float PlayerSpawnSpacing = 3f;
+        private const string HostAvatarTemplateName = "SoloPlayerAvatar";
+        private const string ClientAvatarTemplateName = "MultiPlayerAvatar";
         private static bool _hasLegacySpawnSnapshot;
         private static Vector3 _legacySpawnPosition;
         private static Quaternion _legacySpawnRotation;
@@ -51,19 +53,33 @@ namespace Core.Multiplayer
                 return;
             }
 
-            GameObject playerAvatarPrefab = MultiplayerRuntimeRoot.Instance.PlayerAvatarPrefab;
-            if (playerAvatarPrefab == null)
+            List<ulong> connectedClientIds = new List<ulong>(networkManager.ConnectedClientsIds);
+            connectedClientIds.Sort();
+            Debug.Log(
+                $"[MPDiag][Spawn] scene='{SceneManager.GetActiveScene().path}' " +
+                $"hasPlayerAvatarPrefabs={MultiplayerRuntimeRoot.Instance.HasPlayerAvatarPrefabs} " +
+                $"connectedClients=[{FormatClientIds(connectedClientIds)}]");
+
+            if (!MultiplayerRuntimeRoot.Instance.HasPlayerAvatarPrefabs)
             {
                 Debug.LogWarning("MultiplayerGameplaySceneCoordinator: Player avatar prefab is missing.");
                 return;
             }
 
-            List<ulong> connectedClientIds = new List<ulong>(networkManager.ConnectedClientsIds);
-            connectedClientIds.Sort();
             if (connectedClientIds.Count < 2)
             {
                 Debug.LogWarning("MultiplayerGameplaySceneCoordinator: Expected two connected clients before player spawn.");
                 return;
+            }
+
+            for (int i = 0; i < connectedClientIds.Count; i++)
+            {
+                ulong clientId = connectedClientIds[i];
+                if (MultiplayerRuntimeRoot.Instance.GetPlayerAvatarPrefabForClient(clientId) == null)
+                {
+                    Debug.LogWarning($"MultiplayerGameplaySceneCoordinator: Player avatar prefab is missing for clientId {clientId}.");
+                    return;
+                }
             }
 
             EnsureCurrentGameplayScenePrepared();
@@ -76,7 +92,18 @@ namespace Core.Multiplayer
             for (int i = 0; i < connectedClientIds.Count; i++)
             {
                 ulong clientId = connectedClientIds[i];
-                if (networkManager.SpawnManager.GetPlayerNetworkObject(clientId) != null)
+                GameObject playerAvatarPrefab = MultiplayerRuntimeRoot.Instance.GetPlayerAvatarPrefabForClient(clientId);
+                NetworkObject existingPlayerObject = networkManager.SpawnManager.GetPlayerNetworkObject(clientId);
+                bool isHostPlayer = clientId == NetworkManager.ServerClientId;
+                bool hasTemplatePose = TryResolveSceneAvatarTemplatePose(activeScene, isHostPlayer, out Vector3 templatePosition, out Quaternion templateRotation);
+                Debug.Log(
+                    $"[MPDiag][Spawn][Client] clientId={clientId} " +
+                    $"prefab={DescribeGameObject(playerAvatarPrefab)} " +
+                    $"existingPlayer={DescribeNetworkObject(existingPlayerObject)} " +
+                    $"isHostPlayer={isHostPlayer} " +
+                    $"hasTemplatePose={hasTemplatePose}");
+
+                if (existingPlayerObject != null)
                 {
                     continue;
                 }
@@ -86,9 +113,17 @@ namespace Core.Multiplayer
                 avatarInstance.name = clientId == NetworkManager.ServerClientId
                     ? "hostPlayer"
                     : "clientPlayer";
-                avatarInstance.transform.SetPositionAndRotation(
-                    spawnCenter + lateralAxis * lateralOffset,
-                    spawnRotation);
+
+                if (hasTemplatePose)
+                {
+                    avatarInstance.transform.SetPositionAndRotation(templatePosition, templateRotation);
+                }
+                else
+                {
+                    avatarInstance.transform.SetPositionAndRotation(
+                        spawnCenter + lateralAxis * lateralOffset,
+                        spawnRotation);
+                }
 
                 NetworkObject networkObject = avatarInstance.GetComponent<NetworkObject>();
                 if (networkObject == null)
@@ -279,7 +314,87 @@ namespace Core.Multiplayer
         private static bool CanPrepareSpawnRuntime()
         {
             return MultiplayerRuntimeRoot.HasInstance
-                   && MultiplayerRuntimeRoot.Instance.PlayerAvatarPrefab != null;
+                   && MultiplayerRuntimeRoot.Instance.HasPlayerAvatarPrefabs;
+        }
+
+        private static bool TryResolveSceneAvatarTemplatePose(Scene scene, bool isHostPlayer, out Vector3 position, out Quaternion rotation)
+        {
+            string expectedTemplateName = isHostPlayer ? HostAvatarTemplateName : ClientAvatarTemplateName;
+            if (TryResolveSceneAvatarTemplateMarkerPose(scene, expectedTemplateName, out position, out rotation))
+            {
+                return true;
+            }
+
+            FindObjectsInactive inactiveMode = FindObjectsInactive.Include;
+            PlayerController[] playerControllers = UnityEngine.Object.FindObjectsByType<PlayerController>(inactiveMode, FindObjectsSortMode.None);
+            for (int i = 0; i < playerControllers.Length; i++)
+            {
+                PlayerController playerController = playerControllers[i];
+                if (playerController == null)
+                {
+                    continue;
+                }
+
+                if (playerController.gameObject.scene.handle != scene.handle)
+                {
+                    continue;
+                }
+
+                if (playerController.GetComponent<MultiplayerPlayerAvatar>() == null)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(playerController.gameObject.name, expectedTemplateName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                position = playerController.transform.position;
+                rotation = playerController.transform.rotation;
+                return true;
+            }
+
+            position = default;
+            rotation = default;
+            return false;
+        }
+
+        private static bool TryResolveSceneAvatarTemplateMarkerPose(Scene scene, string expectedTemplateName, out Vector3 position, out Quaternion rotation)
+        {
+            FindObjectsInactive inactiveMode = FindObjectsInactive.Include;
+            Transform[] transforms = UnityEngine.Object.FindObjectsByType<Transform>(inactiveMode, FindObjectsSortMode.None);
+            for (int i = 0; i < transforms.Length; i++)
+            {
+                Transform candidate = transforms[i];
+                if (candidate == null)
+                {
+                    continue;
+                }
+
+                if (candidate.gameObject.scene.handle != scene.handle)
+                {
+                    continue;
+                }
+
+                if (candidate.parent != null)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(candidate.name, expectedTemplateName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                position = candidate.position;
+                rotation = candidate.rotation;
+                return true;
+            }
+
+            position = default;
+            rotation = default;
+            return false;
         }
 
         private static void CacheLegacySpawnSnapshot(PlayerController legacyScenePlayer)
@@ -375,6 +490,31 @@ namespace Core.Multiplayer
             }
 
             mainCamera.transform.SetParent(null, true);
+        }
+
+        private static string FormatClientIds(List<ulong> clientIds)
+        {
+            if (clientIds == null || clientIds.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            return string.Join(", ", clientIds);
+        }
+
+        private static string DescribeGameObject(GameObject gameObject)
+        {
+            return gameObject == null ? "null" : gameObject.name;
+        }
+
+        private static string DescribeNetworkObject(NetworkObject networkObject)
+        {
+            if (networkObject == null)
+            {
+                return "null";
+            }
+
+            return $"{networkObject.name}(clientId={networkObject.OwnerClientId}, spawned={networkObject.IsSpawned})";
         }
     }
 }
