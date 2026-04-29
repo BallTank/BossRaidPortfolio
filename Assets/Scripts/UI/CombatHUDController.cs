@@ -590,7 +590,7 @@ namespace Core.UI
                 Transform partnerPortraitTransform = _partnerHudRoot.transform.Find(PartnerPortraitImageName);
                 if (partnerPortraitTransform == null)
                 {
-                    partnerPortraitTransform = FindChildTransformByName(_partnerHudRoot.transform, PartnerPortraitImageName);
+                    partnerPortraitTransform = FindChildTransformByNameOrPrefix(_partnerHudRoot.transform, PartnerPortraitImageName);
                 }
 
                 if (partnerPortraitTransform != null)
@@ -604,7 +604,7 @@ namespace Core.UI
                 Transform partnerLegacyPortraitTransform = _partnerHudRoot.transform.Find(PartnerLegacyPortraitImageName);
                 if (partnerLegacyPortraitTransform == null)
                 {
-                    partnerLegacyPortraitTransform = FindChildTransformByName(_partnerHudRoot.transform, PartnerLegacyPortraitImageName);
+                    partnerLegacyPortraitTransform = FindChildTransformByNameOrPrefix(_partnerHudRoot.transform, PartnerLegacyPortraitImageName);
                 }
 
                 if (partnerLegacyPortraitTransform != null)
@@ -635,19 +635,18 @@ namespace Core.UI
 
         private void CacheMultiplayerPortraitSprites()
         {
-            if (_hasCachedMultiplayerPortraitSprites)
-            {
-                return;
-            }
-
-            if (_playerTorsoImage != null)
+            if (_hostPortraitSprite == null && _playerTorsoImage != null)
             {
                 _hostPortraitSprite = _playerTorsoImage.sprite;
             }
 
-            if (_partnerPortraitImage != null)
+            if (_clientPortraitSprite == null)
             {
-                _clientPortraitSprite = _partnerPortraitImage.sprite;
+                Image partnerPortraitSource = ResolvePartnerPortraitSlot();
+                if (partnerPortraitSource != null)
+                {
+                    _clientPortraitSprite = partnerPortraitSource.sprite;
+                }
             }
 
             _hasCachedMultiplayerPortraitSprites = _hostPortraitSprite != null || _clientPortraitSprite != null;
@@ -661,16 +660,59 @@ namespace Core.UI
                 _playerTorsoImage.enabled = mainPortrait != null;
             }
 
-            if (_partnerPortraitImage != null)
+            Image activePartnerPortraitSlot = ResolvePartnerPortraitSlot();
+            if (activePartnerPortraitSlot != null)
             {
-                _partnerPortraitImage.sprite = partnerPortrait;
-                _partnerPortraitImage.enabled = partnerPortrait != null;
+                activePartnerPortraitSlot.gameObject.SetActive(true);
+                activePartnerPortraitSlot.sprite = partnerPortrait;
+                activePartnerPortraitSlot.enabled = partnerPortrait != null;
             }
 
-            if (_partnerLegacyPortraitImage != null)
+            if (_partnerPortraitImage != null
+                && _partnerLegacyPortraitImage != null
+                && _partnerLegacyPortraitImage != _partnerPortraitImage)
             {
                 _partnerLegacyPortraitImage.gameObject.SetActive(false);
             }
+        }
+
+        private Image ResolvePartnerPortraitSlot()
+        {
+            if (_partnerPortraitImage != null)
+            {
+                return _partnerPortraitImage;
+            }
+
+            return _partnerLegacyPortraitImage;
+        }
+
+        private static Transform FindChildTransformByNameOrPrefix(Transform root, string childName)
+        {
+            Transform exactMatch = FindChildTransformByName(root, childName);
+            if (exactMatch != null)
+            {
+                return exactMatch;
+            }
+
+            if (root == null || string.IsNullOrWhiteSpace(childName))
+            {
+                return null;
+            }
+
+            Transform[] childTransforms = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < childTransforms.Length; i++)
+            {
+                Transform childTransform = childTransforms[i];
+                if (childTransform == null
+                    || !childTransform.name.StartsWith(childName, System.StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                return childTransform;
+            }
+
+            return null;
         }
 
         private static Transform FindChildTransformByName(Transform root, string childName)
