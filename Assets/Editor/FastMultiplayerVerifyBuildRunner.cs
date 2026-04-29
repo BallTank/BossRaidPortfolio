@@ -8,22 +8,60 @@ public static class FastMultiplayerVerifyBuildRunner
 {
     private const string TitleScenePath = "Assets/Scenes/mutiplayer/TitleScene.unity";
     private const string VerifyScenePath = "Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity";
+    private const string FullGamePlayScenePath = "Assets/Scenes/mutiplayer/GamePlayScene.unity";
 
     private const string BeautifyResourcesPath = "Assets/Map/Beautify/URP/Runtime/Resources";
     private const string BeautifyResourcesDisabledPath = "Assets/Map/Beautify/URP/Runtime/Resources~";
 
-    private const string OutputDirectory = "Builds/FastMultiplayerVerify";
-    private const string ExecutableName = "BossRaidPortfolio_MPVerify.exe";
+    private const string VerifyOutputDirectory = "Builds/FastMultiplayerVerify";
+    private const string VerifyExecutableName = "BossRaidPortfolio_MPVerify.exe";
+    private const string GameplayOutputDirectory = "Builds/FastMultiplayerGameplay";
+    private const string GameplayExecutableName = "BossRaidPortfolio_MPGameplay.exe";
 
     [MenuItem("Tools/Build/Fast Multiplayer Verify Build")]
-    public static void BuildWindows64()
+    public static void BuildVerifyWindows64()
     {
-        BuildWindows64Internal(revealOutputDirectory: true);
+        BuildWindows64Internal(
+            targetScenePath: VerifyScenePath,
+            outputDirectoryRelativePath: VerifyOutputDirectory,
+            executableName: VerifyExecutableName,
+            buildLabel: "verify",
+            excludeBeautifyResources: true,
+            revealOutputDirectory: true);
     }
 
-    public static void BuildWindows64BatchMode()
+    public static void BuildVerifyWindows64BatchMode()
     {
-        BuildWindows64Internal(revealOutputDirectory: false);
+        BuildWindows64Internal(
+            targetScenePath: VerifyScenePath,
+            outputDirectoryRelativePath: VerifyOutputDirectory,
+            executableName: VerifyExecutableName,
+            buildLabel: "verify",
+            excludeBeautifyResources: true,
+            revealOutputDirectory: false);
+    }
+
+    [MenuItem("Tools/Build/Fast Multiplayer Gameplay Build")]
+    public static void BuildGameplayWindows64()
+    {
+        BuildWindows64Internal(
+            targetScenePath: FullGamePlayScenePath,
+            outputDirectoryRelativePath: GameplayOutputDirectory,
+            executableName: GameplayExecutableName,
+            buildLabel: "gameplay",
+            excludeBeautifyResources: false,
+            revealOutputDirectory: true);
+    }
+
+    public static void BuildGameplayWindows64BatchMode()
+    {
+        BuildWindows64Internal(
+            targetScenePath: FullGamePlayScenePath,
+            outputDirectoryRelativePath: GameplayOutputDirectory,
+            executableName: GameplayExecutableName,
+            buildLabel: "gameplay",
+            excludeBeautifyResources: false,
+            revealOutputDirectory: false);
     }
 
     [MenuItem("Tools/Build/Restore Fast Build Assets")]
@@ -38,23 +76,32 @@ public static class FastMultiplayerVerifyBuildRunner
         RestoreBeautifyResourcesIfNeeded(logIfNoop: false);
     }
 
-    private static void BuildWindows64Internal(bool revealOutputDirectory)
+    private static void BuildWindows64Internal(
+        string targetScenePath,
+        string outputDirectoryRelativePath,
+        string executableName,
+        string buildLabel,
+        bool excludeBeautifyResources,
+        bool revealOutputDirectory)
     {
-        ValidateBuildInputs();
+        ValidateBuildInputs(targetScenePath);
 
         bool restoreAfterBuild = false;
 
         try
         {
-            EnsureBeautifyResourcesExcludedForBuild(ref restoreAfterBuild);
+            if (excludeBeautifyResources)
+            {
+                EnsureBeautifyResourcesExcludedForBuild(ref restoreAfterBuild);
+            }
 
-            string outputDirectory = Path.GetFullPath(OutputDirectory);
+            string outputDirectory = Path.GetFullPath(outputDirectoryRelativePath);
             Directory.CreateDirectory(outputDirectory);
 
-            string executablePath = Path.Combine(outputDirectory, ExecutableName);
+            string executablePath = Path.Combine(outputDirectory, executableName);
             BuildPlayerOptions options = new BuildPlayerOptions
             {
-                scenes = new[] { TitleScenePath, VerifyScenePath },
+                scenes = new[] { TitleScenePath, targetScenePath },
                 locationPathName = executablePath,
                 target = BuildTarget.StandaloneWindows64,
                 options = BuildOptions.None
@@ -65,10 +112,10 @@ public static class FastMultiplayerVerifyBuildRunner
 
             if (summary.result != BuildResult.Succeeded)
             {
-                throw new Exception($"Fast multiplayer verify build failed: {summary.result}");
+                throw new Exception($"Fast multiplayer {buildLabel} build failed: {summary.result}");
             }
 
-            Debug.Log($"Fast multiplayer verify build completed: {executablePath}");
+            Debug.Log($"Fast multiplayer {buildLabel} build completed: {executablePath}");
 
             if (revealOutputDirectory)
             {
@@ -84,16 +131,16 @@ public static class FastMultiplayerVerifyBuildRunner
         }
     }
 
-    private static void ValidateBuildInputs()
+    private static void ValidateBuildInputs(string targetScenePath)
     {
         if (!File.Exists(TitleScenePath))
         {
             throw new FileNotFoundException($"Missing build scene: {TitleScenePath}");
         }
 
-        if (!File.Exists(VerifyScenePath))
+        if (!File.Exists(targetScenePath))
         {
-            throw new FileNotFoundException($"Missing build scene: {VerifyScenePath}");
+            throw new FileNotFoundException($"Missing build scene: {targetScenePath}");
         }
     }
 
