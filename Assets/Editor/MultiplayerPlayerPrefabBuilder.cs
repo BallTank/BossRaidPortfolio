@@ -11,21 +11,21 @@ namespace Core.Multiplayer.Editor
     public static class MultiplayerPlayerPrefabBuilder
     {
         private const string SourcePlayerName = "Player";
-        private const string ResourcesFolderPath = "Assets/Resources";
-        private const string MultiplayerResourcesFolderPath = ResourcesFolderPath + "/Multiplayer";
-        private const string OutputPrefabPath = MultiplayerResourcesFolderPath + "/MultiplayerPlayerAvatar.prefab";
+        private const string PrefabsFolderPath = "Assets/Prefabs";
+        private const string PlayerPrefabsFolderPath = PrefabsFolderPath + "/Player";
+        private const string OutputPrefabPath = PlayerPrefabsFolderPath + "/MultiplayerPlayerAvatar.prefab";
 
         public static void Build()
         {
-            Scene scene = EditorSceneManager.OpenScene(MultiplayerScenePaths.GamePlayScenePath, OpenSceneMode.Single);
+            Scene scene = EditorSceneManager.OpenScene(MultiplayerScenePaths.VerifyGamePlayScenePath, OpenSceneMode.Single);
             GameObject sourcePlayer = FindSourcePlayer(scene);
             if (sourcePlayer == null)
             {
-                throw new System.InvalidOperationException($"Could not find source player '{SourcePlayerName}' in {MultiplayerScenePaths.GamePlayScenePath}.");
+                throw new System.InvalidOperationException($"Could not find source player '{SourcePlayerName}' in {MultiplayerScenePaths.VerifyGamePlayScenePath}.");
             }
 
-            EnsureFolder(ResourcesFolderPath, "Assets", "Resources");
-            EnsureFolder(MultiplayerResourcesFolderPath, ResourcesFolderPath, "Multiplayer");
+            EnsureFolder(PrefabsFolderPath, "Assets", "Prefabs");
+            EnsureFolder(PlayerPrefabsFolderPath, PrefabsFolderPath, "Player");
 
             GameObject workingCopy = Object.Instantiate(sourcePlayer);
             workingCopy.name = "MultiplayerPlayerAvatar";

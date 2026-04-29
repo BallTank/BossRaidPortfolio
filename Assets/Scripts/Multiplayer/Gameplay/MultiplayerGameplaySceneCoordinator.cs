@@ -305,10 +305,21 @@ namespace Core.Multiplayer
                     continue;
                 }
 
+                if (IsSceneAvatarTemplateName(playerController.gameObject.name))
+                {
+                    continue;
+                }
+
                 return playerController;
             }
 
             return null;
+        }
+
+        private static bool IsSceneAvatarTemplateName(string gameObjectName)
+        {
+            return string.Equals(gameObjectName, HostAvatarTemplateName, StringComparison.Ordinal)
+                   || string.Equals(gameObjectName, ClientAvatarTemplateName, StringComparison.Ordinal);
         }
 
         private static bool CanPrepareSpawnRuntime()

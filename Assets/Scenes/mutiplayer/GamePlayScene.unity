@@ -1442,7 +1442,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 788cb74804838444589106354a63a058, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  playerTransform: {fileID: 2070090792}
+  playerTransform: {fileID: 364066116}
   animator: {fileID: 1487502255}
   damageBlinkEffect: {fileID: 1487502256}
   basicAttackRangeOrigin: {fileID: 1470039690}
@@ -2679,7 +2679,7 @@ GameObject:
   - component: {fileID: 364066113}
   - component: {fileID: 364066112}
   m_Layer: 7
-  m_Name: Player1-1
+  m_Name: SoloPlayerAvatar
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -2832,7 +2832,6 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1757241475}
-  - {fileID: 792317891}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &366865300
@@ -5651,7 +5650,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!224 &613853358
 RectTransform:
   m_ObjectHideFlags: 0
@@ -7358,7 +7357,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1769148268}
-  m_Father: {fileID: 364066116}
+  m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &794889300
 GameObject:
@@ -8372,7 +8371,7 @@ GameObject:
   - component: {fileID: 868070562}
   - component: {fileID: 868070561}
   m_Layer: 7
-  m_Name: Player2-1
+  m_Name: MultiPlayerAvatar
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -8520,7 +8519,7 @@ Transform:
   m_GameObject: {fileID: 868070560}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 24.356, y: 1, z: -73}
+  m_LocalPosition: {x: 15.94, y: 1, z: -73}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -14040,6 +14039,7 @@ MonoBehaviour:
   swordTip: {fileID: 1002179987}
   velocityThreshold: 90
   cooldown: 0.1
+  playerController: {fileID: 0}
 --- !u!1001 &1544847588
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -16013,7 +16013,7 @@ Transform:
   m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 7180413699256761584}
-  m_Father: {fileID: 364066116}
+  m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!54 &1757241476
 Rigidbody:
@@ -17400,6 +17400,7 @@ MonoBehaviour:
   swordTip: {fileID: 333490932}
   velocityThreshold: 90
   cooldown: 0.1
+  playerController: {fileID: 0}
 --- !u!1 &1879634308
 GameObject:
   m_ObjectHideFlags: 0
@@ -19204,11 +19205,6 @@ PrefabInstance:
 Transform:
   m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 55548ce1c0363bf42a7201dcbb980f0d, type: 3}
   m_PrefabInstance: {fileID: 2067230751}
-  m_PrefabAsset: {fileID: 0}
---- !u!4 &2070090792 stripped
-Transform:
-  m_CorrespondingSourceObject: {fileID: 2757157042242804143, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
-  m_PrefabInstance: {fileID: 4807778806553353890}
   m_PrefabAsset: {fileID: 0}
 --- !u!1 &2071335216
 GameObject:
@@ -27880,79 +27876,6 @@ MonoBehaviour:
   m_FillOrigin: 0
   m_UseSpriteMesh: 0
   m_PixelsPerUnitMultiplier: 1
---- !u!1001 &4807778806553353890
-PrefabInstance:
-  m_ObjectHideFlags: 0
-  serializedVersion: 2
-  m_Modification:
-    serializedVersion: 3
-    m_TransformParent: {fileID: 0}
-    m_Modifications:
-    - target: {fileID: 2539231057913176263, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
-      propertyPath: _visualBindingReport
-      value: 'Strict mode: OFF
-
-        PlayerVisual ref: Visual_replaced (SoloPlayerAvatar/Visual_replaced)
-
-        PlayerVisual
-        state: OK
-
-        BlinkWhiteEffect ref: Visual_replaced (SoloPlayerAvatar/Visual_replaced)
-
-        BlinkWhiteEffect
-        state: OK
-
-        Valid child PlayerVisual count: 1'
-      objectReference: {fileID: 0}
-    - target: {fileID: 2757157042242804143, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
-      propertyPath: m_LocalPosition.x
-      value: 22.4
-      objectReference: {fileID: 0}
-    - target: {fileID: 2757157042242804143, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
-      propertyPath: m_LocalPosition.y
-      value: 2.438
-      objectReference: {fileID: 0}
-    - target: {fileID: 2757157042242804143, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
-      propertyPath: m_LocalPosition.z
-      value: -73
-      objectReference: {fileID: 0}
-    - target: {fileID: 2757157042242804143, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
-      propertyPath: m_LocalRotation.w
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 2757157042242804143, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
-      propertyPath: m_LocalRotation.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 2757157042242804143, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
-      propertyPath: m_LocalRotation.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 2757157042242804143, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
-      propertyPath: m_LocalRotation.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 2757157042242804143, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.x
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 2757157042242804143, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.y
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 2757157042242804143, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
-      propertyPath: m_LocalEulerAnglesHint.z
-      value: 0
-      objectReference: {fileID: 0}
-    - target: {fileID: 5716826396601669852, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
-      propertyPath: m_Name
-      value: SoloPlayerAvatar
-      objectReference: {fileID: 0}
-    m_RemovedComponents: []
-    m_RemovedGameObjects: []
-    m_AddedGameObjects: []
-    m_AddedComponents: []
-  m_SourcePrefab: {fileID: 100100000, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
 --- !u!114 &4825095556807338251
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -35891,7 +35814,7 @@ SceneRoots:
   m_Roots:
   - {fileID: 2014981566}
   - {fileID: 188535283}
-  - {fileID: 4807778806553353890}
+  - {fileID: 792317891}
   - {fileID: 364066116}
   - {fileID: 868070565}
   - {fileID: 242866943}
@@ -35901,3 +35824,5 @@ SceneRoots:
   - {fileID: 746045140}
   - {fileID: 7129185755242064996}
   - {fileID: 8147213978354724039}
+
+

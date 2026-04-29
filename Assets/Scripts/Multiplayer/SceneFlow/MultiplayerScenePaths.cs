@@ -11,8 +11,8 @@ namespace Core.Multiplayer
         public const string LoadingScenePath = SceneFolderPath + "/LoadingScene.unity";
         public const string VerifyGamePlayScenePath = SceneFolderPath + "/GamePlayScene_Verify.unity";
         public const string FullGamePlayScenePath = SceneFolderPath + "/GamePlayScene.unity";
-        public const string GamePlaySceneName = VerifyGamePlaySceneName;
-        public const string GamePlayScenePath = VerifyGamePlayScenePath;
+        public const string GamePlaySceneName = FullGamePlaySceneName;
+        public const string GamePlayScenePath = FullGamePlayScenePath;
 
         public static bool IsMultiplayerScene(string scenePath)
         {
