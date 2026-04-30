@@ -33,6 +33,7 @@ namespace Core.Boss
         {
             public Renderer warningRenderer;
             public Transform radiusVisualRoot;
+            public float visualHeightOffset;
             public float radiusToScaleMultiplier;
             public float fallbackRadiusToScaleMultiplier;
             public string fillPropertyName;
@@ -62,6 +63,7 @@ namespace Core.Boss
         [FormerlySerializedAs("telegraphRenderer")]
         [SerializeField] private Renderer warningRenderer;
         [SerializeField] private Transform radiusVisualRoot;
+        [SerializeField] private float visualHeightOffset = 0f;
         [SerializeField] private float radiusToScaleMultiplier = 2f;
         [SerializeField] private float fallbackRadiusToScaleMultiplier = 1.2f;
         [SerializeField] private string fillPropertyName = "_Fill01";
@@ -89,6 +91,8 @@ namespace Core.Boss
         private bool _supportsColorProperty;
         private bool _useScaleFillFallback;
         private float _baseVisualScaleY = 1f;
+        private Transform _cachedVisualRoot;
+        private Vector3 _cachedVisualRootLocalPosition;
 
         private Renderer _runtimeFallbackRenderer;
         private Mesh _runtimeFallbackMesh;
@@ -97,6 +101,7 @@ namespace Core.Boss
         private float _runtimeFallbackMeshSectorAngle = -1f;
         private int _runtimeFallbackMeshSegments;
         private WarningShape _runtimeFallbackMeshShape = WarningShape.Sector;
+        private readonly List<GameObject> _suppressedSourceVisualObjects = new List<GameObject>(4);
 
         private bool _isInitialized;
         private bool _isRunning;
@@ -130,6 +135,12 @@ namespace Core.Boss
         public float CurrentRadius => _radius;
         public float CurrentStripLength => _stripLength;
         public float CurrentStripWidth => _stripWidth;
+
+        public void SetSharedVisualHeightOffset(float offset)
+        {
+            visualHeightOffset = Mathf.Max(0f, offset);
+            ApplyVisualRootVerticalOffset();
+        }
 
         private void Awake()
         {
@@ -176,6 +187,7 @@ namespace Core.Boss
         {
             warningRenderer = settings.warningRenderer;
             radiusVisualRoot = settings.radiusVisualRoot;
+            visualHeightOffset = Mathf.Max(0f, settings.visualHeightOffset);
             radiusToScaleMultiplier = settings.radiusToScaleMultiplier;
             fallbackRadiusToScaleMultiplier = settings.fallbackRadiusToScaleMultiplier;
             fillPropertyName = string.IsNullOrEmpty(settings.fillPropertyName) ? "_Fill01" : settings.fillPropertyName;
@@ -418,6 +430,7 @@ namespace Core.Boss
             _damageMode = DamageMode.None;
             _hitTargetIds.Clear();
             ApplyVisual(0f, warningColor);
+            RestoreSuppressedSourceVisuals();
 
             if (shouldNotify)
             {
@@ -453,15 +466,19 @@ namespace Core.Boss
 
             _baseVisualScaleY = Mathf.Max(0.001f, radiusVisualRoot.localScale.y);
             _isInitialized = true;
+            CacheVisualRootLocalPosition();
+            ApplyVisualRootVerticalOffset();
         }
 
         private void PrepareVisualForCurrentShape()
         {
             InitializeVisualRuntime();
+            RestoreSuppressedSourceVisuals();
 
             if (_shape == WarningShape.Strip)
             {
                 CreateRuntimeFallbackVisual();
+                SuppressIncompatibleSourceVisualsForFallback();
                 warningRenderer = _runtimeFallbackRenderer;
                 radiusVisualRoot = _runtimeFallbackRenderer != null ? _runtimeFallbackRenderer.transform : transform;
                 _baseVisualScaleY = Mathf.Max(0.001f, radiusVisualRoot.localScale.y);
@@ -473,6 +490,7 @@ namespace Core.Boss
             if (forceRuntimeFallbackVisual || !TryConfigureRendererCapabilities())
             {
                 CreateRuntimeFallbackVisual();
+                SuppressIncompatibleSourceVisualsForFallback();
                 TryConfigureRendererCapabilities();
             }
 
@@ -482,6 +500,8 @@ namespace Core.Boss
             }
 
             _baseVisualScaleY = Mathf.Max(0.001f, radiusVisualRoot.localScale.y);
+            CacheVisualRootLocalPosition();
+            ApplyVisualRootVerticalOffset();
         }
 
         private void ApplyShapeScale(float fill01)
@@ -546,6 +566,37 @@ namespace Core.Boss
             ApplyShapeScale(clampedFill);
         }
 
+        private void CacheVisualRootLocalPosition(bool force = false)
+        {
+            if (radiusVisualRoot == null)
+            {
+                _cachedVisualRoot = null;
+                _cachedVisualRootLocalPosition = Vector3.zero;
+                return;
+            }
+
+            if (!force && _cachedVisualRoot == radiusVisualRoot)
+            {
+                return;
+            }
+
+            _cachedVisualRoot = radiusVisualRoot;
+            _cachedVisualRootLocalPosition = radiusVisualRoot.localPosition;
+        }
+
+        private void ApplyVisualRootVerticalOffset()
+        {
+            if (!_isInitialized || radiusVisualRoot == null)
+            {
+                return;
+            }
+
+            CacheVisualRootLocalPosition();
+            Vector3 localPosition = _cachedVisualRootLocalPosition;
+            localPosition.y += visualHeightOffset;
+            radiusVisualRoot.localPosition = localPosition;
+        }
+
         private float ResolveRadiusScaleMultiplier()
         {
             if (_runtimeFallbackRenderer != null && radiusVisualRoot == _runtimeFallbackRenderer.transform)
@@ -568,6 +619,11 @@ namespace Core.Boss
             }
 
             if (warningRenderer.GetType().Name.Contains("VFX"))
+            {
+                return false;
+            }
+
+            if (warningRenderer is ParticleSystemRenderer)
             {
                 return false;
             }
@@ -595,6 +651,8 @@ namespace Core.Boss
 
                 warningRenderer = _runtimeFallbackRenderer;
                 radiusVisualRoot = _runtimeFallbackRenderer.transform;
+                CacheVisualRootLocalPosition(true);
+                ApplyVisualRootVerticalOffset();
                 EnsureFallbackMeshMatchesShape();
                 return;
             }
@@ -618,7 +676,82 @@ namespace Core.Boss
             _runtimeFallbackRenderer = meshRenderer;
             warningRenderer = meshRenderer;
             radiusVisualRoot = visual.transform;
+            CacheVisualRootLocalPosition(true);
+            ApplyVisualRootVerticalOffset();
             EnsureFallbackMeshMatchesShape();
+        }
+
+        private void SuppressIncompatibleSourceVisualsForFallback()
+        {
+            Transform fallbackRoot = _runtimeFallbackRenderer != null ? _runtimeFallbackRenderer.transform : null;
+            ParticleSystem[] particleSystems = GetComponentsInChildren<ParticleSystem>(true);
+            for (int i = 0; i < particleSystems.Length; i++)
+            {
+                ParticleSystem particleSystem = particleSystems[i];
+                if (particleSystem == null)
+                {
+                    continue;
+                }
+
+                if (fallbackRoot != null && particleSystem.transform.IsChildOf(fallbackRoot))
+                {
+                    continue;
+                }
+
+                TrySuppressSourceVisualObject(particleSystem.gameObject);
+            }
+
+            Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer renderer = renderers[i];
+                if (renderer == null || renderer == _runtimeFallbackRenderer)
+                {
+                    continue;
+                }
+
+                if (fallbackRoot != null && renderer.transform.IsChildOf(fallbackRoot))
+                {
+                    continue;
+                }
+
+                if (!renderer.GetType().Name.Contains("VFX"))
+                {
+                    continue;
+                }
+
+                TrySuppressSourceVisualObject(renderer.gameObject);
+            }
+        }
+
+        private void TrySuppressSourceVisualObject(GameObject targetObject)
+        {
+            if (targetObject == null
+                || targetObject == gameObject
+                || !targetObject.activeSelf
+                || _suppressedSourceVisualObjects.Contains(targetObject))
+            {
+                return;
+            }
+
+            targetObject.SetActive(false);
+            _suppressedSourceVisualObjects.Add(targetObject);
+        }
+
+        private void RestoreSuppressedSourceVisuals()
+        {
+            for (int i = 0; i < _suppressedSourceVisualObjects.Count; i++)
+            {
+                GameObject suppressedObject = _suppressedSourceVisualObjects[i];
+                if (suppressedObject == null)
+                {
+                    continue;
+                }
+
+                suppressedObject.SetActive(true);
+            }
+
+            _suppressedSourceVisualObjects.Clear();
         }
 
         private Material CreateFallbackMaterial()

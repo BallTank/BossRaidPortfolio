@@ -83,9 +83,13 @@ namespace Core.Boss
         [SerializeField] private int attackDamage = 20;
         [SerializeField] private float attackDuration = 1.0f;
         [SerializeField] private float attackCooldown = 2.0f;
+        [SerializeField, Tooltip("Attack1/2/4 warning visual 공용 Y 리프트")]
+        private float warningVisualHeightOffset = 0.15f;
 
         [Header("Basic Attack Settings")]
         [SerializeField] private BasicAttackSettings basicAttackSettings;
+        [SerializeField, Tooltip("Basic warning 전용 prefab override")]
+        private AttackWarningController basicAttackWarningPrefab;
 
         [Header("Legacy DamageCaster References")]
         [Tooltip("레거시 Head DamageCaster 참조 (Basic/Lunge는 더 이상 사용하지 않음)")]
@@ -257,6 +261,8 @@ namespace Core.Boss
         public bool EnableAoEAttack => enableAoEAttack;
         public BossProjectilePool ProjectilePool => projectilePool;
         public Transform ProjectileSpawnPoint => projectileSpawnPoint;
+        public float WarningVisualHeightOffset => Mathf.Max(0f, warningVisualHeightOffset);
+        public bool IsBasicAttackWarningRunning => TryGetAttackWarningRunningState(BossReplicatedWarningChannel.BasicAttack);
         public BossPhase CurrentPhase => _currentPhase;
         public bool IsPhaseIntroPlaying => _phaseIntroPlaying;
         public bool IsPhaseOneAttackWindow => _currentPhase == BossPhase.Phase1 && _phaseOneIntroCompleted && !_phaseIntroPlaying;
@@ -627,32 +633,48 @@ namespace Core.Boss
 
         private bool TryResolveBasicAttackTelegraph(out AttackWarningController telegraph)
         {
-            return TryResolveAttackWarningController(ref _basicAttackTelegraph, out telegraph);
+            telegraph = _basicAttackTelegraph;
+            if (telegraph != null)
+            {
+                ApplySharedWarningVisualHeightOffset(telegraph);
+                return true;
+            }
+
+            if (basicAttackWarningPrefab != null)
+            {
+                return TryResolveAttackWarningController(ref _basicAttackTelegraph, basicAttackWarningPrefab, out telegraph);
+            }
+
+            telegraph = CreateBasicAttackRuntimeTelegraph();
+            return telegraph != null;
         }
 
         private bool TryResolveLungeAttackTelegraph(out AttackWarningController telegraph)
         {
-            return TryResolveAttackWarningController(ref _lungeAttackTelegraph, out telegraph);
+            return TryResolveAttackWarningController(ref _lungeAttackTelegraph, null, out telegraph);
         }
 
         private bool TryResolveAttackWarningController(
             ref AttackWarningController cachedTelegraph,
+            AttackWarningController overrideWarningPrefab,
             out AttackWarningController telegraph)
         {
             telegraph = cachedTelegraph;
             if (telegraph != null)
             {
+                ApplySharedWarningVisualHeightOffset(telegraph);
                 return true;
             }
 
-            if (aoeAttackSettings == null || aoeAttackSettings.circlePrefab == null)
+            GameObject warningPrefabObject = ResolveAttackWarningPrefabObject(overrideWarningPrefab);
+            if (warningPrefabObject == null)
             {
                 return false;
             }
 
             GameObject telegraphObject = aoeAttackSettings.circleRoot != null
-                ? Instantiate(aoeAttackSettings.circlePrefab.gameObject, aoeAttackSettings.circleRoot)
-                : Instantiate(aoeAttackSettings.circlePrefab.gameObject);
+                ? Instantiate(warningPrefabObject, aoeAttackSettings.circleRoot)
+                : Instantiate(warningPrefabObject);
             telegraph = telegraphObject.GetComponent<AttackWarningController>();
             if (telegraph == null)
             {
@@ -666,9 +688,83 @@ namespace Core.Boss
                 return false;
             }
 
+            ApplySharedWarningVisualHeightOffset(telegraph);
             telegraph.gameObject.SetActive(false);
             cachedTelegraph = telegraph;
             return true;
+        }
+
+        private GameObject ResolveAttackWarningPrefabObject(AttackWarningController overrideWarningPrefab)
+        {
+            if (overrideWarningPrefab != null)
+            {
+                return overrideWarningPrefab.gameObject;
+            }
+
+            if (aoeAttackSettings == null || aoeAttackSettings.circlePrefab == null)
+            {
+                return null;
+            }
+
+            return aoeAttackSettings.circlePrefab.gameObject;
+        }
+
+        private AttackWarningController CreateBasicAttackRuntimeTelegraph()
+        {
+            Transform telegraphParent = aoeAttackSettings != null ? aoeAttackSettings.circleRoot : null;
+            GameObject telegraphObject = new GameObject("BasicAttackWarning_Runtime");
+            if (telegraphParent != null)
+            {
+                telegraphObject.transform.SetParent(telegraphParent, false);
+            }
+
+            telegraphObject.layer = gameObject.layer;
+
+            AttackWarningController telegraph = telegraphObject.AddComponent<AttackWarningController>();
+            AttackWarningController.VisualSettings settings = default;
+            settings.visualHeightOffset = ResolveAttackWarningVisualHeightOffset();
+            settings.radiusToScaleMultiplier = 1f;
+            settings.fallbackRadiusToScaleMultiplier = 1f;
+            settings.warningColor = new Color(1f, 0f, 0f, 0.25f);
+            settings.activeColor = new Color(1f, 0f, 0f, 0.6f);
+            settings.forceRuntimeFallbackVisual = true;
+            settings.fallbackYOffset = 0f;
+            settings.fallbackSegments = 48;
+            settings.fallbackShaderName = "Universal Render Pipeline/Unlit";
+            settings.showGizmos = false;
+            settings.gizmoColor = new Color(1f, 0.25f, 0.25f, 0.8f);
+            telegraph.ApplySettings(settings);
+            telegraph.gameObject.SetActive(false);
+            _basicAttackTelegraph = telegraph;
+            return telegraph;
+        }
+
+        private void ApplySharedWarningVisualHeightOffset(AttackWarningController telegraph)
+        {
+            if (telegraph == null)
+            {
+                return;
+            }
+
+            float visualHeightOffset = ResolveAttackWarningVisualHeightOffset();
+            AoECircleController circleController = telegraph.GetComponent<AoECircleController>();
+            if (circleController == null)
+            {
+                circleController = telegraph.GetComponentInParent<AoECircleController>();
+            }
+
+            if (circleController != null)
+            {
+                circleController.SetSharedWarningVisualHeightOffset(visualHeightOffset);
+                return;
+            }
+
+            telegraph.SetSharedVisualHeightOffset(visualHeightOffset);
+        }
+
+        private float ResolveAttackWarningVisualHeightOffset()
+        {
+            return Mathf.Max(0f, warningVisualHeightOffset);
         }
 
         private static ulong ResolveTargetNetworkObjectId(Transform target)
@@ -1329,6 +1425,16 @@ namespace Core.Boss
         {
             HideReplicatedAttackWarning(BossReplicatedWarningChannel.BasicAttack);
             HideReplicatedAttackWarning(BossReplicatedWarningChannel.LungeAttack);
+        }
+
+        private bool TryGetAttackWarningRunningState(BossReplicatedWarningChannel warningChannel)
+        {
+            if (!TryResolveReplicatedAttackWarningController(warningChannel, out AttackWarningController telegraph))
+            {
+                return false;
+            }
+
+            return telegraph != null && telegraph.IsRunning;
         }
 
         public void BeginConfiguredLungeTravel(float activeDuration)
@@ -2345,7 +2451,7 @@ namespace Core.Boss
             public float groundRayHeight = 15f;
             [Tooltip("지면 투영 Ray 최대 거리")]
             public float groundRayDistance = 40f;
-            [Tooltip("장판 Y 오프셋")]
+            [HideInInspector]
             public float groundOffset = 0.05f;
             [Tooltip("지면 판정 레이어")]
             public LayerMask groundMask = ~0;

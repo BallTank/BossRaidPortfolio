@@ -44,6 +44,7 @@ namespace Core.Boss.AoE
         private int _damage;
         private int _ownerInstanceID;
         private BossAttackHitType _bossAttackHitType = BossAttackHitType.Attack4Projectile;
+        private float _sharedWarningVisualHeightOffset;
 
         public bool IsRunning => _isRunning;
 
@@ -116,6 +117,12 @@ namespace Core.Boss.AoE
             End();
         }
 
+        public void SetSharedWarningVisualHeightOffset(float offset)
+        {
+            _sharedWarningVisualHeightOffset = Mathf.Max(0f, offset);
+            ResolveWarningController();
+        }
+
         private void ResolveWarningController()
         {
             if (_warningController == null)
@@ -165,6 +172,7 @@ namespace Core.Boss.AoE
             AttackWarningController.VisualSettings settings = default;
             settings.warningRenderer = warningRenderer;
             settings.radiusVisualRoot = radiusVisualRoot;
+            settings.visualHeightOffset = _sharedWarningVisualHeightOffset;
             settings.radiusToScaleMultiplier = radiusToScaleMultiplier;
             settings.fallbackRadiusToScaleMultiplier = fallbackRadiusToScaleMultiplier;
             settings.fillPropertyName = fillPropertyName;

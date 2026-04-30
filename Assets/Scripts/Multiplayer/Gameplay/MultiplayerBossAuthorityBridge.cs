@@ -27,6 +27,7 @@ namespace Core.Multiplayer
         private const string FlyIdleStateName = "FlyIdle";
         private const string FlyIdleAltStateName = "Fly Idle";
         private const string LandStateName = "Land";
+        private const float BasicAttackClientWarningGraceSeconds = 0.08f;
         private readonly List<ulong> _remoteClientIds = new List<ulong>(2);
         private readonly List<BossReplicatedEffectEvent> _pendingOutgoingEffectBatch = new List<BossReplicatedEffectEvent>(8);
         private readonly Queue<BossReplicatedEffectEvent> _pendingReceivedEffectEvents = new Queue<BossReplicatedEffectEvent>(8);
@@ -99,14 +100,15 @@ namespace Core.Multiplayer
                 return;
             }
 
-            if (!_networkManager.IsServer && ShouldConsumeLatestReceivedMessage())
-            {
-                ApplyLatestReceivedState();
-            }
-
             if (!_networkManager.IsServer)
             {
+                // 경고/이펙트를 먼저 재생해 Basic attack visual이 warning보다 앞서지 않게 맞춘다.
                 ApplyPendingReceivedEffects();
+
+                if (ShouldConsumeLatestReceivedMessage())
+                {
+                    ApplyLatestReceivedState();
+                }
             }
         }
 
@@ -672,6 +674,7 @@ namespace Core.Multiplayer
             {
                 case BossAuthoritativeAttackId.Basic:
                     _bossVisual.SetAnimatorPlaybackSpeed(ResolveAttackPresentationPlaybackSpeed(state));
+                    normalizedTime = ResolveBasicAttackPresentationNormalizedTime(normalizedTime);
                     _bossVisual.PlayAttack();
                     TryPlayAnimatorState(BasicAttackStateName, normalizedTime);
                     break;
@@ -825,6 +828,26 @@ namespace Core.Multiplayer
             return state.AttackPlaybackSpeed > 0f
                 ? Mathf.Max(MinimumPlaybackSpeed, state.AttackPlaybackSpeed)
                 : 1f;
+        }
+
+        private float ResolveBasicAttackPresentationNormalizedTime(float normalizedTime)
+        {
+            if (_networkManager == null
+                || _networkManager.IsServer
+                || _bossController == null
+                || _bossController.IsBasicAttackWarningRunning)
+            {
+                return Mathf.Clamp01(normalizedTime);
+            }
+
+            float clipLength = ResolveAttackClipLengthOrDefault(BossAuthoritativeAttackId.Basic);
+            if (clipLength <= 0.0001f)
+            {
+                return Mathf.Clamp01(normalizedTime);
+            }
+
+            float normalizedGrace = BasicAttackClientWarningGraceSeconds / clipLength;
+            return Mathf.Clamp01(normalizedTime - normalizedGrace);
         }
 
         private float ResolveAttackClipLengthOrDefault(BossAuthoritativeAttackId attackId)

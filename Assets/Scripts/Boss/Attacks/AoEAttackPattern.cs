@@ -49,7 +49,7 @@ namespace Core.Boss.Attacks
             }
 
             CleanupActiveCircles();
-            EnsureCirclePool(Mathf.Max(1, _settings.circleCount));
+            EnsureCirclePool(Mathf.Max(1, _settings.circleCount), controller);
 
             // 공중 연출 시작 시 지상 Locomotion 애니메이션 진입을 잠금한다.
             controller.SetLocomotionVisualSuppressed(true);
@@ -116,7 +116,7 @@ namespace Core.Boss.Attacks
                 return;
             }
 
-            EnsureCirclePool(Mathf.Max(1, _settings.circleCount));
+            EnsureCirclePool(Mathf.Max(1, _settings.circleCount), null);
         }
 
         /// <summary>
@@ -135,9 +135,9 @@ namespace Core.Boss.Attacks
                 return;
             }
 
-            EnsureCirclePool(1);
+            EnsureCirclePool(1, controller);
 
-            AoECircleController circle = AcquireCircle();
+            AoECircleController circle = AcquireCircle(controller);
             if (circle != null)
             {
                 circle.StartWarning(
@@ -224,7 +224,7 @@ namespace Core.Boss.Attacks
         private void SpawnAoEInstance(BossController controller)
         {
             Vector3 impactPoint = ResolveImpactPoint(controller);
-            AoECircleController circle = AcquireCircle();
+            AoECircleController circle = AcquireCircle(controller);
             if (circle == null) return;
 
             circle.StartWarning(
@@ -468,13 +468,15 @@ namespace Core.Boss.Attacks
             return Vector3.forward;
         }
 
-        private AoECircleController AcquireCircle()
+        private AoECircleController AcquireCircle(BossController controller)
         {
+            float warningVisualHeightOffset = controller != null ? controller.WarningVisualHeightOffset : 0f;
             for (int i = 0; i < _circlePool.Count; i++)
             {
                 AoECircleController circle = _circlePool[i];
                 if (circle == null) continue;
                 if (circle.IsRunning) continue;
+                circle.SetSharedWarningVisualHeightOffset(warningVisualHeightOffset);
                 if (circle.gameObject.activeSelf) circle.gameObject.SetActive(false);
                 return circle;
             }
@@ -488,19 +490,22 @@ namespace Core.Boss.Attacks
             AoECircleController instance = _settings.circleRoot != null
                 ? Object.Instantiate(_settings.circlePrefab, _settings.circleRoot)
                 : Object.Instantiate(_settings.circlePrefab);
+            instance.SetSharedWarningVisualHeightOffset(warningVisualHeightOffset);
             instance.gameObject.SetActive(false);
             _circlePool.Add(instance);
             return instance;
         }
 
-        private void EnsureCirclePool(int neededCount)
+        private void EnsureCirclePool(int neededCount, BossController controller)
         {
+            float warningVisualHeightOffset = controller != null ? controller.WarningVisualHeightOffset : 0f;
             int targetCount = Mathf.Min(Mathf.Max(1, _settings.maxCircleInstances), neededCount);
             while (_circlePool.Count < targetCount)
             {
                 AoECircleController instance = _settings.circleRoot != null
                     ? Object.Instantiate(_settings.circlePrefab, _settings.circleRoot)
                     : Object.Instantiate(_settings.circlePrefab);
+                instance.SetSharedWarningVisualHeightOffset(warningVisualHeightOffset);
                 instance.gameObject.SetActive(false);
                 _circlePool.Add(instance);
             }
