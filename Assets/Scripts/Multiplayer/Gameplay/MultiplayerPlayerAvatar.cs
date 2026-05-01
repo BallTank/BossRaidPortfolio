@@ -172,6 +172,22 @@ namespace Core.Multiplayer
 
         private void HandleNonPlayerObjectSpawn()
         {
+            if (ShouldHideSceneTemplateAvatarInActiveSession())
+            {
+                LogNonPlayerObjectSpawn("hide_scene_template_multiplayer_session");
+                _localInputProvider?.SetRuntimeInputEnabled(false);
+                _bufferedInputProvider?.Clear();
+                _playerController?.SetInputProviderOverride(null);
+                _playerController?.SetSimulationMode(PlayerController.RuntimeSimulationMode.Disabled);
+                _playerController?.SetActionAuthorityMode(PlayerController.ActionAuthorityMode.RemoteDisplayOnly);
+                _playerController?.SetLocalPresentationEnabled(false);
+                _playerController?.SetLookDrivenCameraRootEnabled(false);
+                SetCharacterControllerEnabled(false);
+                SetOwnerTransformSyncEnabled(false);
+                gameObject.SetActive(false);
+                return;
+            }
+
             if (ShouldPreserveSceneTemplateAvatar())
             {
                 LogNonPlayerObjectSpawn("preserve_visible_missing_runtime_prefabs");
@@ -667,6 +683,22 @@ namespace Core.Multiplayer
 
             Debug.LogError(runtimeConfig.BuildValidationMessage());
             return true;
+        }
+
+        private bool ShouldHideSceneTemplateAvatarInActiveSession()
+        {
+            if (NetworkObject == null || NetworkObject.IsSceneObject != true)
+            {
+                return false;
+            }
+
+            if (!MultiplayerSessionService.HasInstance || !MultiplayerSessionService.Instance.HasActiveSession)
+            {
+                return false;
+            }
+
+            return string.Equals(gameObject.name, "SoloPlayerAvatar", System.StringComparison.Ordinal)
+                   || string.Equals(gameObject.name, "MultiPlayerAvatar", System.StringComparison.Ordinal);
         }
 
         private static string BuildHierarchyPath(Transform target)

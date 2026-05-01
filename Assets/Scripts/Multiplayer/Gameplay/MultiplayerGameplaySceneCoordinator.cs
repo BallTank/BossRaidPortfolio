@@ -184,13 +184,26 @@ namespace Core.Multiplayer
 
         private static void PrepareScene(Scene scene)
         {
-            if (!ShouldPrepareScene(scene) || !CanPrepareSpawnRuntime())
+            if (!ShouldPrepareScene(scene))
+            {
+                return;
+            }
+
+            DisableSceneAvatarTemplates(scene);
+
+            if (!CanPrepareSpawnRuntime())
             {
                 return;
             }
 
             RemoveLegacyScenePlayer(scene);
             DisableClientSideBossAuthority();
+        }
+
+        private static void DisableSceneAvatarTemplates(Scene scene)
+        {
+            SetSceneRootActive(scene, HostAvatarTemplateName, false);
+            SetSceneRootActive(scene, ClientAvatarTemplateName, false);
         }
 
         private static void RemoveLegacyScenePlayer(Scene scene)
@@ -320,6 +333,31 @@ namespace Core.Multiplayer
         {
             return string.Equals(gameObjectName, HostAvatarTemplateName, StringComparison.Ordinal)
                    || string.Equals(gameObjectName, ClientAvatarTemplateName, StringComparison.Ordinal);
+        }
+
+        private static void SetSceneRootActive(Scene scene, string rootName, bool active)
+        {
+            if (!scene.IsValid())
+            {
+                return;
+            }
+
+            GameObject[] rootObjects = scene.GetRootGameObjects();
+            for (int i = 0; i < rootObjects.Length; i++)
+            {
+                GameObject rootObject = rootObjects[i];
+                if (rootObject == null || !string.Equals(rootObject.name, rootName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (rootObject.activeSelf != active)
+                {
+                    rootObject.SetActive(active);
+                }
+
+                return;
+            }
         }
 
         private static bool CanPrepareSpawnRuntime()
