@@ -654,6 +654,7 @@ namespace Core.Multiplayer
                 return;
             }
 
+            _bossController?.PlayDamageBlinkVisual();
             _bossVisual.TriggerHit();
         }
 

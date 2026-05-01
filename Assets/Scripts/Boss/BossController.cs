@@ -569,13 +569,22 @@ namespace Core.Boss
             if (_health.IsDead) return;
 
             // 피격 시각 효과는 상태와 무관하게 항상 재생한다.
-            damageBlinkEffect?.PlaySingleBlink();
+            PlayDamageBlinkVisual();
 
             // 공격 준비/실행 중에는 피격 모션을 무시한다.
             if (ShouldIgnoreHitMotion()) return;
 
             // FSM을 통해 Hit 상태로 전환
             _stateMachine.ChangeState(HitState);
+        }
+
+        /// <summary>
+        /// Host damage path와 client replay path가 같은 white blink를 사용하도록 통합한다.
+        /// </summary>
+        public void PlayDamageBlinkVisual()
+        {
+            ResolveDamageBlinkEffect();
+            damageBlinkEffect?.PlaySingleBlink();
         }
 
         private void HandleDeath()
