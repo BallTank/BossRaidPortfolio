@@ -26,6 +26,10 @@ namespace Core.Multiplayer
         private const string HostVisualInstanceName = "HostVisual";
         private const string ClientVisualInstanceName = "ClientVisual";
         private static readonly List<MultiplayerPlayerAvatar> _activeAvatars = new List<MultiplayerPlayerAvatar>(2);
+        private static readonly FieldInfo NetworkAnimatorCachedParametersField =
+            typeof(NetworkAnimator).GetField("m_CachedAnimatorParameters", BindingFlags.Instance | BindingFlags.NonPublic);
+        private static readonly MethodInfo NetworkAnimatorAwakeMethod =
+            typeof(NetworkAnimator).GetMethod("Awake", BindingFlags.Instance | BindingFlags.NonPublic);
         private readonly NetworkVariable<int> _replicatedHudCurrentHealth = new NetworkVariable<int>(
             0,
             NetworkVariableReadPermission.Everyone,
@@ -647,6 +651,38 @@ namespace Core.Multiplayer
             }
 
             _networkAnimator.Animator = activeAnimator;
+            RefreshNetworkAnimatorRuntimeCache(activeAnimator);
+        }
+
+        private void RefreshNetworkAnimatorRuntimeCache(Animator activeAnimator)
+        {
+            if (_networkAnimator == null
+                || activeAnimator == null
+                || NetworkAnimatorAwakeMethod == null)
+            {
+                return;
+            }
+
+            try
+            {
+                // 런타임 visual swap 뒤에는 기존 Animator 기준으로 만든 NGO 내부 캐시를 현재 visual Animator 기준으로 다시 만든다.
+                if (NetworkAnimatorCachedParametersField != null)
+                {
+                    object cachedParameters = NetworkAnimatorCachedParametersField.GetValue(_networkAnimator);
+                    if (cachedParameters is System.IDisposable disposable)
+                    {
+                        disposable.Dispose();
+                    }
+                }
+
+                NetworkAnimatorAwakeMethod.Invoke(_networkAnimator, null);
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogWarning(
+                    $"[MultiplayerPlayerAvatar] Failed to refresh NetworkAnimator cache for '{name}' after visual rebind: {ex.Message}",
+                    this);
+            }
         }
 
         private void LogNonPlayerObjectSpawn(string action)
