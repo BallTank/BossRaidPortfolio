@@ -271,13 +271,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
             _health.OnDeath += HandleDeath;
         }
 
-        if (_damageCaster != null)
-        {
-            _damageCaster.SetOwner(gameObject);
-            _damageCaster.ForceDisableHitbox();
-            _damageCaster.OnAttackHitConfirmed += HandleAttackHitConfirmed;
-            _damageCaster.OnAttackWindowResolved += HandleAttackWindowResolved;
-        }
+        ResolveDamageCasterBinding(forceRefresh: true);
 
         // FSM 초기화 (제네릭 StateMachine)
         _stateMachine = new StateMachine<PlayerBaseState>();
@@ -298,11 +292,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
             _health.OnDeath -= HandleDeath;
         }
 
-        if (_damageCaster != null)
-        {
-            _damageCaster.OnAttackHitConfirmed -= HandleAttackHitConfirmed;
-            _damageCaster.OnAttackWindowResolved -= HandleAttackWindowResolved;
-        }
+        UnbindDamageCasterEvents(_damageCaster);
     }
 
     private void Start()
@@ -311,6 +301,13 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         _damageCaster?.ForceDisableHitbox();
         blinkWhiteEffect?.StopBlink();
         UpdateHealthInvincibilityByState();
+        string healthText = _health != null ? $"{_health.CurrentHealth}/{_health.MaxHealth}" : "n/a";
+        string inputProviderName = _inputProvider != null ? _inputProvider.GetType().Name : "null";
+        Debug.Log(
+            $"[SoloDebug][PlayerController][Start] object={gameObject.name} " +
+            $"activeSelf={gameObject.activeSelf} activeInHierarchy={gameObject.activeInHierarchy} " +
+            $"simulation={_simulationMode} authority={_actionAuthorityMode} " +
+            $"localPresentation={_isLocalPresentationEnabled} inputProvider={inputProviderName} hp={healthText}");
         if (_isLocalPresentationEnabled)
         {
             InitializeCombatHUD();
@@ -636,6 +633,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     public void RefreshVisualBindings()
     {
         ResolvePlayerVisualBinding(logWarnings: true);
+        ResolveDamageCasterBinding(forceRefresh: true);
         ResolveBlinkEffect(forceRefresh: true);
         RefreshVisualBindingReport(logWarnings: false);
         EnsureMultiplayerPresentationDriver().RefreshBindings();
@@ -1262,6 +1260,105 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         }
 
         return candidate.transform == transform && candidate.gameObject.activeSelf;
+    }
+
+    private void ResolveDamageCasterBinding(bool forceRefresh)
+    {
+        DamageCaster resolvedDamageCaster = FindPreferredDamageCaster();
+        if (!forceRefresh && resolvedDamageCaster == _damageCaster)
+        {
+            if (_damageCaster != null)
+            {
+                _damageCaster.SetOwner(gameObject);
+            }
+
+            return;
+        }
+
+        RebindDamageCaster(resolvedDamageCaster);
+    }
+
+    private void RebindDamageCaster(DamageCaster newDamageCaster)
+    {
+        if (_damageCaster == newDamageCaster)
+        {
+            if (_damageCaster != null)
+            {
+                _damageCaster.SetOwner(gameObject);
+                _damageCaster.ForceDisableHitbox();
+            }
+
+            return;
+        }
+
+        UnbindDamageCasterEvents(_damageCaster);
+        _damageCaster = newDamageCaster;
+        BindDamageCasterEvents(_damageCaster);
+    }
+
+    private void BindDamageCasterEvents(DamageCaster damageCaster)
+    {
+        if (damageCaster == null)
+        {
+            return;
+        }
+
+        damageCaster.SetOwner(gameObject);
+        damageCaster.ForceDisableHitbox();
+        damageCaster.OnAttackHitConfirmed += HandleAttackHitConfirmed;
+        damageCaster.OnAttackWindowResolved += HandleAttackWindowResolved;
+    }
+
+    private void UnbindDamageCasterEvents(DamageCaster damageCaster)
+    {
+        if (damageCaster == null)
+        {
+            return;
+        }
+
+        damageCaster.ForceDisableHitbox();
+        damageCaster.OnAttackHitConfirmed -= HandleAttackHitConfirmed;
+        damageCaster.OnAttackWindowResolved -= HandleAttackWindowResolved;
+    }
+
+    private DamageCaster FindPreferredDamageCaster()
+    {
+        DamageCaster preferredVisualDamageCaster = FindPreferredDamageCasterInHierarchy(playerVisual != null ? playerVisual.transform : null);
+        if (preferredVisualDamageCaster != null)
+        {
+            return preferredVisualDamageCaster;
+        }
+
+        return FindPreferredDamageCasterInHierarchy(transform);
+    }
+
+    private static DamageCaster FindPreferredDamageCasterInHierarchy(Transform searchRoot)
+    {
+        if (searchRoot == null)
+        {
+            return null;
+        }
+
+        DamageCaster[] damageCasters = searchRoot.GetComponentsInChildren<DamageCaster>(true);
+        DamageCaster firstValid = null;
+        DamageCaster firstActiveValid = null;
+
+        for (int i = 0; i < damageCasters.Length; i++)
+        {
+            DamageCaster candidate = damageCasters[i];
+            if (candidate == null)
+            {
+                continue;
+            }
+
+            firstValid ??= candidate;
+            if (firstActiveValid == null && candidate.gameObject.activeInHierarchy)
+            {
+                firstActiveValid = candidate;
+            }
+        }
+
+        return firstActiveValid ?? firstValid;
     }
 
     private void ResolveBlinkEffect(bool forceRefresh = false)
