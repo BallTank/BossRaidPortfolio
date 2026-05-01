@@ -15,3 +15,4 @@ MonoBehaviour:
   _playerAvatarPrefab: {fileID: 6200000000000000000, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
   _hostPlayerAvatarPrefab: {fileID: 6200000000000000000, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}
   _clientPlayerAvatarPrefab: {fileID: 5716826396601669852, guid: d3344bcee24ee2b40a2324261b6c03a9, type: 3}
+  _hostVisualTemplate: {fileID: 8279805074336743176, guid: 935e66005261bec4f9453ee2a78fd21b, type: 3}

@@ -23,6 +23,7 @@ namespace Core.Multiplayer
         private const float FallbackFixedDeltaTime = 1f / 30f;
         private const float OwnerPositionCorrectionDeadzone = 0.03f;
         private const float OwnerYawCorrectionDeadzone = 1.25f;
+        private const string HostVisualInstanceName = "HostVisual";
         private const string ClientVisualInstanceName = "ClientVisual";
         private static readonly List<MultiplayerPlayerAvatar> _activeAvatars = new List<MultiplayerPlayerAvatar>(2);
         private readonly NetworkVariable<int> _replicatedHudCurrentHealth = new NetworkVariable<int>(
@@ -428,6 +429,30 @@ namespace Core.Multiplayer
                 return;
             }
 
+            GameObject hostVisualTemplate = ResolveExplicitHostVisualTemplate();
+            if (hostVisualTemplate != null)
+            {
+                PlayerVisual existingFallbackVisual = FindFirstEligibleHostVisual();
+                GameObject hostVisualInstance = Object.Instantiate(hostVisualTemplate, transform, false);
+                hostVisualInstance.name = HostVisualInstanceName;
+                hostVisualInstance.SetActive(false);
+                _hostVisual = hostVisualInstance.GetComponent<PlayerVisual>();
+                BindPresentationComponentReferences(hostVisualInstance.transform);
+                DisableEmbeddedCameras(hostVisualInstance.transform);
+
+                if (existingFallbackVisual != null && existingFallbackVisual != _hostVisual)
+                {
+                    existingFallbackVisual.gameObject.SetActive(false);
+                }
+
+                return;
+            }
+
+            _hostVisual = FindFirstEligibleHostVisual();
+        }
+
+        private PlayerVisual FindFirstEligibleHostVisual()
+        {
             PlayerVisual[] visuals = GetComponentsInChildren<PlayerVisual>(true);
             for (int i = 0; i < visuals.Length; i++)
             {
@@ -447,9 +472,10 @@ namespace Core.Multiplayer
                     continue;
                 }
 
-                _hostVisual = candidate;
-                return;
+                return candidate;
             }
+
+            return null;
         }
 
         private void EnsureClientVisualVariant()
@@ -500,6 +526,17 @@ namespace Core.Multiplayer
 
             MultiplayerRuntimeConfig runtimeConfig = MultiplayerRuntimeConfig.LoadFromResources();
             return runtimeConfig != null ? runtimeConfig.ClientPlayerAvatarPrefab : null;
+        }
+
+        private GameObject ResolveExplicitHostVisualTemplate()
+        {
+            MultiplayerRuntimeConfig runtimeConfig = MultiplayerRuntimeConfig.LoadFromResources();
+            if (runtimeConfig == null || runtimeConfig.HostVisualTemplate == null)
+            {
+                return null;
+            }
+
+            return runtimeConfig.HostVisualTemplate;
         }
 
         private void BindPresentationComponentReferences(Transform visualRoot)

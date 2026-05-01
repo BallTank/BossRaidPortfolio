@@ -11,12 +11,14 @@ namespace Core.Multiplayer
         [SerializeField] private GameObject _playerAvatarPrefab;
         [SerializeField] private GameObject _hostPlayerAvatarPrefab;
         [SerializeField] private GameObject _clientPlayerAvatarPrefab;
+        [SerializeField] private GameObject _hostVisualTemplate;
 
         public GameObject PlayerAvatarPrefab => _playerAvatarPrefab != null
             ? _playerAvatarPrefab
             : (_hostPlayerAvatarPrefab != null ? _hostPlayerAvatarPrefab : _clientPlayerAvatarPrefab);
         public GameObject HostPlayerAvatarPrefab => _hostPlayerAvatarPrefab != null ? _hostPlayerAvatarPrefab : _playerAvatarPrefab;
         public GameObject ClientPlayerAvatarPrefab => _clientPlayerAvatarPrefab != null ? _clientPlayerAvatarPrefab : _playerAvatarPrefab;
+        public GameObject HostVisualTemplate => _hostVisualTemplate;
 
         public bool HasResolvedPlayerAvatarPrefabs => PlayerAvatarPrefab != null;
 

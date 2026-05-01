@@ -10,12 +10,14 @@ public sealed class MultiplayerRuntimeConfigEditor : Editor
     private SerializedProperty _playerAvatarPrefabProperty;
     private SerializedProperty _hostPlayerAvatarPrefabProperty;
     private SerializedProperty _clientPlayerAvatarPrefabProperty;
+    private SerializedProperty _hostVisualTemplateProperty;
 
     private void OnEnable()
     {
         _playerAvatarPrefabProperty = serializedObject.FindProperty("_playerAvatarPrefab");
         _hostPlayerAvatarPrefabProperty = serializedObject.FindProperty("_hostPlayerAvatarPrefab");
         _clientPlayerAvatarPrefabProperty = serializedObject.FindProperty("_clientPlayerAvatarPrefab");
+        _hostVisualTemplateProperty = serializedObject.FindProperty("_hostVisualTemplate");
     }
 
     public override void OnInspectorGUI()
@@ -30,12 +32,14 @@ public sealed class MultiplayerRuntimeConfigEditor : Editor
         EditorGUILayout.PropertyField(_playerAvatarPrefabProperty);
         EditorGUILayout.PropertyField(_hostPlayerAvatarPrefabProperty);
         EditorGUILayout.PropertyField(_clientPlayerAvatarPrefabProperty);
+        EditorGUILayout.PropertyField(_hostVisualTemplateProperty);
 
         using (new EditorGUI.DisabledScope(true))
         {
             EditorGUILayout.ObjectField("Resolved Player Prefab", runtimeConfig.PlayerAvatarPrefab, typeof(GameObject), false);
             EditorGUILayout.ObjectField("Resolved Host Prefab", runtimeConfig.HostPlayerAvatarPrefab, typeof(GameObject), false);
             EditorGUILayout.ObjectField("Resolved Client Prefab", runtimeConfig.ClientPlayerAvatarPrefab, typeof(GameObject), false);
+            EditorGUILayout.ObjectField("Host Visual Template", runtimeConfig.HostVisualTemplate, typeof(GameObject), false);
         }
 
         serializedObject.ApplyModifiedProperties();
