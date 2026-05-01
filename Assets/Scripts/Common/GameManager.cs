@@ -69,6 +69,7 @@ namespace Core.GameFlow
 
         private void Awake()
         {
+            EnsureSoloSceneAvatarStateIfNeeded();
             ResolveHealthReferences();
             ResolveGameOverUiReferences();
             HideGameOverUI();
@@ -92,8 +93,42 @@ namespace Core.GameFlow
             _isSceneLoading = false;
             ResetMultiplayerRetryUiState();
 
+            ResolveHealthReferences();
             _playerDead = _playerHealth != null && _playerHealth.IsDead;
             _bossDead = _bossHealth != null && _bossHealth.IsDead;
+
+            Debug.Log(
+                $"[SoloDebug][GamePlayScene][Start] scene={SceneManager.GetActiveScene().path} " +
+                $"hasActiveSession={(MultiplayerSessionService.HasInstance && MultiplayerSessionService.Instance.HasActiveSession)} " +
+                $"solo={DescribeSceneAvatar("SoloPlayerAvatar")} " +
+                $"multi={DescribeSceneAvatar("MultiPlayerAvatar")}");
+        }
+
+        private void EnsureSoloSceneAvatarStateIfNeeded()
+        {
+            if (IsMultiplayerGameplaySessionActive())
+            {
+                return;
+            }
+
+            Scene activeScene = SceneManager.GetActiveScene();
+            if (!activeScene.IsValid()
+                || !string.Equals(activeScene.path, MultiplayerScenePaths.GamePlayScenePath, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            GameObject soloAvatar = FindSceneObjectByName("SoloPlayerAvatar");
+            if (soloAvatar != null && !soloAvatar.activeSelf)
+            {
+                soloAvatar.SetActive(true);
+            }
+
+            GameObject multiAvatar = FindSceneObjectByName("MultiPlayerAvatar");
+            if (multiAvatar != null && multiAvatar.activeSelf)
+            {
+                multiAvatar.SetActive(false);
+            }
         }
 
         private void Update()
@@ -377,7 +412,7 @@ namespace Core.GameFlow
 
         private bool IsMultiplayerGameplayActive()
         {
-            if (!MultiplayerSessionService.HasInstance || !MultiplayerSessionService.Instance.HasActiveSession)
+            if (!IsMultiplayerGameplaySessionActive())
             {
                 return false;
             }
@@ -390,6 +425,11 @@ namespace Core.GameFlow
 
             return string.Equals(activeScene.path, MultiplayerScenePaths.GamePlayScenePath, StringComparison.OrdinalIgnoreCase)
                    || string.Equals(activeScene.path, MultiplayerScenePaths.FullGamePlayScenePath, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsMultiplayerGameplaySessionActive()
+        {
+            return MultiplayerSessionService.HasInstance && MultiplayerSessionService.Instance.HasActiveSession;
         }
 
         private void UpdateMultiplayerDefeatedUi(bool force)
@@ -492,6 +532,68 @@ namespace Core.GameFlow
                     _bossHealth = bossController.GetComponent<Health>();
                 }
             }
+        }
+
+        private static string DescribeSceneAvatar(string avatarName)
+        {
+            GameObject avatarObject = FindSceneObjectByName(avatarName);
+            if (avatarObject == null)
+            {
+                return $"{avatarName}(missing)";
+            }
+
+            Health health = avatarObject.GetComponent<Health>();
+            PlayerController playerController = avatarObject.GetComponent<PlayerController>();
+            string healthText = health != null ? $"{health.CurrentHealth}/{health.MaxHealth}" : "n/a";
+            string authorityText = playerController != null ? playerController.CurrentActionAuthorityMode.ToString() : "n/a";
+            string simulationText = playerController != null ? playerController.SimulationMode.ToString() : "n/a";
+
+            return $"{avatarName}(activeSelf={avatarObject.activeSelf}, activeInHierarchy={avatarObject.activeInHierarchy}, hp={healthText}, simulation={simulationText}, authority={authorityText})";
+        }
+
+        private static GameObject FindSceneObjectByName(string objectName)
+        {
+            Scene activeScene = SceneManager.GetActiveScene();
+            if (!activeScene.IsValid())
+            {
+                return null;
+            }
+
+            GameObject[] rootObjects = activeScene.GetRootGameObjects();
+            for (int i = 0; i < rootObjects.Length; i++)
+            {
+                GameObject found = FindSceneChildRecursive(rootObjects[i].transform, objectName);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+
+            return null;
+        }
+
+        private static GameObject FindSceneChildRecursive(Transform current, string objectName)
+        {
+            if (current == null)
+            {
+                return null;
+            }
+
+            if (string.Equals(current.name, objectName, StringComparison.Ordinal))
+            {
+                return current.gameObject;
+            }
+
+            for (int i = 0; i < current.childCount; i++)
+            {
+                GameObject found = FindSceneChildRecursive(current.GetChild(i), objectName);
+                if (found != null)
+                {
+                    return found;
+                }
+            }
+
+            return null;
         }
 
         public void SetPlayerHealth(Health playerHealth)

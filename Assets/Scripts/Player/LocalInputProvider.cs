@@ -31,6 +31,10 @@ namespace Core.Player
 
         private void OnEnable()
         {
+            Debug.Log(
+                $"[SoloDebug][LocalInputProvider][OnEnable] object={gameObject.name} " +
+                $"activeSelf={gameObject.activeSelf} activeInHierarchy={gameObject.activeInHierarchy} " +
+                $"startInputEnabled={_startInputEnabled}");
             SetRuntimeInputEnabled(_startInputEnabled);
         }
 
@@ -87,6 +91,9 @@ namespace Core.Player
 
             _startInputEnabled = enabled;
             _runtimeInputEnabled = enabled;
+            Debug.Log(
+                $"[SoloDebug][LocalInputProvider][SetRuntimeInputEnabled] object={gameObject.name} " +
+                $"enabled={enabled} activeSelf={gameObject.activeSelf} activeInHierarchy={gameObject.activeInHierarchy}");
 
             if (enabled)
             {

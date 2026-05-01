@@ -346,6 +346,11 @@ namespace Core.Multiplayer
                 return;
             }
 
+            bool hasActiveSession = MultiplayerSessionService.HasInstance
+                                    && MultiplayerSessionService.Instance.HasActiveSession;
+            Debug.Log(
+                $"[SoloDebug][Title->Gameplay] source=MultiplayerTitleSceneDriver " +
+                $"targetScene={MultiplayerScenePaths.GamePlayScenePath} hasActiveSession={hasActiveSession}");
             _titleSceneController.MarkSceneTransitionRequestedForMultiplayer();
             SceneManager.LoadScene(MultiplayerScenePaths.GamePlayScenePath);
         }
