@@ -97,6 +97,15 @@ namespace Core.Boss
 
         public void PlayAttack() => CrossFade(AnimBasicAttack);
 
+        public void PlayAttackImmediate()
+        {
+            if (_animator == null) return;
+            if (!_animator.HasState(0, AnimBasicAttack)) return;
+
+            _currentAnimState = AnimBasicAttack;
+            _animator.Play(AnimBasicAttack, 0, 0f);
+        }
+
         public float GetBasicAttackClipLengthOrDefault(float fallback)
         {
             return GetClipLengthOrDefault(ANIM_BASIC_ATTACK, fallback);
@@ -146,6 +155,24 @@ namespace Core.Boss
 
             // 아직 Animator 상태명이 변경되지 않은 경우 레거시 이름으로 폴백
             CrossFade(AnimLegacyClawAttack);
+        }
+
+        public void PlayLungeAttackImmediate()
+        {
+            if (_animator == null) return;
+
+            if (_animator.HasState(0, AnimLungeAttack))
+            {
+                _currentAnimState = AnimLungeAttack;
+                _animator.Play(AnimLungeAttack, 0, 0f);
+                return;
+            }
+
+            if (_animator.HasState(0, AnimLegacyClawAttack))
+            {
+                _currentAnimState = AnimLegacyClawAttack;
+                _animator.Play(AnimLegacyClawAttack, 0, 0f);
+            }
         }
 
         public void PlayProjectileAttack()

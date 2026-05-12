@@ -7,6 +7,7 @@ using Core.Common.Attributes;
 using Core.Common.Patterns;
 using Core.Multiplayer;
 using Core.Player;
+using Core.Audio;
 using System.Collections.Generic;
 using Unity.Netcode;
 using UnityEngine;
@@ -15,7 +16,7 @@ using UnityEngine.Serialization;
 namespace Core.Common.Attributes
 {
     /// <summary>
-    /// Vector2를 최소/최대 슬라이더로 그리기 위한 인스펙터 속성.
+    /// Vector2 최소/최대 범위 슬라이더를 그릴 때 사용하는 인스펙터 속성.
     /// </summary>
     public sealed class MinMaxRangeAttribute : PropertyAttribute
     {
@@ -48,7 +49,7 @@ namespace Core.Boss
         [SerializeField] private Transform playerTransform;
         [SerializeField] private BossVisual animator;
         [SerializeField] private BlinkWhiteEffect damageBlinkEffect;
-        [SerializeField, Tooltip("Basic 공격 사거리 기준점 (미할당 시 Boss Root 사용)")]
+        [SerializeField, Tooltip("Basic 공격 거리/각도 계산 기준점 (없으면 Boss Root 사용)")]
         private Transform basicAttackRangeOrigin;
 
         [Header("스탯 (Stats)")]
@@ -60,30 +61,30 @@ namespace Core.Boss
         [SerializeField, Range(0.05f, 1f)] private float phaseTwoHealthThreshold = 0.5f;
 
         [Header("감지 설정 (Detection Settings)")]
-        [SerializeField, Tooltip("두 플레이어가 모두 이 범위 안에 있으면 aggro time 종료 후 피해 기여도로 어그로를 비교한다.")]
+        [SerializeField, Tooltip("두 플레이어가 모두 범위 안에 있으면 aggro time 종료 후 누적 기여도로 타겟을 결정한다.")]
         private float aggroPriorityRange = 6.0f;
         [SerializeField] private float detectionRange = 10.0f;
         [FormerlySerializedAs("attackRange")]
-        [SerializeField, Tooltip("Basic 공격 반경. 시각 경고와 실제 판정에 함께 사용된다.")]
+        [SerializeField, Tooltip("Basic 공격 반경. 시간 기반 거리 비교와 함께 사용한다.")]
         private float basicAttackRange = 2.5f;
         [SerializeField] private float lungeAttackRange = 4.5f;
         [FormerlySerializedAs("projectileAttackRange")]
         [FormerlySerializedAs("aoeAttackRange")]
         [SerializeField] private float sharedRangedAttackRange = 6.0f;
-        [SerializeField, Tooltip("공격 사거리 경계 지터 완화를 위한 추적 재진입 여유 거리")]
+        [SerializeField, Tooltip("공격 상태를 벗어난 후 추적을 다시 시작하는 여유 거리")]
         private float chaseReengageBuffer = 1.0f;
         [SerializeField] private float searchDuration = 5.0f;
 
         [Header("어그로 설정 (Aggro Settings)")]
         [FormerlySerializedAs("aggroDamageWindow")]
-        [SerializeField, Tooltip("첫 피격 후 피해 기여도를 확정하기 전까지 누적할 시간(초)")]
+        [SerializeField, Tooltip("첫 피격 후 기여도를 누적하는 시간(초)")]
         private float aggroTime = 3.0f;
 
         [Header("공격 설정 (Attack Settings)")]
         [SerializeField] private int attackDamage = 20;
         [SerializeField] private float attackDuration = 1.0f;
         [SerializeField] private float attackCooldown = 2.0f;
-        [SerializeField, Tooltip("Attack1/2/4 warning visual 공용 Y 리프트")]
+        [SerializeField, Tooltip("Attack1/2/4 warning visual 공통 Y 오프셋")]
         private float warningVisualHeightOffset = 0.15f;
 
         [Header("Basic Attack Settings")]
@@ -92,9 +93,9 @@ namespace Core.Boss
         private AttackWarningController basicAttackWarningPrefab;
 
         [Header("Legacy DamageCaster References")]
-        [Tooltip("레거시 Head DamageCaster 참조 (Basic/Lunge는 더 이상 사용하지 않음)")]
+        [Tooltip("레거시 Head DamageCaster 참조 (Basic/Lunge 현재 로직에서는 사용 안 함)")]
         [SerializeField] private DamageCaster _headDamageCaster;
-        [Tooltip("레거시 Lunge DamageCaster 참조 (Basic/Lunge는 더 이상 사용하지 않음)")]
+        [Tooltip("레거시 Lunge DamageCaster 참조 (Basic/Lunge 현재 로직에서는 사용 안 함)")]
         [FormerlySerializedAs("_clawDamageCaster")]
         [SerializeField] private DamageCaster _lungeDamageCaster;
 
@@ -179,7 +180,7 @@ namespace Core.Boss
         private Transform _lockedAggroTarget;
 
         /// <summary>
-        /// 어그로 타겟 재평가에 필요한 스캔 결과를 한 번에 묶어 전달한다.
+        /// 어그로 타겟 선택 결과에 필요한 스캔 결과를 묶어 보관한다.
         /// </summary>
         private readonly struct AggroTargetScanResult
         {
@@ -194,11 +195,11 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// Unity 에디터에서 스크립트가 로드되거나 인스펙터의 값이 변경될 때 호출되어 데이터의 유효성을 검사합니다.
+        /// Unity 에디터에서 스크립트 로드/인스턴스 변경 시 직렬화 값을 검증한다.
         /// </summary>
         private void OnValidate()
         {
-            // 이동 속도는 음수가 되지 않도록 보정
+            // 이동 관련 수치가 음수가 되지 않게 보정
             if (moveSpeed < 0) moveSpeed = 0f;
             if (searchingMoveSpeed < 0) searchingMoveSpeed = 0f;
             phaseTwoHealthThreshold = Mathf.Clamp01(phaseTwoHealthThreshold);
@@ -270,7 +271,7 @@ namespace Core.Boss
         public bool IsLocomotionVisualSuppressed => _suppressLocomotionVisual;
 
         /// <summary>
-        /// Host authority가 현재 boss truth를 dedicated DTO로 캡처한다.
+        /// Host authority 기준 boss truth를 전용 DTO로 캡처한다.
         /// </summary>
         public BossAuthoritativeState CaptureAuthoritativeState(int currentServerTick, float networkFixedDeltaTime)
         {
@@ -298,7 +299,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// 공격 진입 시 attack id와 시작 시각을 한 번만 기록한다.
+        /// 공격 시작 시 attack id와 시작 시간을 함께 기록한다.
         /// </summary>
         public void BeginAuthoritativeAttack(IBossAttackPattern pattern)
         {
@@ -307,7 +308,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// 공격 종료 또는 사망 시 active attack bookkeeping을 비운다.
+        /// 공격 종료 또는 중단 시 active attack bookkeeping을 초기화한다.
         /// </summary>
         public void EndAuthoritativeAttack()
         {
@@ -316,7 +317,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// Host가 공격 3 투사체 표시 이벤트를 remote client용으로 큐에 적재한다.
+        /// Host에서 발사체 시각 이벤트를 remote client 전송 큐에 넣는다.
         /// </summary>
         public void EnqueueReplicatedProjectileShot(
             Vector3 startPosition,
@@ -350,7 +351,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// Host가 공격 4 장판/낙하 표시 이벤트를 remote client용으로 큐에 적재한다.
+        /// Host에서 AoE 생성/경고 시각 이벤트를 remote client 전송 큐에 넣는다.
         /// </summary>
         public void EnqueueReplicatedAoESpawn(
             Vector3 projectileStartPosition,
@@ -376,7 +377,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// Host가 Basic/Lunge 경고 표시 이벤트를 remote client용으로 큐에 적재한다.
+        /// Host에서 Basic/Lunge warning 표시 이벤트를 remote client 전송 큐에 넣는다.
         /// </summary>
         public void EnqueueReplicatedAttackWarningShow(
             BossReplicatedWarningChannel warningChannel,
@@ -414,7 +415,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// Host가 Basic/Lunge 경고 종료 이벤트를 remote client용으로 큐에 적재한다.
+        /// Host에서 Basic/Lunge warning 종료 이벤트를 remote client 전송 큐에 넣는다.
         /// </summary>
         public void EnqueueReplicatedAttackWarningHide(BossReplicatedWarningChannel warningChannel)
         {
@@ -431,7 +432,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// Bridge가 Host에서 적재된 이펙트 이벤트를 순서대로 꺼낸다.
+        /// Bridge가 Host에서 누적한 effect 이벤트를 하나씩 소비한다.
         /// </summary>
         public bool TryDequeueReplicatedEffectEvent(out BossReplicatedEffectEvent effect)
         {
@@ -446,7 +447,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// remote receiver가 없을 때 쌓인 표시 이벤트를 비운다.
+        /// remote receiver 전송 전에 남은 effect 이벤트를 모두 비운다.
         /// </summary>
         public void ClearPendingReplicatedEffectEvents()
         {
@@ -462,8 +463,8 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// 런타임에서 보스 추적 타겟을 다시 바꿀 때 사용한다.
-        /// 멀티플레이 씬에서는 legacy player 제거 후 network avatar로 재바인딩한다.
+        /// 런타임에서 현재 추적 타겟을 안전하게 교체한다.
+        /// 멀티플레이 환경에서는 legacy player와 network avatar 모두 대응한다.
         /// </summary>
         public void SetTarget(Transform newTarget)
         {
@@ -483,7 +484,7 @@ namespace Core.Boss
             if (lungeAttackSettings == null) lungeAttackSettings = new LungeAttackSettings();
             if (aoeAttackSettings == null) aoeAttackSettings = new AoEAttackSettings();
 
-            // 플레이어가 할당되지 않았다면 자동으로 찾음
+            // 플레이어 참조가 비어 있으면 태그로 자동 탐색
             if (playerTransform == null)
             {
                 GameObject player = GameObject.FindGameObjectWithTag("Player");
@@ -501,7 +502,7 @@ namespace Core.Boss
             HitState = new BossHitState(this);
             DeadState = new BossDeadState(this);
 
-            // Attack Patterns 초기화
+            // Attack Pattern 초기화
             BasicAttackPattern = new BasicAttackPattern();
             LungeAttackPattern = new LungeAttackPattern(lungeAttackSettings);
             ProjectileAttackPattern = new ProjectileAttackPattern(projectileAttackSettings);
@@ -558,28 +559,29 @@ namespace Core.Boss
             ApplyGravity();
             UpdatePhaseFlow();
 
-            // Controller에서 직접 Update 호출
+            // 현재 상태 Update 호출
             _stateMachine.CurrentState?.Update();
             UpdateAggroTimer();
         }
 
         private void HandleDamage(int damage)
         {
-            // 이미 죽었으면 반응 안 함
+            // 이미 사망했으면 추가 hit 처리 금지
             if (_health.IsDead) return;
 
             // 피격 시각 효과는 상태와 무관하게 항상 재생한다.
             PlayDamageBlinkVisual();
+            SoundController.Instance?.Play(SoundId.PlayerKatanaHit);
 
-            // 공격 준비/실행 중에는 피격 모션을 무시한다.
+            // 공격 준비/연출 중에는 피격 모션 전환을 생략한다.
             if (ShouldIgnoreHitMotion()) return;
 
-            // FSM을 통해 Hit 상태로 전환
+            // FSM을 Hit 상태로 전환
             _stateMachine.ChangeState(HitState);
         }
 
         /// <summary>
-        /// Host damage path와 client replay path가 같은 white blink를 사용하도록 통합한다.
+        /// Host damage path와 client replay path가 같은 white blink 진입점을 사용하게 한다.
         /// </summary>
         public void PlayDamageBlinkVisual()
         {
@@ -590,6 +592,7 @@ namespace Core.Boss
         private void HandleDeath()
         {
             damageBlinkEffect?.StopBlink();
+            SoundController.Instance?.Play(SoundId.DragonDead);
             ResetAggroState();
             EndAuthoritativeAttack();
             _stateMachine.ChangeState(DeadState);
@@ -865,7 +868,7 @@ namespace Core.Boss
                 return 0;
             }
 
-            // 공격 시작 프레임 직후 캡처되더라도 미래 tick으로 밀리지 않게 약간 보수적으로 환산한다.
+            // 공격 시작 프레임 캡처 오차를 줄이기 위해 elapsed tick을 올림 처리한다.
             float elapsedSeconds = Mathf.Max(0f, Time.time - _currentAttackStartTime);
             int elapsedTicks = Mathf.CeilToInt(elapsedSeconds / networkFixedDeltaTime);
             return Mathf.Max(0, currentServerTick - elapsedTicks);
@@ -1088,6 +1091,8 @@ namespace Core.Boss
             _currentPhase = phase;
             StopMoving();
 
+            // 플레이어 조우 시점에 스크림 SFX를 즉시 재생해 지연 체감을 줄인다.
+            SoundController.Instance?.Play(SoundId.DragonScream);
             float introDuration = animator != null ? animator.PlayScream() : 1.2f;
             _phaseIntroPlaying = true;
             _phaseIntroEndTime = Time.time + Mathf.Max(0.1f, introDuration);
@@ -1127,7 +1132,7 @@ namespace Core.Boss
         #region Public Helper Methods for States
 
         /// <summary>
-        /// 보스와 타겟 간 수평(XZ) 거리만 계산한다.
+        /// 현재 타겟과의 평면(XZ) 거리를 반환한다.
         /// </summary>
         public float GetPlanarDistanceToTarget()
         {
@@ -1136,8 +1141,8 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// Basic 공격 사거리 판정을 위한 수평(XZ) 거리 계산.
-        /// 기준점은 basicAttackRangeOrigin을 우선 사용하고, 미할당 시 Boss Root를 사용한다.
+        /// Basic 공격 기준점에서 타겟까지의 평면(XZ) 거리를 계산한다.
+        /// 가능하면 basicAttackRangeOrigin을 우선 사용하고, 없으면 Boss Root를 사용한다.
         /// </summary>
         public float GetPlanarDistanceFromBasicAttackOriginToTarget()
         {
@@ -1155,7 +1160,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// Basic bite가 현재 타겟을 입 전방 반구 안에서 맞출 수 있는지 판정한다.
+        /// Basic bite 기준으로 타겟이 전방 반구 안쪽에 있는지 판정한다.
         /// </summary>
         public bool IsTargetInsideBasicAttackArc()
         {
@@ -1367,6 +1372,22 @@ namespace Core.Boss
             _lungeAttackTelegraph.ForceEnd($"BossController.Lunge:{reason}");
             EnqueueReplicatedAttackWarningHide(BossReplicatedWarningChannel.LungeAttack);
             return true;
+        }
+
+        public bool TryEnterLungeAttackTelegraphActiveNow(string reason = "Unspecified")
+        {
+            if (_lungeAttackTelegraph == null)
+            {
+                HitTraceLogger.Log(
+                    $"[HitTrace][BOOT][BossController][TryEnterLungeAttackTelegraphActiveNow][SKIP] reason={reason} telegraph=null");
+                return false;
+            }
+
+            bool entered = _lungeAttackTelegraph.TryEnterActivePhaseNow($"BossController.Lunge:{reason}");
+            HitTraceLogger.Log(
+                $"[HitTrace][BOOT][BossController][TryEnterLungeAttackTelegraphActiveNow][{(entered ? "PASS" : "SKIP")}] reason={reason} " +
+                $"running={_lungeAttackTelegraph.IsRunning} active={_lungeAttackTelegraph.IsActivePhase}");
+            return entered;
         }
 
         public void PlayReplicatedAttackWarning(
@@ -1635,7 +1656,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// 타겟이 감지 반경 안에 있는지 수평(XZ) 거리 기준으로 판정한다.
+        /// 타겟이 감지 반경 안에 있는지 평면(XZ) 거리로 판정한다.
         /// </summary>
         public bool IsTargetInDetectionRange()
         {
@@ -1644,8 +1665,8 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// 보스 피격 시 현재 aggro cycle의 피해 기여도를 기록한다.
-        /// 첫 피격이 들어오면 aggro time을 시작하고, 타이머가 끝날 때까지 누적 피해를 모은다.
+        /// 보스 피격 시 현재 aggro cycle의 기여도를 기록한다.
+        /// 첫 피격이면 aggro time을 시작하고, 타이머 동안 누적 피해를 기록한다.
         /// </summary>
         public void RegisterAggroContribution(GameObject dealer, int damage)
         {
@@ -1669,8 +1690,8 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// 현재 씬의 살아있는 플레이어를 기준으로 타겟을 다시 선택한다.
-        /// 기본 규칙은 가장 가까운 플레이어 우선이고, aggro time 종료 후에는 피해 기여도 winner를 잠깐 고정한다.
+        /// 현재 살아 있는 플레이어를 기준으로 타겟을 다시 선택한다.
+        /// 기본은 최근접 우선이며, aggro time 종료 후에는 기여도 winner를 우선 반영한다.
         /// </summary>
         public void RefreshClosestLiveTarget(bool force = false)
         {
@@ -1735,7 +1756,7 @@ namespace Core.Boss
 
         private Transform TryGetHeldCurrentAggroTarget()
         {
-            // 어그로 타이머가 돌고 있거나 공격 직후라도, 현재 타겟이 우선 원 안에 있으면 그 타겟을 유지한다.
+            // 어그로 타이머가 돌거나 직후라면, 현재 타겟이 우선 범위 안에 있으면 유지한다.
             return IsCurrentTargetWithinAggroPriorityRange() ? playerTransform : null;
         }
 
@@ -1794,7 +1815,7 @@ namespace Core.Boss
                 return;
             }
 
-            // 공격/페이즈 전환 연출 중에는 타이머를 멈춰 타겟 고정 변경이 애니메이션을 끊지 않게 한다.
+            // 공격/페이즈 전환 연출 중에는 타이머를 멈춰 애니메이션 충돌을 막는다.
             if (ShouldPauseAggroTimer())
             {
                 return;
@@ -1839,7 +1860,7 @@ namespace Core.Boss
             _lockedAggroTarget = ResolveAggroDamageWinner();
             ClearAggroContributions();
 
-            // 타이머 종료 시 clear winner가 있으면 다음 refresh를 기다리지 않고 즉시 타겟을 넘긴다.
+            // 타이머 종료 후 winner가 확정되면 다음 refresh를 기다리지 않고 즉시 타겟을 교체한다.
             if (_lockedAggroTarget != null && _lockedAggroTarget != playerTransform)
             {
                 SetTarget(_lockedAggroTarget);
@@ -1993,7 +2014,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// Y축을 제외한 수평 거리 계산 유틸리티.
+        /// Y축을 제거한 평면 거리 계산 유틸리티.
         /// </summary>
         public static float GetPlanarDistance(Vector3 from, Vector3 to)
         {
@@ -2028,7 +2049,7 @@ namespace Core.Boss
                 {
                     if (_suppressLocomotionVisual)
                     {
-                        // 공중 연출 중에는 Locomotion 진입을 막고 속도 파라미터만 정지 상태로 유지한다.
+                        // 페이즈 연출 중에는 Locomotion 이동 속도 파라미터를 0으로 유지한다.
                         animator.SetSpeed(0f);
                     }
                     else
@@ -2052,7 +2073,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// 타겟을 향해 즉시 회전한다. (공격 시작 프레임 정렬용)
+        /// 타겟 방향으로 즉시 회전한다. (공격 시작 직전에 사용)
         /// </summary>
         public void RotateTowardsImmediate(Vector3 targetPosition)
         {
@@ -2063,7 +2084,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// Lunge 시작 시 이동 방향을 고정한다.
+        /// Lunge 이동에 사용할 진행 방향을 타겟 기준으로 잠근다.
         /// </summary>
         public void BeginLungeTravelDirectionLock(Vector3 targetPosition)
         {
@@ -2072,7 +2093,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// 현재 보스가 바라보는 방향으로 Lunge 이동 방향을 고정한다.
+        /// 현재 forward를 기준으로 Lunge 이동 방향을 잠근다.
         /// </summary>
         public void BeginLungeTravelDirectionLockFromCurrentForward()
         {
@@ -2099,7 +2120,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// Lunge 고정 이동 방향을 해제한다.
+        /// Lunge 이동 방향 잠금을 해제한다.
         /// </summary>
         public void EndLungeTravelDirectionLock()
         {
@@ -2107,8 +2128,8 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// 애니메이션 변경 없이 물리 이동만 수행합니다.
-        /// 공격 패턴 등 자체 애니메이션이 있는 상태에서 사용합니다.
+        /// 애니메이션 루트 모션 delta를 직접 이동으로 적용한다.
+        /// 보스의 실제 이동은 CharacterController 기준으로 처리한다.
         /// </summary>
         public void MoveRaw(Vector3 direction, float speed)
         {
@@ -2152,7 +2173,7 @@ namespace Core.Boss
         }
 
         /// <summary>
-        /// 공중 공격 연출 중 지상 이동 애니메이션(Locomotion) 오염을 방지한다.
+        /// 페이즈 연출 중 일반 이동 애니메이션(Locomotion) 표시를 제어한다.
         /// </summary>
         public void SetLocomotionVisualSuppressed(bool suppressed)
         {
@@ -2200,7 +2221,7 @@ namespace Core.Boss
         {
             if (_characterController.isGrounded && _verticalVelocity < 0)
             {
-                _verticalVelocity = -2f; // 지면에 붙어있게 하는 힘
+                _verticalVelocity = -2f; // 바닥에 붙어있게 하는 값
             }
             else
             {
@@ -2347,15 +2368,15 @@ namespace Core.Boss
             public float damageMultiplier = 1.5f;
 
             [MinMaxRange(0f, 1f)]
-            [Tooltip("Attack2 판정 활성 normalized window (x = start, y = end)")]
+            [Tooltip("Attack2 데미지 활성 normalized window (x = start, y = end)")]
             public Vector2 damageCastNormalizedWindow = new Vector2(0.15f, 0.8f);
 
             [Min(0.1f)]
-            [Tooltip("Lunge 고정 이동 거리")]
+            [Tooltip("Lunge 최대 이동 거리")]
             public float travelDistance = 4.5f;
 
             [Min(0.1f)]
-            [Tooltip("Lunge 직선 경고/판정의 전체 너비")]
+            [Tooltip("Lunge 경로 판정/표시용 전체 폭")]
             public float pathWidth = 2.2f;
 
             public void ClampValues()
@@ -2375,24 +2396,24 @@ namespace Core.Boss
             [FormerlySerializedAs("telegraphDuration")]
             [Tooltip("경고 시간(초)")]
             public float warningDuration = 0.3f;
-            [Tooltip("투사체 데미지")]
+            [Tooltip("발사체 기본 데미지")]
             public int damage = 12;
-            [Tooltip("투사체 속도")]
+            [Tooltip("발사체 속도")]
             public float speed = 12f;
-            [Tooltip("투사체 수명(초)")]
+            [Tooltip("발사체 수명(초)")]
             public float lifetime = 3f;
-            [Tooltip("한 번의 패턴에서 발사할 개수")]
+            [Tooltip("한 번의 공격에서 발사하는 횟수")]
             public int volleyCount = 3;
             [Tooltip("발사 간격(초)")]
             public float volleyInterval = 0.08f;
-            [Tooltip("유도 강도 (0 = 직진, 1 = 강한 유도)")]
+            [Tooltip("유도 강도 (0 = 없음, 1 = 강함)")]
             [Range(0f, 1f)]
             public float homingStrength = 0.25f;
-            [Tooltip("유도 지속 시간(초). 0이면 유도 비활성화")]
+            [Tooltip("유도 유지 시간(초). 0이면 유도 비활성")]
             public float homingDuration = 1.2f;
             [Tooltip("Y축 추적 속도 (0이면 발사 높이 유지)")]
             public float verticalFollowSpeed = 4f;
-            [Tooltip("발사 종료 후 상태 복귀 전 최소 대기 시간(초)")]
+            [Tooltip("마지막 발사 후 상태 종료 전 최소 대기 시간(초)")]
             public float postFireRecoveryDuration = 0.12f;
             [Tooltip("공격 애니메이션 종료 판정 normalizedTime")]
             [Range(0.5f, 1.2f)]
@@ -2403,19 +2424,19 @@ namespace Core.Boss
         public class AoEAttackSettings
         {
             [Header("Runtime References")]
-            [Tooltip("장판 프리팹 (AoECircleController 포함)")]
+            [Tooltip("원형 장판 프리팹 (AoECircleController 포함)")]
             public AoECircleController circlePrefab;
-            [Tooltip("장판 인스턴스가 생성될 부모 Transform")]
+            [Tooltip("장판 인스턴스를 정리할 부모 Transform")]
             public Transform circleRoot;
 
             [Header("Pattern Timing")]
             [Tooltip("이륙 연출 시간")]
             public float takeOffDuration = 0.35f;
-            [Tooltip("전진 비행 연출 시간")]
+            [Tooltip("전진 비행 유지 시간")]
             public float flyForwardDuration = 0.35f;
-            [Tooltip("전진 비행 중 추적 속도")]
+            [Tooltip("전진 비행 중 이동 속도")]
             public float flyForwardSpeed = 6.0f;
-            [Tooltip("이 거리 이하로 들어오면 FlyIdle 캐스팅 시작")]
+            [Tooltip("이 거리 이내로 들어오면 FlyIdle 캐스트로 전환")]
             public float castRange = 3.0f;
             [Tooltip("착지 연출 시간")]
             public float landDuration = 0.4f;
@@ -2425,49 +2446,50 @@ namespace Core.Boss
             [Header("AoE Damage")]
             public int damage = 10;
             [FormerlySerializedAs("telegraphDuration")]
-            [Tooltip("경고 시간 (fire 착지/장판 발동 동기화 시간)")]
+            [Tooltip("경고 시간 (fire 투사체 충돌 시점과 동기화)")]
             public float warningDuration = 0.9f;
             [Tooltip("장판 활성 유지 시간")]
             public float activeDuration = 0.9f;
-            [Tooltip("틱 데미지 간격")]
+            [Tooltip("틱 간격(초)")]
             public float tickInterval = 0.25f;
-            [Tooltip("AoE 데미지 대상 레이어")]
+            [Tooltip("AoE 데미지를 받을 대상 레이어")]
             public LayerMask targetMask = ~0;
 
             [Header("AoE Spawn Area")]
-            [Tooltip("한 번의 패턴에서 생성할 장판 개수")]
+            [Tooltip("한 번의 공격에서 생성할 장판 수")]
             public int circleCount = 3;
-            [Tooltip("장판 최대 동시 인스턴스 수")]
+            [Tooltip("동시 유지 최대 인스턴스 수")]
             public int maxCircleInstances = 12;
             [Tooltip("장판 반경")]
             public float radius = 2.5f;
-            [Tooltip("타겟 주변 랜덤 생성 반경")]
+            [Tooltip("타겟 주변 랜덤 분산 반경")]
             public float spawnSpreadRadius = 4.5f;
             [Tooltip("타겟 진행 방향 예측 시간(초)")]
             public float headingLeadTime = 0.35f;
-            [Tooltip("예측 오프셋 최대 거리")]
+            [Tooltip("진행 방향 예측 최대 거리")]
             public float maxHeadingLeadDistance = 6f;
-            [Tooltip("진행 방향 전방 확산 반경")]
+            [Tooltip("전방 방향 분산 반경")]
             public float forwardSpreadRadius = 6f;
-            [Tooltip("진행 방향 측면 확산 반경")]
+            [Tooltip("측면 방향 분산 반경")]
             public float sideSpreadRadius = 3.5f;
-            [Tooltip("전방 편향 강도 (0 = 균등, 1 = 전방 집중)")]
+            [Tooltip("진행 방향 가중치 (0 = 랜덤, 1 = 진행 방향 우선)")]
             [Range(0f, 1f)]
             public float headingBias = 0.7f;
-            [Tooltip("예측 적용 최소 속도")]
+            [Tooltip("진행 방향 추정 최소 속도")]
             public float headingMinSpeed = 0.1f;
-            [Tooltip("지면 투영 Ray 시작 높이")]
+            [Tooltip("지면 탐색 Ray 시작 높이")]
             public float groundRayHeight = 15f;
-            [Tooltip("지면 투영 Ray 최대 거리")]
+            [Tooltip("지면 탐색 Ray 최대 거리")]
             public float groundRayDistance = 40f;
             [HideInInspector]
             public float groundOffset = 0.05f;
-            [Tooltip("지면 판정 레이어")]
+            [Tooltip("지면 탐색 레이어")]
             public LayerMask groundMask = ~0;
 
             [Header("Projectile Sync")]
-            [Tooltip("SpawnPoint 미할당/저지대일 때 보정할 발사 높이")]
+            [Tooltip("SpawnPoint 미지정/비활성 시 사용하는 발사 높이")]
             public float fallbackProjectileHeight = 6f;
         }
     }
 }
+

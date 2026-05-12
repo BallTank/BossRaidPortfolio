@@ -1,11 +1,12 @@
 ﻿using UnityEngine;
+using Core.Audio;
 
 namespace Core.Boss.Attacks
 {
     /// <summary>
-    /// 도약 돌진 공격 패턴 (Lunge).
-    /// normalizedTime 기반으로 애니메이션 종료를 판단하여,
-    /// 클립 길이가 변경되어도 자동으로 적응합니다.
+    /// ���� ���� ���� ���� (Lunge).
+    /// normalizedTime ������� �ִϸ��̼� ���Ḧ �Ǵ��Ͽ�,
+    /// Ŭ�� ���̰� ����Ǿ �ڵ����� �����մϴ�.
     /// </summary>
     public class LungeAttackPattern : IBossAttackPattern
     {
@@ -20,6 +21,7 @@ namespace Core.Boss.Attacks
         private int _damagePayload;
         private float _warningDuration;
         private float _activeDuration;
+        private float _telegraphElapsedTime;
 
         public LungeAttackPattern(BossController.LungeAttackSettings settings)
         {
@@ -29,6 +31,7 @@ namespace Core.Boss.Attacks
         public void Enter(BossController controller)
         {
             controller.StopMoving();
+            SoundController.Instance?.Play(SoundId.DragonAttack2);
             _damageWindowActive = false;
             _travelWindowActive = false;
             _lungeStateObserved = false;
@@ -37,8 +40,9 @@ namespace Core.Boss.Attacks
             _damagePayload = Mathf.RoundToInt(controller.AttackDamage * _settings.damageMultiplier);
             _warningDuration = ResolveWarningDuration(controller);
             _activeDuration = ResolveActiveDuration(controller);
+            _telegraphElapsedTime = 0f;
 
-            // 타겟 방향으로 즉시 회전
+            // Ÿ�� �������� ��� ȸ��
             if (controller.Target != null)
             {
                 controller.RotateTowardsImmediate(controller.Target.position);
@@ -47,27 +51,28 @@ namespace Core.Boss.Attacks
             controller.BeginLungeTravelDirectionLockFromCurrentForward();
             controller.StopConfiguredLungeTravel();
             controller.Visual?.SetLungeRootMotionEnabled(false);
+            controller.Visual?.ResetAnimatorPlaybackSpeed();
             controller.HideLungeAttackTelegraph("Lunge.Enter.PreClear", true);
 
-            // Lunge Attack 애니메이션 재생
-            controller.Visual?.PlayLungeAttack();
+            // 첫 진입에서도 준비 구간이 잘리지 않게 즉시 0프레임에서 시작한다.
+            controller.Visual?.PlayLungeAttackImmediate();
         }
 
         /// <summary>
-        /// 매 프레임 호출. normalizedTime으로 애니메이션 진행률을 추적하여
-        /// 종료 시점을 판단합니다.
+        /// �� ������ ȣ��. normalizedTime���� �ִϸ��̼� ������� �����Ͽ�
+        /// ���� ������ �Ǵ��մϴ�.
         /// </summary>
-        /// <returns>true: 공격 종료 -> CombatState로 복귀</returns>
+        /// <returns>true: ���� ���� -> CombatState�� ����</returns>
         public bool Update(BossController controller)
         {
-            // Visual 또는 Animator가 없으면 즉시 종료 (안전 장치)
+            // Visual �Ǵ� Animator�� ������ ��� ���� (���� ��ġ)
             if (controller.Visual?.Animator == null) return true;
 
-            // 현재 Animator Layer 0의 상태 정보 조회
+            // ���� Animator Layer 0�� ���� ���� ��ȸ
             AnimatorStateInfo stateInfo = controller.Visual.Animator.GetCurrentAnimatorStateInfo(0);
 
-            // CrossFade 중이거나 타겟 상태 진입 전이면 대기
-            // 레거시 Animator를 위해 "Claw Attack" 상태명도 허용한다.
+            // CrossFade ���̰ų� Ÿ�� ���� ���� ���̸� ���
+            // ���Ž� Animator�� ���� "Claw Attack" ���¸�� ����Ѵ�.
             bool isLungeState = stateInfo.IsName("Lunge Attack") || stateInfo.IsName("Claw Attack");
             if (!isLungeState)
             {
@@ -87,12 +92,21 @@ namespace Core.Boss.Attacks
                 StartTelegraph(controller);
             }
 
+            if (_telegraphStarted && !_damageWindowCloseApplied)
+            {
+                _telegraphElapsedTime += Time.deltaTime;
+            }
+
             float progress = stateInfo.normalizedTime;
             float hitStart = _settings.damageCastNormalizedWindow.x;
             float hitEnd = _settings.damageCastNormalizedWindow.y;
             float damageTrailEnd = ResolveDamageTrailEnd(hitStart, hitEnd);
 
-            if (!_damageWindowCloseApplied && !_damageWindowActive && progress >= hitStart && progress < hitEnd)
+            if (!_damageWindowCloseApplied &&
+                !_damageWindowActive &&
+                progress >= hitStart &&
+                progress < hitEnd &&
+                _telegraphElapsedTime >= _warningDuration)
             {
                 OpenDamageWindow(controller);
             }
@@ -119,8 +133,8 @@ namespace Core.Boss.Attacks
                 return true;
             }
 
-            // normalizedTime: 0.0(시작) ~ 1.0(끝). 루프 클립은 1.0 초과 가능.
-            // 애니메이션 종료 판정은 클립 끝(1.0) 기준으로 수행한다.
+            // normalizedTime: 0.0(����) ~ 1.0(��). ���� Ŭ���� 1.0 �ʰ� ����.
+            // �ִϸ��̼� ���� ������ Ŭ�� ��(1.0) �������� �����Ѵ�.
             return false;
         }
 
@@ -128,6 +142,8 @@ namespace Core.Boss.Attacks
         {
             if (_damageWindowActive) return;
 
+            controller.TryEnterLungeAttackTelegraphActiveNow(
+                $"Lunge.OpenDamageWindow elapsed={_telegraphElapsedTime:F3} warning={_warningDuration:F3}");
             _damageWindowActive = true;
             if (!_travelWindowActive)
             {
@@ -165,17 +181,19 @@ namespace Core.Boss.Attacks
 
             controller.ShowLungeAttackTelegraph(_warningDuration, _activeDuration, _damagePayload);
             _telegraphStarted = true;
+            _telegraphElapsedTime = 0f;
         }
 
         public void Exit(BossController controller)
         {
-            // 판정 종료 및 이동 정지 (사망 등 강제 전환 시에도 안전하게 정리)
+            // ���� ���� �� �̵� ���� (��� �� ���� ��ȯ �ÿ��� �����ϰ� ����)
             controller.EndLungeTravelDirectionLock();
             controller.Visual?.SetLungeRootMotionEnabled(false);
             CloseDamageWindow(controller, true);
             CloseTravelWindow(controller);
             controller.StopMoving();
             _telegraphStarted = false;
+            _telegraphElapsedTime = 0f;
         }
 
         private static float ResolveDamageTrailEnd(float hitStart, float hitEnd)
@@ -207,3 +225,4 @@ namespace Core.Boss.Attacks
         }
     }
 }
+
