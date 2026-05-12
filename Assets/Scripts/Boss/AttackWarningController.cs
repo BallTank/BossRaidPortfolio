@@ -365,6 +365,10 @@ namespace Core.Boss
                 $"attack={ResolveAttackTypeLabel(_bossAttackHitType)} damage={_damage} warning={_warningDuration:F3} active={_activeDuration:F3}");
 
             PrepareVisualForCurrentShape();
+            // 첫 실행 시 visual root 초기화가 transform local 값을 건드릴 수 있으므로
+            // 시각 준비 직후 앵커 pose를 다시 고정해 XZ 기준점이 흔들리지 않게 한다.
+            transform.position = position;
+            ApplySectorOrientation(forwardDirection);
             EnsureFallbackMeshMatchesShape();
             ApplyShapeScale(1f);
             ApplyVisual(0f, warningColor);
