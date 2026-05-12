@@ -43,6 +43,7 @@
 `docs/` 파일을 수정한 경우에는 `Coding_Standard.md`의 Korean Integrity Validation(한글 깨짐 검증)까지 통과해야 완료로 간주한다.
 
 ### [Step 5] Document Sync (필수)
+반드시 문서를 쓰기 전에 사용자에게 동의를 구한다.
 코드 변경 후 아래 순서로 동기화한다.
 1. `docs/Progress_Log/YYYY-MM-DD.md` (당일 로그 작성) + `docs/Progress_Log/README.md` (인덱스 확인/갱신)
 2. `docs/technical/System_Blueprint.md`

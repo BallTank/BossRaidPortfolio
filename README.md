@@ -1,75 +1,81 @@
-﻿# ⚔️ Boss Raid Action (Project Portfolio)
+﻿# Boss Raid Portfolio
 
-![Gameplay Preview](https://via.placeholder.com/800x400?text=Please+Insert+Gameplay+GIF+Here)
-> **"Solid Architecture, Zero-GC, Network-Ready Input"**
->
-> Unity C# 기반의 3D 보스 레이드 액션 프로젝트입니다.
-> **확장성 있는 FSM 설계**와 **가비지 컬렉션(GC) 최소화**를 목표로 개발되었습니다.
+Unity 기반 3D 보스 레이드 액션 프로젝트입니다.  
+싱글플레이 전투 루프를 기반으로, Host authority 멀티플레이 동기화까지 확장한 포트폴리오 프로젝트입니다.
 
----
+## 프로젝트 개요
 
-## 🏗️ Technical Highlights (핵심 기술)
+- 프로젝트명: `Boss Raid Portfolio`
+- 장르: 3D 보스 레이드 액션
+- 엔진: `Unity 2022.3.62f3`
+- 언어: `C#`
+- 주요 패키지: `Input System`, `Netcode for GameObjects`, `Relay`, `Lobby`, `Cinemachine`, `URP`, `UGUI`
+- 개발 형태: 개인 포트폴리오 (싱글 + 멀티플레이 구조 설계/구현)
 
-이 프로젝트는 단순 구현을 넘어, **유지보수성**과 **최적화**를 고려하여 설계되었습니다.
+## 내가 구현한 핵심 내용
 
-### 1. Generic FSM Architecture (확장성)
-*   **문제**: 플레이어와 보스의 상태 로직이 중복되고, `enum` 기반 분기가 비대해지는 문제.
-*   **해결**: `StateMachine<TState>` 제네릭 클래스로 FSM을 통합하고, 각 상태를 클래스로 분리하여 **SRP(단일 책임 원칙)** 를 준수했습니다.
-*   **결과**: 새로운 패턴 추가 시 기존 코드를 수정할 필요 없이 클래스만 추가하면 되는 **OCP(개방-폐쇄 원칙)** 구조 완성.
-    *   📄 [관련 설계 문서: System Blueprint](docs/System_Blueprint.md)
+1. 게임 루프/씬 전환 구조
+- `Title -> Loading -> Gameplay -> Result` 흐름을 `TitleSceneController`, `SceneLoader`, `LoadingSceneController`, `GameManager`로 분리했습니다.
+- 결과 UI, 재시작, 멀티플레이 재시도 흐름을 `GameManager` 기준으로 통합했습니다.
+- Scene contract를 명시적으로 관리해 runtime 전환 안정성을 높였습니다.
 
-### 2. Zero-Alloc Physics (최적화)
-*   **문제**: 매 프레임 발생하는 물리 연산(`OverlapSphere`)으로 인한 잦은 GC 발생.
-*   **해결**: `Physics.OverlapSphereNonAlloc`을 도입하고, 충돌 검사 결과를 저장하는 배열을 **Pre-allocate(미리 할당)** 하여 런타임 메모리 할당을 **0(Zero)** 으로 만들었습니다.
-    ```csharp
-    // 최적화 예시 코드 (단순화)
-    private readonly Collider[] _hitResults = new Collider[10]; 
-    public void CheckHit() {
-        int count = Physics.OverlapSphereNonAlloc(..., _hitResults); // No GC Allocation
-    }
-    ```
+2. 전투 시스템 (FSM + 패턴 분리)
+- 플레이어/보스 모두 StateMachine 기반으로 이동, 공격, 피격, 사망 흐름을 분리했습니다.
+- 보스 공격은 `IBossAttackPattern` 전략 패턴으로 분리해 Basic/Lunge/Projectile/AoE를 독립적으로 관리합니다.
+- 공격 경고(telegraph)와 실제 판정 ownership을 분리해 시각/판정 타이밍 회귀를 줄였습니다.
 
-### 3. Network-Ready Input System (설계)
-*   **특징**: `Input.GetKey`를 로직에서 직접 호출하지 않고, `IInputProvider` 인터페이스를 통해 입력과 로직을 분리했습니다.
-*   **Bit-Packing**: 네트워크 동기화를 염두에 두고, 버튼 입력을 `struct` 내의 **Bitmask**로 처리하여 패킷 용량을 최적화했습니다.
+3. 멀티플레이 권한/동기화 구조
+- 입력은 `IInputProvider -> PlayerInputPacket` 흐름으로 분리해 network-ready data contract를 유지했습니다.
+- 플레이어 행동은 Host 승인(authoritative action start) 기준으로 실행되도록 경계를 정리했습니다.
+- 보스는 `MultiplayerBossAuthorityBridge`로 authoritative state를 전파하고, 클라이언트는 display-only 재생을 수행합니다.
 
----
+4. 성능/안정성 최적화
+- `Physics.OverlapSphereNonAlloc` 및 pre-allocated buffer를 사용해 GC 스파이크를 줄였습니다.
+- 투사체/이펙트는 풀링 중심으로 관리해 런타임 `Instantiate/Destroy` 비용을 완화했습니다.
+- 로그/검증 루틴을 문서화하여 회귀 분석 속도를 높였습니다.
 
-## 🛠️ Stack & Tools
+5. 유지보수 중심 문서화
+- 아키텍처 변경과 구현 히스토리를 `System_Blueprint`, `Progress_Log`, `Technical_Glossary`에 동기화합니다.
+- 작업 단위마다 원인/수정/판단 근거를 남겨 추적 가능한 유지보수 흐름을 만들었습니다.
 
-*   **Engine**: Unity 2022 (2022.3.62f3)
-*   **Language**: C# (Style Guide 준수)
-*   **Version Control**: Git (Git Flow 전략 사용 - [전략 문서](docs/Git_Branching_Strategy.md))
-*   **Documentation**: Markdown, Mermaid JS (Class Diagrams)
+## 기술 포인트
 
----
+- Generic FSM 기반 상태 분리 (`StateMachine<TState>`)
+- Data-oriented 입력 계약 (`PlayerInputPacket`, bit-packed flags)
+- Host authority 기반 멀티플레이 동기화
+- Strategy Pattern 기반 보스 공격 확장 구조
+- NonAlloc + Pooling 기반 런타임 최적화
 
-## 📂 Project Structure
+## 실행 방법
 
-물리적 폴더 구조와 논리적 네임스페이스를 `Core` 하위로 일치시켜 의존성을 관리했습니다.
+1. Unity Hub에서 `2022.3.62f3` 에디터를 설치합니다.
+2. 프로젝트 루트(`BossRaidPortfolio`)를 엽니다.
+3. 기본 시작 씬으로 `Assets/Scenes/mutiplayer/TitleScene.unity`를 실행합니다.
+4. 단일 전투 검증이 필요하면 `Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity`를 사용합니다.
+
+## 조작키
+- 키보드 이동, 마우스 좌클릭 공격, 스페이스바 대쉬
+
+## 폴더 구조 (요약)
 
 ```text
-Assets/Scripts/Core
-├── Common/    # (Generic) StateMachine, Health, IDamageable
-├── Player/    # (Unique) PlayerController, States, InputProvider
-└── Boss/      # (Unique) BossController, AI Strategies, Visual
+Assets/
+  Scenes/
+    mutiplayer/   # Runtime target scenes (Title/Loading/GamePlay)
+    merged/       # Snapshot/merge reference scenes
+    Legacy/       # Legacy/test scenes
+  Scripts/
+    Player/       # Player controller, states, input
+    Boss/         # Boss controller, FSM, attack patterns
+    Multiplayer/  # Network authority/sync bridge
+    Common/       # Shared systems (game flow, combat core)
+    UI/           # HUD and UI controllers
 ```
 
----
+## 문서 링크
 
-## 📚 Technical Documentation & Blog
-
-개발 과정에서 마주친 기술적 난제와 의사결정 과정을 상세히 기록했습니다.
-
-### Core Architecture
-| Document | Description |
-| --- | --- |
-| 🏗️ **[System Blueprint](docs/System_Blueprint.md)** | 전체 클래스 다이어그램 및 시스템 아키텍처 설계도 |
-| 📖 **[Coding Standard](docs/Coding_Standard.md)** | 프로젝트 코딩 컨벤션 및 최적화 가이드라인 |
-| 📅 **[Progress Log](docs/Progress_Log/README.md)** | 일일 개발 일지 및 주요 마일스톤 달성 현황 |
-
-## 📧 Contact
-
-*   **이름**: 이종휘
-*   **Email**: osmf12@naver.com
+- [System_Blueprint](/d:/Unity-projects/BossRaidPortfolio/docs/technical/System_Blueprint.md)
+- [Input_FSM_Flow](/d:/Unity-projects/BossRaidPortfolio/docs/technical/Input_FSM_Flow.md)
+- [Coding_Standard](/d:/Unity-projects/BossRaidPortfolio/docs/technical/Coding_Standard.md)
+- [Progress_Log Index](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/README.md)
 
