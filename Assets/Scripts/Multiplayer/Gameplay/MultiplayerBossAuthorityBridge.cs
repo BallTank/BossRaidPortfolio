@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using Core.Boss;
+using Core.Audio;
 using Core.UI;
 using Unity.Collections;
 using Unity.Netcode;
@@ -446,6 +447,7 @@ namespace Core.Multiplayer
                     break;
 
                 case BossReplicatedEffectKind.AoESpawn:
+                    SoundController.Instance?.Play(SoundId.DragonFireball);
                     _bossController.AoEAttackPattern?.PlayReplicatedDisplayAoE(
                         _bossController,
                         effect.StartPosition,
@@ -637,6 +639,7 @@ namespace Core.Multiplayer
                                       || _lastAppliedState.Phase != state.Phase;
             if (shouldRestartIntro)
             {
+                SoundController.Instance?.Play(SoundId.DragonScream);
                 _bossVisual.PlayScream();
             }
         }
@@ -725,6 +728,7 @@ namespace Core.Multiplayer
             switch (visualState)
             {
                 case BossAuthoritativeAttackVisualState.AoEFlyForward:
+                    SoundController.Instance?.Play(SoundId.DragonFlyForward);
                     _bossVisual.PlayFlyForward();
                     if (!TryPlayAnimatorState(FlyForwardStateName, normalizedTime))
                     {
@@ -733,6 +737,7 @@ namespace Core.Multiplayer
                     break;
 
                 case BossAuthoritativeAttackVisualState.AoEFlyIdle:
+                    SoundController.Instance?.Play(SoundId.DragonBreath);
                     _bossVisual.PlayFlyIdle();
                     if (!TryPlayAnimatorState(FlyIdleStateName, normalizedTime))
                     {
@@ -741,6 +746,7 @@ namespace Core.Multiplayer
                     break;
 
                 case BossAuthoritativeAttackVisualState.AoELand:
+                    SoundController.Instance?.Play(SoundId.DragonFlyDown);
                     _bossVisual.PlayLand();
                     TryPlayAnimatorState(LandStateName, normalizedTime);
                     break;
@@ -748,6 +754,7 @@ namespace Core.Multiplayer
                 case BossAuthoritativeAttackVisualState.AoETakeOff:
                 case BossAuthoritativeAttackVisualState.None:
                 default:
+                    SoundController.Instance?.Play(SoundId.DragonFlyUp);
                     _bossVisual.PlayTakeOff();
                     if (!TryPlayAnimatorState(TakeOffStateName, normalizedTime))
                     {
@@ -1080,3 +1087,4 @@ namespace Core.Multiplayer
         }
     }
 }
+
