@@ -1,5 +1,6 @@
 ﻿using System.Collections.Generic;
 using Core.Boss.AoE;
+using Core.Audio;
 using Core.Boss.Projectiles;
 using Core.Combat;
 using UnityEngine;
@@ -68,6 +69,7 @@ namespace Core.Boss.Attacks
             _phase = PatternPhase.TakeOff;
 
             controller.Visual?.PlayTakeOff();
+            SoundController.Instance?.Play(SoundId.DragonFlyUp);
         }
 
         public bool Update(BossController controller)
@@ -162,6 +164,7 @@ namespace Core.Boss.Attacks
             _phase = PatternPhase.FlyForward;
             _phaseTimer = 0f;
             controller.Visual?.PlayFlyForward();
+            SoundController.Instance?.Play(SoundId.DragonFlyForward);
         }
 
         private void UpdateFlyForward(BossController controller)
@@ -210,6 +213,7 @@ namespace Core.Boss.Attacks
             _phase = PatternPhase.Landing;
             _phaseTimer = 0f;
             controller.Visual?.PlayLand();
+            SoundController.Instance?.Play(SoundId.DragonFlyDown);
         }
 
         private void UpdateLanding(BossController controller)
@@ -239,6 +243,7 @@ namespace Core.Boss.Attacks
             _activeCircles.Add(circle);
 
             Vector3 projectileStartPosition = ResolveImpactProjectileStartPosition(controller, impactPoint);
+            SoundController.Instance?.Play(SoundId.DragonFireball);
             SpawnImpactProjectile(controller, projectileStartPosition, impactPoint, _warningDuration);
             controller.EnqueueReplicatedAoESpawn(
                 projectileStartPosition,
@@ -254,6 +259,7 @@ namespace Core.Boss.Attacks
             _phaseTimer = 0f;
             _spawnTimer = 0f;
             controller.Visual?.PlayFlyIdle();
+            SoundController.Instance?.Play(SoundId.DragonBreath);
         }
 
         private void SpawnImpactProjectile(
