@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
+using Core.Audio;
 using Core.Multiplayer;
 #if UNITY_EDITOR
 using UnityEditor.SceneManagement;
@@ -13,6 +14,8 @@ namespace Core.GameFlow
     [DisallowMultipleComponent]
     public class TitleSceneController : MonoBehaviour
     {
+        private const string SoundLibraryResourcePath = "SoundLibrary";
+
         private enum TitlePanelState
         {
             Main,
@@ -127,6 +130,33 @@ namespace Core.GameFlow
             EnsureRuntimeUi();
             EnsureMultiplayerDriverBound();
             EnterPressAnyKeyGate();
+            EnsureLobbyBgmPlayback();
+        }
+
+        private void EnsureLobbyBgmPlayback()
+        {
+            SoundController controller = SoundController.Instance;
+            if (controller == null)
+            {
+                GameObject soundControllerRoot = new GameObject("GlobalSoundController");
+                controller = soundControllerRoot.AddComponent<SoundController>();
+                DontDestroyOnLoad(soundControllerRoot);
+            }
+
+            if (!controller.HasLibrary)
+            {
+                SoundLibrary library = Resources.Load<SoundLibrary>(SoundLibraryResourcePath);
+                if (library != null)
+                {
+                    controller.SetLibrary(library);
+                }
+                else
+                {
+                    Debug.LogWarning($"TitleSceneController: Missing SoundLibrary at Resources/{SoundLibraryResourcePath}.asset");
+                }
+            }
+
+            controller.Play(SoundId.BgmLobby);
         }
 
         private void Update()
@@ -505,8 +535,30 @@ namespace Core.GameFlow
                 return;
             }
 
-            button.onClick.RemoveListener(onClick);
+            button.onClick.RemoveAllListeners();
             button.onClick.AddListener(onClick);
+            EnsurePressSoundComponent(button);
+        }
+
+        private static void EnsurePressSoundComponent(Button button)
+        {
+            if (button == null)
+            {
+                return;
+            }
+
+            if (button.GetComponent<UiPressSoundHook>() == null)
+            {
+                button.gameObject.AddComponent<UiPressSoundHook>();
+            }
+        }
+
+        private sealed class UiPressSoundHook : MonoBehaviour, IPointerDownHandler
+        {
+            public void OnPointerDown(PointerEventData eventData)
+            {
+                SoundController.Instance?.Play(SoundId.UiButton);
+            }
         }
 
         private static Transform FindChildRecursive(Transform parent, string objectName)
@@ -645,6 +697,7 @@ namespace Core.GameFlow
             button.colors = colors;
             button.transition = Selectable.Transition.ColorTint;
             button.onClick.AddListener(onClick);
+            EnsurePressSoundComponent(button);
 
             LayoutElement layout = buttonObject.AddComponent<LayoutElement>();
             layout.preferredHeight = 62f;

@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using Core.Audio;
 using Core.GameFlow;
 
 namespace Core.Multiplayer
@@ -215,6 +217,18 @@ namespace Core.Multiplayer
 
             button.onClick.RemoveAllListeners();
             button.onClick.AddListener(onClick);
+            if (button.GetComponent<UiPressSoundHook>() == null)
+            {
+                button.gameObject.AddComponent<UiPressSoundHook>();
+            }
+        }
+
+        private sealed class UiPressSoundHook : MonoBehaviour, IPointerDownHandler
+        {
+            public void OnPointerDown(PointerEventData eventData)
+            {
+                SoundController.Instance?.Play(SoundId.UiButton);
+            }
         }
 
         private async void HandleCreateRoomSelectedAsync()

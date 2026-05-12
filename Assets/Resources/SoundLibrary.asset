@@ -1,0 +1,188 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: afb70ead0b8f21e4db036b55c699e7b1, type: 3}
+  m_Name: SoundLibrary
+  m_EditorClassIdentifier: 
+  _entries:
+  - _id: bgm_battle
+    _category: 0
+    _clips:
+    - {fileID: 8300000, guid: c8c7fbd89f6d1134bb00076ace96bf12, type: 3}
+    _volume: 0.8
+    _pitchMin: 1
+    _pitchMax: 1
+    _loop: 1
+  - _id: bgm_lobby
+    _category: 0
+    _clips:
+    - {fileID: 8300000, guid: 4a5e743ebcd38e14caad0799c0f4ab15, type: 3}
+    _volume: 0.7
+    _pitchMin: 1
+    _pitchMax: 1
+    _loop: 1
+  - _id: bgm_victory
+    _category: 0
+    _clips:
+    - {fileID: 8300000, guid: 9d5379cb008c65a4ea0a8cd011648579, type: 3}
+    _volume: 0.8
+    _pitchMin: 1
+    _pitchMax: 1
+    _loop: 1
+  - _id: bgm_lose
+    _category: 0
+    _clips:
+    - {fileID: 8300000, guid: d91cbb2478eb3ac4bb1f14d35408db04, type: 3}
+    _volume: 0.8
+    _pitchMin: 1
+    _pitchMax: 1
+    _loop: 1
+  - _id: ui_button
+    _category: 2
+    _clips:
+    - {fileID: 8300000, guid: f1497129b8fbcfd4faf77500327c165f, type: 3}
+    _volume: 0.75
+    _pitchMin: 1
+    _pitchMax: 1
+    _loop: 0
+  - _id: player_footstep
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: a33817a1c52ef41489f1e2519154e503, type: 3}
+    _volume: 0.65
+    _pitchMin: 0.96
+    _pitchMax: 1.04
+    _loop: 0
+  - _id: player_katana_combo
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: 178c27870eefae64a9aae70ede6fcd03, type: 3}
+    - {fileID: 8300000, guid: 4143d28b39844ec4dbff2d6a93c09f09, type: 3}
+    - {fileID: 8300000, guid: 49b21a2fc29a78a4e810e6c1eedcdc52, type: 3}
+    _volume: 0.8
+    _pitchMin: 0.98
+    _pitchMax: 1.03
+    _loop: 0
+  - _id: player_katana_hit
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: 6d973493ef901fd4f840fbccfc8f7c8d, type: 3}
+    _volume: 0.82
+    _pitchMin: 1
+    _pitchMax: 1
+    _loop: 0
+  - _id: player1_voice_attack
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: 4e3bb35c6285cf14688230be1b0077e8, type: 3}
+    - {fileID: 8300000, guid: 133ef8117eefe9848a2f7be07039d5a2, type: 3}
+    - {fileID: 8300000, guid: ff5b53d446f2185448772943a786944c, type: 3}
+    _volume: 0.75
+    _pitchMin: 0.98
+    _pitchMax: 1.02
+    _loop: 0
+  - _id: player1_voice_dash
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: dd46988c10821264a95450810e1c680c, type: 3}
+    _volume: 0.75
+    _pitchMin: 1
+    _pitchMax: 1
+    _loop: 0
+  - _id: player1_voice_hit
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: ac1ce1860e7e1f64fa5ec0a996b45599, type: 3}
+    - {fileID: 8300000, guid: e2f33a8a68ef68e4597953de58e31550, type: 3}
+    _volume: 0.72
+    _pitchMin: 1
+    _pitchMax: 1
+    _loop: 0
+  - _id: dragon_attack1
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: e2e2d6a6a59a84b40aeea59af840a4ac, type: 3}
+    _volume: 0.88
+    _pitchMin: 0.98
+    _pitchMax: 1.02
+    _loop: 0
+  - _id: dragon_attack2
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: 6b86ac33951b2bc429f077da6a62672d, type: 3}
+    _volume: 0.88
+    _pitchMin: 0.98
+    _pitchMax: 1.02
+    _loop: 0
+  - _id: dragon_attack3
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: f48379a48fb8b764d94d44d919c4b620, type: 3}
+    _volume: 0.9
+    _pitchMin: 0.98
+    _pitchMax: 1.02
+    _loop: 0
+  - _id: dragon_breath
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: 1679f21525601ac45b92e646a5230efb, type: 3}
+    _volume: 0.9
+    _pitchMin: 0.96
+    _pitchMax: 1.02
+    _loop: 0
+  - _id: dragon_fireball
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: 6f417e83d80e14d41926ba118c097894, type: 3}
+    _volume: 0.9
+    _pitchMin: 0.97
+    _pitchMax: 1.03
+    _loop: 0
+  - _id: dragon_fly_up
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: 842cfdd5ee8a9644da3662632faef001, type: 3}
+    _volume: 0.88
+    _pitchMin: 0.98
+    _pitchMax: 1.02
+    _loop: 0
+  - _id: dragon_fly_forward
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: 98f5b4098d3713c4ea07598f943d19df, type: 3}
+    _volume: 0.88
+    _pitchMin: 0.98
+    _pitchMax: 1.02
+    _loop: 0
+  - _id: dragon_fly_down
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: a27653e249c8ec84ba879225fd5360c1, type: 3}
+    _volume: 0.88
+    _pitchMin: 0.98
+    _pitchMax: 1.02
+    _loop: 0
+  - _id: dragon_scream
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: 728f03140df3d3049a1b8beb95483227, type: 3}
+    _volume: 0.85
+    _pitchMin: 1
+    _pitchMax: 1
+    _loop: 0
+  - _id: dragon_dead
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: 35417521c336a9b4f88b82715613e3ee, type: 3}
+    _volume: 0.85
+    _pitchMin: 1
+    _pitchMax: 1
+    _loop: 0
