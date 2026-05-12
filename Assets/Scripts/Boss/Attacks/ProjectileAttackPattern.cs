@@ -1,12 +1,13 @@
 ﻿using Core.Boss.Projectiles;
 using Core.Combat;
+using Core.Audio;
 using UnityEngine;
 
 namespace Core.Boss.Attacks
 {
     /// <summary>
-    /// 보스 투사체 공격 패턴.
-    /// warning -> 3연발(좌/중앙/우) -> 종료 순서로 동작한다.
+    /// ���� ����ü ���� ����.
+    /// warning -> 3����(��/�߾�/��) -> ���� ������ �����Ѵ�.
     /// </summary>
     public class ProjectileAttackPattern : IBossAttackPattern
     {
@@ -37,6 +38,7 @@ namespace Core.Boss.Attacks
             }
 
             controller.Visual?.PlayProjectileAttack();
+            SoundController.Instance?.Play(SoundId.DragonAttack3);
 
             _warningTimer = _settings.warningDuration;
             _volleyTimer = 0f;
@@ -47,7 +49,7 @@ namespace Core.Boss.Attacks
 
         public bool Update(BossController controller)
         {
-            // 1) 경고(warning) 구간
+            // 1) ���(warning) ����
             if (!_isFiringPhase)
             {
                 _warningTimer -= Time.deltaTime;
@@ -56,7 +58,7 @@ namespace Core.Boss.Attacks
                 _volleyTimer = 0f;
             }
 
-            // 2) 발사 간격에 맞춰 연속 발사
+            // 2) �߻� ���ݿ� ���� ���� �߻�
             if (_shotsFired < _settings.volleyCount)
             {
                 _volleyTimer -= Time.deltaTime;
@@ -70,17 +72,17 @@ namespace Core.Boss.Attacks
                 return false;
             }
 
-            // 3) 발사 완료 후 애니메이션 마무리 시점까지 대기
+            // 3) �߻� �Ϸ� �� �ִϸ��̼� ������ �������� ���
             return IsRecoveryComplete(controller);
         }
 
         public void Exit(BossController controller)
         {
-            // 투사체는 독립 수명으로 동작하므로 상태 종료 시 별도 정리 없음
+            // ����ü�� ���� �������� �����ϹǷ� ���� ���� �� ���� ���� ����
         }
 
         /// <summary>
-        /// Remote client 화면에서 공격 3 투사체를 표시 전용으로 재생한다.
+        /// Remote client ȭ�鿡�� ���� 3 ����ü�� ǥ�� �������� ����Ѵ�.
         /// </summary>
         public void PlayReplicatedDisplayShot(
             BossController controller,
@@ -112,6 +114,10 @@ namespace Core.Boss.Attacks
 
         private void FireShot(BossController controller, int shotIndex)
         {
+            if (shotIndex == 0)
+            {
+                SoundController.Instance?.Play(SoundId.DragonBreath);
+            }
             if (controller.ProjectilePool == null) return;
 
             BossProjectile projectile = controller.ProjectilePool.TryGetProjectile();
@@ -164,7 +170,7 @@ namespace Core.Boss.Attacks
 
         private float GetSpreadAngle(int shotIndex)
         {
-            // 계획 고정: 3발 기준 -8, 0, +8
+            // ��ȹ ����: 3�� ���� -8, 0, +8
             if (shotIndex == 0) return -8f;
             if (shotIndex == 1) return 0f;
             if (shotIndex == 2) return 8f;
@@ -173,7 +179,7 @@ namespace Core.Boss.Attacks
 
         private bool IsRecoveryComplete(BossController controller)
         {
-            // 최소 대기 시간 보장(발사 직후 즉시 복귀 방지)
+            // �ּ� ��� �ð� ����(�߻� ���� ��� ���� ����)
             if (_postFireRecoveryTimer > 0f)
             {
                 _postFireRecoveryTimer -= Time.deltaTime;
@@ -189,10 +195,11 @@ namespace Core.Boss.Attacks
                 stateInfo.IsName(AnimFireballShoot) ||
                 stateInfo.IsName(AnimBasicAttack);
 
-            // 이미 다른 상태로 전환된 경우에는 복귀를 허용한다.
+            // �̹� �ٸ� ���·� ��ȯ�� ��쿡�� ���͸� ����Ѵ�.
             if (!isProjectileAnim) return true;
 
             return stateInfo.normalizedTime >= _settings.exitNormalizedTime;
         }
     }
 }
+
