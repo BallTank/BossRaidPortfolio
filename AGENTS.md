@@ -24,7 +24,7 @@
 4. `docs/technical/Coding_Standard.md`
 
 ## 코드 변경 후 필수 동기화
-
+반드시 문서를 쓰기 전에 사용자에게 동의를 구한다.
 코드 변경 완료 후에는 아래 순서로 문서를 업데이트합니다:
 
 1. `docs/Progress_Log/YYYY-MM-DD.md` (당일 로그 작성) + `docs/Progress_Log/README.md` (인덱스 확인/갱신)
