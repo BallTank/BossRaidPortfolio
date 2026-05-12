@@ -1,5 +1,6 @@
 ﻿using Core.Common.Patterns;
 using Core.Player;
+using Core.Audio;
 using UnityEngine;
 
 namespace Core.Player.States
@@ -10,6 +11,7 @@ namespace Core.Player.States
         private bool _wasDashPressed;
         private bool _wasJumpPressed;
         private bool _wasAttackPressed;
+        private float _footstepTimer;
 
         public MoveState(PlayerController controller) : base(controller) { }
 
@@ -29,6 +31,7 @@ namespace Core.Player.States
             _wasDashPressed = false;
             _wasJumpPressed = false;
             _wasAttackPressed = false;
+            _footstepTimer = 0f;
 
             // Animation: Locomotion Blend Tree (Speed = 0 for Idle)
             if (Controller.Animator != null)
@@ -43,6 +46,7 @@ namespace Core.Player.States
             // 회전 및 이동 처리
             UpdateRotation(input);
             UpdateMovement(input);
+            UpdateFootstepFallback(input);
 
             // Animation: Update locomotion blend
             if (Controller.Animator != null)
@@ -105,6 +109,34 @@ namespace Core.Player.States
         private void UpdateMovement(PlayerInputPacket input)
         {
             // Merged into UpdateRotation for consistency with original code flow
+        }
+
+        private void UpdateFootstepFallback(PlayerInputPacket input)
+        {
+            if (!Controller.IsLocalPresentationEnabled)
+            {
+                return;
+            }
+
+            _footstepTimer -= Time.deltaTime;
+            if (_footstepTimer > 0f)
+            {
+                return;
+            }
+
+            if (Controller.CharController == null || !Controller.CharController.isGrounded)
+            {
+                return;
+            }
+
+            float moveMagnitude = input.moveDir.magnitude;
+            if (moveMagnitude < 0.15f)
+            {
+                return;
+            }
+
+            SoundController.Instance?.Play(SoundId.PlayerFootstep);
+            _footstepTimer = moveMagnitude >= 0.75f ? 0.30f : 0.42f;
         }
     }
 }

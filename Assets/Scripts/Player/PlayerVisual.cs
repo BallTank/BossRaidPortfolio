@@ -1,4 +1,5 @@
 ﻿using Core.Common;
+using Core.Audio;
 using UnityEngine;
 
 namespace Core.Player
@@ -57,7 +58,12 @@ namespace Core.Player
         /// </summary>
         public void OnFootstep()
         {
-            // TODO: Sound Manager 연동
+            if (_controller == null || !_controller.IsLocalPresentationEnabled)
+            {
+                return;
+            }
+
+            SoundController.Instance?.Play(SoundId.PlayerFootstep);
         }
 
         #endregion

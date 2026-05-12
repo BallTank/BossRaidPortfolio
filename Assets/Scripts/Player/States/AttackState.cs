@@ -1,4 +1,5 @@
 ﻿using Core.Common.Patterns;
+using Core.Audio;
 using Core.Player;
 using UnityEngine;
 
@@ -78,6 +79,11 @@ namespace Core.Player.States
             _pendingAuthoritativeElapsedTime = 0f;
             _reserveNextCombo = false;
             _wasAttackPressed = true; // 진입 시점 버튼 눌림 가정 (Edge Trigger 준비)
+            if (Controller.CanEmitAttackHitbox)
+            {
+                SoundController.Instance?.Play(SoundId.PlayerKatanaCombo);
+                SoundController.Instance?.Play(SoundId.Player1VoiceAttack);
+            }
 
             // Animation: Play Attack Combo (Attack1, Attack2, Attack3)
             if (Controller.Animator != null)
@@ -143,7 +149,7 @@ namespace Core.Player.States
                 if (input.HasFlag(InputFlag.Dash) && Controller.CanDash)
                 {
                     Controller.StateMachine.ChangeState(Controller.DashState);
-                    Debug.Log("⚡ Attack Canceled by Dash!");
+                    Debug.Log("? Attack Canceled by Dash!");
                     return true;
                 }
             }
@@ -252,3 +258,6 @@ namespace Core.Player.States
         }
     }
 }
+
+
+

@@ -1,5 +1,6 @@
 ﻿using Core.Common.Interfaces;
 using Core.Common.Patterns;
+using Core.Audio;
 using Core.Player;
 using UnityEngine;
 
@@ -62,6 +63,11 @@ namespace Core.Player.States
             // Animation: Play Dash (Quickshift_F)
             if (Controller.Animator != null)
                 Controller.Animator.CrossFade(PlayerController.ANIM_STATE_DASH, 0.1f);
+
+            if (Controller.IsLocalPresentationEnabled)
+            {
+                SoundController.Instance?.Play(SoundId.Player1VoiceDash);
+            }
         }
 
         public override void Update(PlayerInputPacket input)

@@ -4,6 +4,7 @@ using Core.Common;
 using Core.Common.Interfaces;
 using Core.Common.Patterns;
 using Core.Multiplayer;
+using Core.Audio;
 using Core.Player;
 using Core.Player.States;
 using Core.UI;
@@ -773,6 +774,11 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
         if (!_health.IsDead)
         {
+            if (_isLocalPresentationEnabled)
+            {
+                SoundController.Instance?.Play(SoundId.Player1VoiceHit);
+            }
+
             BeginStun(hitData.ForceDirection, BossAttackHitType.Attack2);
         }
 
@@ -831,6 +837,11 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         bool didDamage = TryApplyDamage(damage, hitType);
         if (didDamage && !_health.IsDead)
         {
+            if (_isLocalPresentationEnabled)
+            {
+                SoundController.Instance?.Play(SoundId.Player1VoiceHit);
+            }
+
             EnterHitReactionState();
         }
 
@@ -1609,11 +1620,12 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
     private void HandleAttackHitConfirmed()
     {
+        SoundController.Instance?.Play(SoundId.PlayerKatanaHit);
+
         if (_pendingComboHudStep <= 0)
         {
             return;
         }
-
         ShowComboHud(_pendingComboHudStep);
     }
 
