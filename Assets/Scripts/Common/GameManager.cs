@@ -1,5 +1,6 @@
 ﻿using System;
 using Core.Boss;
+using Core.Audio;
 using Core.Combat;
 using Core.Multiplayer;
 using Core.Player;
@@ -102,6 +103,8 @@ namespace Core.GameFlow
                 $"hasActiveSession={(MultiplayerSessionService.HasInstance && MultiplayerSessionService.Instance.HasActiveSession)} " +
                 $"solo={DescribeSceneAvatar("SoloPlayerAvatar")} " +
                 $"multi={DescribeSceneAvatar("MultiPlayerAvatar")}");
+
+            SoundController.Instance?.Play(SoundId.BgmBattle);
         }
 
         private void EnsureSoloSceneAvatarStateIfNeeded()
@@ -344,6 +347,7 @@ namespace Core.GameFlow
             _isGameOverResolved = true;
             CurrentState = GameFlowState.GameOver;
             CurrentResult = result;
+            PlayResultBgm(result);
 
             if (IsMultiplayerGameplayActive() && result == GameResult.Defeated)
             {
@@ -363,6 +367,28 @@ namespace Core.GameFlow
             {
                 bool isVictory = result == GameResult.Victory;
                 _animator.SetTrigger(isVictory ? _victoryTrigger : _defeatedTrigger);
+            }
+        }
+
+        private static void PlayResultBgm(GameResult result)
+        {
+            SoundController controller = SoundController.Instance;
+            if (controller == null)
+            {
+                return;
+            }
+
+            controller.StopBgm();
+
+            if (result == GameResult.Victory)
+            {
+                controller.Play(SoundId.BgmVictory);
+                return;
+            }
+
+            if (result == GameResult.Defeated)
+            {
+                controller.Play(SoundId.BgmLose);
             }
         }
 
