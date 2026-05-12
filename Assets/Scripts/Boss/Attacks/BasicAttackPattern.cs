@@ -1,4 +1,5 @@
 ﻿using Core.Common;
+using Core.Audio;
 using UnityEngine;
 
 namespace Core.Boss.Attacks
@@ -28,6 +29,7 @@ namespace Core.Boss.Attacks
         public void Enter(BossController controller)
         {
             controller.StopMoving();
+            SoundController.Instance?.Play(SoundId.DragonAttack1);
 
             // 타겟 방향으로 회전
             if (controller.Target != null)
@@ -37,7 +39,7 @@ namespace Core.Boss.Attacks
 
             // 공격 애니메이션 재생
             controller.Visual?.ResetAnimatorPlaybackSpeed();
-            controller.Visual?.PlayAttack();
+            controller.Visual?.PlayAttackImmediate();
             controller.HideBasicAttackTelegraph("Basic.Enter.PreClear", true);
 
             _basicAttackStateObserved = false;
@@ -193,12 +195,20 @@ namespace Core.Boss.Attacks
                 return;
             }
 
-            float readyWindowEnd = Mathf.Clamp01(settings.readyNormalizedWindow.y);
-            bool crossedReadyWindowEnd = !_hasPreviousProgressSample
-                ? progress >= readyWindowEnd
-                : (_previousNormalizedProgress < readyWindowEnd && progress >= readyWindowEnd);
+            // 첫 샘플 프레임은 기준값만 확보하고, 실제 오픈 판정에는 사용하지 않는다.
+            if (!_hasPreviousProgressSample)
+            {
+                return;
+            }
 
-            if (!crossedReadyWindowEnd)
+            // 경고 준비 시간은 최소한 readyDuration만큼 유지되어야 한다.
+            if (_telegraphElapsedTime < _fallbackDamageOpenTime)
+            {
+                return;
+            }
+
+            float readyWindowEnd = Mathf.Clamp01(settings.readyNormalizedWindow.y);
+            if (progress < readyWindowEnd)
             {
                 return;
             }
@@ -227,3 +237,4 @@ namespace Core.Boss.Attacks
         }
     }
 }
+
