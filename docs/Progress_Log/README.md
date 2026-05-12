@@ -1,81 +1,108 @@
-﻿# 🚀 Progress Log: Boss Raid Portfolio
+﻿# Progress Log Index
 
-## 🧭 운영 방식
-- Progress Log는 docs/Progress_Log/ 폴더 단위로 관리한다.
-- 날짜별 기록은 YYYY-MM-DD.md 파일로 분리한다.
-- 같은 날짜의 추가 작업은 기존 날짜 파일에 병합하고, 새 날짜 헤더를 만들지 않는다.
-- 신규 로그 작성 시 TEMPLATE.md를 복사해 사용한다.
+Boss Raid Portfolio의 일일 개발 기록을 모아두는 인덱스 문서입니다.  
+기능 구현, 버그 수정, 검증 결과, 문서 동기화 이력을 날짜 단위로 추적할 수 있도록 구성했습니다.
 
-## 🧩 로그 작성 규칙 (신규 엔트리부터 적용)
-- 신규 엔트리는 체크리스트 업데이트와 맥락노트를 분리해서 작성한다.
-- 기술적 고려에는 아래 3항목을 고정으로 포함한다.
-  - **무엇을 발견했는가**
-  - **무엇을 수정했는가**
-  - **왜 그렇게 판단했는가**
-- 코드 변경이 포함된 로그는 코드 검사 결과 블록(명령/결과/미실행 사유)을 반드시 포함한다.
-- 장기 작업 목록(마일스톤/버그/폴리싱)은 docs/roadmap/Milestone_Backlog.md에서 관리한다.
+## 프로젝트 개요
 
-## 🔎 문서 동기화 참조 규칙
-- `System_Blueprint`/`Technical_Glossary`를 최신화할 때는 기준 로그 파일(`docs/Progress_Log/YYYY-MM-DD.md`)을 먼저 지정한다.
-- 완료 보고에는 `참조 로그: docs/Progress_Log/YYYY-MM-DD.md` 형식을 사용해 근거를 남긴다.
-- 여러 날짜를 근거로 썼다면 `참조 로그`를 여러 줄로 기록해 추적 가능성을 유지한다.
+- 프로젝트명: `Boss Raid Portfolio`
+- 장르: 3D 보스 레이드 액션 (싱글 + 멀티플레이 검증)
+- 엔진: `Unity 2022.3.62f3`
+- 언어: `C#`
+- 핵심 설계 키워드: `FSM`, `Zero-GC`, `Network-Ready Input`, `Authoritative Multiplayer`
+- 기록 범위: `2026-02-02` ~ `2026-05-01` (현재 저장소 기준)
 
-## 📄 기록 템플릿
-- [TEMPLATE.md](./TEMPLATE.md)
+## Progress Log를 쓰는 목적
 
-## 📅 날짜별 로그
-- [2026-05-01.md](./2026-05-01.md) - `MultiplayerRuntimeConfig`에 explicit `HostVisualTemplate` source를 추가하고 `SoloPlayerAvatar/Visual_replaced`를 직접 연결, `MultiplayerPlayerAvatar`가 shared prefab default child 대신 runtime `HostVisual` instance를 만들어 host look을 고정하도록 정리, same-day solo bug diagnosis용 `[SoloDebug]` trace(`Title -> GamePlay`, shared scene avatar active state, local input enable, player runtime role) 추가, same-day solo startup guard로 shared `GamePlayScene`의 `SoloPlayerAvatar`만 활성화/`MultiPlayerAvatar` 비활성화, multiplayer active session에서는 `MultiplayerGameplaySceneCoordinator`/`MultiplayerPlayerAvatar`가 scene template avatar(`SoloPlayerAvatar`, `MultiPlayerAvatar`)를 marker-only disabled 상태로 고정, multiplayer player `DamageCaster` runtime rebinding으로 boss hit 복구, visual swap 뒤 `NetworkAnimator` runtime cache refresh로 host movement replay 복구, `MultiplayerBossAuthorityBridge` hit replay에 `BossController.PlayDamageBlinkVisual()`을 연결해 client boss blink visibility 복구, `BossRaidPortfolio.sln` 빌드 검증 및 문서 동기화
-- [2026-04-30.md](./2026-04-30.md) - `BossController` main `Attack Settings` bottom에 `warningVisualHeightOffset` 공용 inspector field 추가, Attack1/2/4 warning visual-only Y lift 경로를 `AttackWarningController`/`AoECircleController`/`AoEAttackPattern`에 연결, 기존 AoE `groundOffset`는 hidden runtime projection field로 분리, particle-only Basic/Lunge warning prefab fallback mesh 보강, client `Basic Attack` replay에서 effect-before-state + small visual grace로 warning/attack timing 어긋남을 완충, fallback red warning active 중 source particle/VFX child를 잠시 suppress해 old circling effect 재등장을 차단, latest keep-state로 Basic 전용 `BasicAttackWarning_Runtime` plain telegraph path 정착 + temporary debug trace 제거 + first-use warm-up limitation 문서화, multiplayer player `PlayerController` active `DamageCaster` runtime rebinding으로 host/client katana hitbox 누락 복구, `BossRaidPortfolio.sln` 빌드 검증 및 문서 동기화
-- [2026-04-29.md](./2026-04-29.md) - `MultiplayerRuntimeConfig` prefab reference repair + editor validation gate, stable shared player prefab hash registration으로 Editor Host / Build Client `NetworkConfig mismatch` 해소, `GamePlayScene_Verify` scene avatar를 plain marker로 전환해 `ScenePlacedObjects` collision 제거, shared network prefab 위 owner-based visual rebinding/`NetworkAnimator` retarget 기반 정리, same-day follow-up으로 `GamePlayScene.unity`도 marker-based multiplayer spawn contract와 root camera baseline으로 1차 이행, latest same-day follow-up으로 viewer-side HUD portrait order fix / gameplay `Join` text scene cleanup / fast gameplay build Beautify keep rule까지 반영
-- [2026-04-28.md](./2026-04-28.md) - multiplayer runtime player prefab을 exact Host/Client split으로 확장해 Host는 `SoloPlayerAvatar.prefab`, Client는 `MultiPlayerAvatar.prefab`(`2P_3` visual)을 spawn하도록 연결, verify scene bootstrap `Player` 비활성화 + exact prefab instance 배치, `MultiplayerRuntimeConfig`/`MultiplayerRuntimeRoot`/`MultiplayerGameplaySceneCoordinator` 동기화, prefab camera runtime disable, TitleScene multiplayer target verify scene 유지, TitleScene follow-up(`MultiplayerTitleSceneDriver` self-heal attach + runtime-root-scoped button binding), 그리고 verify scene camera hierarchy follow-up(`CameraRoot`를 disabled legacy player에서 분리) 적용
-- [2026-04-20.md](./2026-04-20.md) - `SwordSlashSpawner`의 velocity-only slash spawn 조건을 `AttackState` 게이트로 보강해 이동 입력 중 sword VFX 오탐을 차단, 비공격 구간 `_lastPosition` reset으로 진입 스파이크를 방지, same-day follow-up으로 `Assets/CombatGirlsCharacterPack/Scripts/AnimatorControl.cs` 한글 주석 인코딩 깨짐 복구(주석-only), latest follow-up으로 duplicate `Assets/Resources/Prefabs` prefab root 제거 + `MultiplayerRuntimeConfig` 경유 runtime prefab reference 전환, 빌드 검증 및 문서 동기화
-- [2026-04-17.md](./2026-04-17.md) - `GamePlayScene` Terrain checkerboard root cause를 `Assets/New Terrain.asset` external TerrainLayer GUID 미해결로 확정, `Assets/RecoveredArt/TerrainLayers/LegacyTerrainLayer_01~07.terrainlayer(.meta)` GUID bridge 추가로 resolve 경로 복구, Unity batch execute-method는 기존 Beautify/test compile blocker로 실패했으나 python GUID scan으로 external 7개 모두 local resolve(`missing_count=0`) 확인, same-day follow-up으로 `GameManager.ShowGameOverUI(...)`의 result text/TMP 경로를 disconnect해 `Text_GameResult1` 표시를 비활성화하고 win/lose image-only contract로 정리, latest follow-up으로 `GameManager.IsMultiplayerGameplayActive()`에 verify/full gameplay scene path 이중 허용을 적용해 GameOver win/lose image popup 조건을 복구, final follow-up으로 `GameManager` result gate/UI 상태 추적용 debug console toggle/interval 로그를 추가, latest fix로 결과 text object는 유지하되 TMP 문자열을 공백(`" "`)으로 고정해 `Victory/Defeat` 텍스트만 제거, latest cleanup으로 temporary GameOver debug 로그 필드/출력/헬퍼를 제거, newest fix로 result text policy를 `Victory=공백`, `Defeated=메시지 표시`로 조정해 defeated 안내/재시작 카운터 표시를 복구, final same-day fix로 `PlayerController` visual binding self-heal + `GamePlayScene` `SoloPlayerAvatar -> Visual_replaced` override를 적용해 T-pose/lightning 누락의 scene wiring contract를 복구, newest blink follow-up으로 `BlinkWhiteEffect`가 `_MainTex/_Color` source를 `_BaseMap/_BaseColor` blink shader 입력으로 복사하고 `Visual_replaced` body renderer를 explicit target으로 묶어 white blink material fallback을 복구, latest HUD fix로 `CombatHUDController` damage feedback가 `Text_DamageFeedback` inspector alpha를 runtime visibility cap으로 존중하도록 조정해 alpha `0`일 때 hidden 상태를 유지, final same-day inspector follow-up으로 `PlayerController`에 `_strictVisualBinding` + `_visualBindingReport`를 추가해 old visual 참조를 inspector/context menu에서 explicit 진단 가능하게 정리, 문서 동기화
-- [2026-04-15.md](./2026-04-15.md) - `TitleSceneController`에서 `TitleMainPanel` 런타임 강제 재정렬 로직(`ApplyMainPanelCenterContract`) 제거, Main panel show 시 scene 배치값 유지로 전환, root 우선 바인딩/Animator disable 계약 유지, same-day solo scene load bug fix로 `SceneLoader` gameplay target을 `Assets/Scenes/mutiplayer/GamePlayScene.unity` explicit path로 고정 + `EditorBuildSettings` gameplay scene enable 복구, same-day dash HUD fill sync(`Panel_Dash/Dash_Icon_Active/Image_Dash_Icon_Active3`) 추가, `BossRaidPortfolio.sln` 빌드 검증 및 문서 동기화
-- [2026-04-14.md](./2026-04-14.md) - branch asset export lock preflight 추가, `Export-BranchAssetArtifacts.ps1` batch launch에서 `-noUpm` 제거, `Temp/UnityLockfile` + `Library/*lock` 감지 시 Unity launch 전 clear fail message로 중단하도록 정리, same-day follow-up으로 `PROGRAMDATA` / `ALLUSERSPROFILE` / `USERPROFILE`-drive environment fallback 보강, prestarted UPM IPC reuse launch + zip helper fix 추가, final branch asset trio export 성공 및 문서 동기화, `feature/multiplayer` TitleScene snapshot을 `Assets/Scenes/merged/TitleScene.unity`로 분리 추가, `TitleSceneController`에 keyboard/mouse 기반 Press Any Key 게이트 추가, `Text_PressAnyKey` Animator 비활성화로 prompt 위치 드리프트 버그 수정, `Background/Image` Animator 비활성화로 title 배경 비가시/자식 위치 이탈 버그 수정, same-day rollback으로 outdated `Title_Anim01_0` 대체안 취소 + `Background/Image` 오브젝트 재활성화, same-day follow-up으로 press-any-key 이후 runtime root 바인딩 우선순위를 `TitleRuntimeRoot (1) -> TitleRuntimeRoot`로 고정, latest follow-up으로 root Animator runtime disable + root/main panel center contract를 적용해 `TitleMainPanel` 우측 반화면 치우침 회귀를 정리
-- [2026-04-13.md](./2026-04-13.md) - branch asset export workflow foundation, `Assets/Project/Logic` + `Assets/Project/Content` gradual split root 추가, repo-tracked allowlist config(`tools/asset_export/export_roots.json`) / PowerShell orchestrator / Unity batch export bridge 추가, dry-run manifest generation 확인, Unity batch compile blocker(Beautify/test assembly) 기록, 문서 동기화
-- [2026-04-10.md](./2026-04-10.md) - basic/lunge player-hit 원인 분리를 위한 trace instrumentation 추가 후 롤백, same-day follow-up으로 warning close-cause reason trace(`Hide*`, `ForceEnd/FinishPlayback`) 추가, pre-active hide defer + lunge close one-shot guard 적용, basic timing follow-up으로 `readyNormalizedWindow.y` crossing 즉시 active phase open 연결, 최종 refactor 단계에서 임시 debug trace logger/call 제거, multiplayer client owner combo/damage HUD authoritative feedback RPC 경로 추가, same-day fix로 hit-window captured combo step 기반 HUD labeling 적용, latest follow-up으로 combo timing verify 후 temporary trace 제거, integration merge follow-up으로 NGO/UGS package baseline 복구 + prefab path 문서 갱신, art scene legacy dependency 복구 + placeholder script recovery로 `GamePlayScene_Art.unity` missing GUID `0` 확인, latest recovery로 legacy top-level art pack restore + title/loading/art variation placeholder 복구 + all-scene effective missing GUID `0` 확인, latest asset repair로 duplicate `CombatGirlsCharacterPack` runtime script 제거 + pointer-text art asset 276개 binary 치환 + current `Assets/` pointer count `0` 확인, latest reimport follow-up으로 duplicate `Biperworks` editor tool 제거 + missing nested prefab source `WindbulletHit.prefab` placeholder 복구, `BossRaidPortfolio.sln` 빌드 검증, 문서 동기화
-- [2026-04-09.md](./2026-04-09.md) - boss Attack1 bite에 directional front-arc gate 추가, `BasicAttackSettings.hitHalfAngle` 기반 mouth-facing 180-degree 반구 판정 연결, `BossFSM` Basic entry gate 동기화, same-day follow-up으로 attack1/2 warning `show/hide` multiplayer replay를 `BossReplicatedEffectEvent` batch에 확장, remote display-only `AttackWarningController` 재생/cleanup 연결, same-day basic prepare motion follow-up으로 `BossAuthoritativeState`에 attack `normalized time / playback speed` snapshot 추가와 client basic attack host-progress resync 적용, same-day AoE airborne replay fix로 `AttackVisualState` snapshot 추가 및 client `TakeOff -> FlyForward -> FlyIdle -> Land` semantic replay 연결, same-day basic telegraph hide timing guard로 pre-active `ForceEnd()`를 차단, `BossRaidPortfolio.sln` 빌드 검증, 문서 동기화
-- [2026-04-08.md](./2026-04-08.md) - `Tools/Balance/Open Player Boss Balance Tool` editor window 추가, one combined JSON 기반 player/boss balance export/import 경로 구현, prefab target(`MultiplayerPlayerAvatar.prefab`) + verify scene target(`GamePlayScene_Verify.unity`) 동시 지원, selective serialized mapping/문서 동기화, same-day boss `BasicAttackRange` inspector source-of-truth를 `Detection Settings`로 승격하고 `HeadDamageCaster.radius` auto-sync 추가, same-day balance JSON boss `basicAttackRange` export/import + older JSON backward-safe guard 반영, same-day player locomotion `Speed` animator damping helper(default `0.08f`) 추가로 opposite turn idle cut-in 완화, same-day multiplayer owner position correction deadzone debug knob follow-up then rollback, movement trace debug flag + client prediction/correction/render proxy logs 추가, same-day predicted owner locomotion `Speed` single-writer timing fix로 network tick/replay direct animator write를 frame `Update` cache apply로 정리, same-day frame-driven follow-up으로 predicted owner locomotion `Speed`를 current input + current velocity 기반 `Update` 계산으로 추가 정리, same-day planar-speed source swap으로 predicted owner locomotion `Speed` source를 latest predicted planar speed cache로 전환, same-day stop-aware settle rule로 real stop only immediate idle settle(`0.03s` grace) 추가, `BossRaidPortfolio.sln` 빌드 검증
-- [2026-04-07.md](./2026-04-07.md) - multiplayer boss HP HUD sync fix, `PlayerController.InitializeCombatHUD()` multiplayer boss source manual mode 전환, `MultiplayerBossAuthorityBridge` boss HUD authoritative snapshot apply/cache reset 추가, multiplayer result Step 1 read surface(`MultiplayerPlayerAvatar.TryGetReplicatedHealth(...)`, `MultiplayerBossAuthorityBridge.TryGetLatestBossState(...)`) 추가, `GameManager` multiplayer victory/both-dead defeat split + `Press Enter to Play (x/2)` retry flow + host-only gameplay restart path 추가, same-day follow-up으로 `GameOver_Panel/Image_Win` / `Image_Lose` panel contract 직접 토글 + `MultiplayerPlayerAvatar.TryGetResultDeathState(...)` dead 판정 helper + dead-player spectator follow(position-only) 추가, same-day camera polish로 spectator follow delay `2.5s` edge timer 추가, retry count latch + short host restart delay로 `1/2 -> 0/2` regression fix, boss aggro priority circle + shared ranged circle 추가, same-day aggro timer refine으로 `AggroTime` cycle/pause/damage-lock 규칙 반영, same-day inspector cleanup으로 detection/aggro settings grouping 정리, same-day HUD portrait follow-up으로 local viewer 기준 portrait swap 추가, same-day aggro retarget follow-up으로 `AggroPriorityRange` 안 current target hold + timer-end winner handoff 규칙 반영, same-day documentation follow-up으로 dedicated aggro source-of-truth `docs/technical/multiplayer/boss/Mutiplayer_Boss_Aggro.md` 추가, same-day aggro internal refactor로 `scan -> resolve -> apply` 구조 정리, same-day boss aggro blog draft `docs/blog/0407_Multiplayer_Boss_Aggro_Rule_and_Flow.md` 추가, `BossRaidPortfolio.sln` 빌드 검증, 문서 동기화
-- [2026-04-06.md](./2026-04-06.md) - boss authority `step 1-2` 진행, `BossAuthoritativeState` DTO/enum 추가, `BossController.CaptureAuthoritativeState(...)` boss-side runtime capture surface 추가, active attack id/start time bookkeeping 추가, `MultiplayerBossAuthorityBridge` dedicated runtime-root bridge 추가, client disabled boss display-only apply 연결, `MultiplayerPlayerAvatar` old boss mirror path 제거, same-day trace/session debug cleanup, attempted `step 3` move smoothing rollback, client boss single-consume gate + stable walk-speed follow-up, attack 3/4 projectile/AoE remote display effect replication 추가, `BossRaidPortfolio.sln` 빌드 검증, 문서 동기화
-- [2026-04-03.md](./2026-04-03.md) - verify scene solo HP HUD refresh fallback 추가, multiplayer verify용 boss movement + current attack animation state client mirror 추가, client local boss CharacterController disable, Host/Client 양쪽 player HUD HP sync + viewer-side name label(`Host(me)`/`Client(me)`) 반영, boss closest-live-player retarget 추가, player authority `step 8`(`Host approve -> PlayerController execute`) Attack1/hit/stun 실행 경로 고정, client owner attack facing fix와 authoritative `FacingYaw` sync 추가, client dash exit walk-without-input handoff fix, client dash visual smoothness fix, player authority `step 9` current temporary send boundary freeze 문서화, player authority `step 10` current mixed apply boundary freeze 문서화, player authority `step 11` presentation driver visual-only boundary freeze + owner-path gate 정리, multiplayer combo chain Host-authority follow-up, multiplayer attack-cancel dash Host-authority follow-up, 빌드 검증, 문서 동기화
-- [2026-04-02.md](./2026-04-02.md) - `MultiplayerConnectionDebug`를 `editor/build + host/client` structured logger로 재정리, `pulse/state-change/gameplay-sync-complete` 추가, avatar profile baseline/transition + `noActionObservedAffected` summary 추가, remote action validation을 `server-buffer` Host receive path로 이동, `StartingGameplay -> InGameplay` state split 및 late disconnect label 정리, guaranteed `peer-disconnect` edge/detail/fallback logger 추가, player HP를 `Host-only write + solo-safe default`로 잠그는 `step 7` health gate 반영, verify scene boss target을 spawned network avatar로 rebind하는 runtime fix 추가, 빌드 검증, 문서 동기화
-- [2026-04-01.md](./2026-04-01.md) - `player` action authority step 1-6, Host state/reaction bootstrap, `raw hit log` 기준 경로 추가, action-intent trace/RPC hotfix, predicted dash locomotion smoothing, post-dash animator handoff fix, remote action-intent diagnostic trace, 빌드 검증, authority 문서/블루프린트/용어집 동기화
-- [2026-03-31.md](./2026-03-31.md) - `clientPlayer` host locomotion animation sync fix, `AuthoritativeLocomotion` handoff 보강, 빌드 검증
-- [2026-03-30.md](./2026-03-30.md) - `PlayerController` 멀티플레이 정리, `LookOnly` 제거, 지연 보정 경계 동기화 1차, 1차 검증 메모, `hardFailShadow` 제거 follow-up, `idleSettle` follow-up, camera-follow jitter trace 추가, owner render proxy follow-up, predicted owner camera orbit tuning, 지터 조사/수정 summary 문서 추가, 블로그 초안 문서 추가, 이동 문서 동기화, 빌드 검증
-- [2026-03-27.md](./2026-03-27.md) - predicted render 튜닝 정리, lateral lead 제거, cubic ease-out/`alphaFloor` 보정, 빌드 검증
-- [2026-03-26.md](./2026-03-26.md) - Host-only 경로 리셋, prediction/reconcile 연결, 빌드 검증
-- [2026-03-25.md](./2026-03-25.md) - 멀티플레이 로컬 소유권 뼈대, legacy `Player` 제거, `hostPlayer`/`clientPlayer` 이름 고정
-- [2026-03-24.md](./2026-03-24.md) - 멀티플레이 런타임·패키지 정리, shared baseline 복구, 브랜치 문서 동기화
-- [2026-03-18.md](./2026-03-18.md) - 멀티플레이 테스트 씬 통합, partner HUD/콤보 HUD 게이트, 메인 gameplay 씬 승격
-- [2026-03-17.md](./2026-03-17.md) - Client join 런타임, Lobby Events 컴파일 안정화
-- [2026-03-16.md](./2026-03-16.md)
-- [2026-03-13.md](./2026-03-13.md)
-- [2026-03-12.md](./2026-03-12.md)
-- [2026-03-11.md](./2026-03-11.md)
-- [2026-03-06.md](./2026-03-06.md)
-- [2026-03-05.md](./2026-03-05.md)
-- [2026-03-04.md](./2026-03-04.md)
-- [2026-03-03.md](./2026-03-03.md)
-- [2026-02-28.md](./2026-02-28.md)
-- [2026-02-27.md](./2026-02-27.md)
-- [2026-02-26.md](./2026-02-26.md)
-- [2026-02-24.md](./2026-02-24.md)
-- [2026-02-23.md](./2026-02-23.md)
-- [2026-02-21.md](./2026-02-21.md)
-- [2026-02-20.md](./2026-02-20.md)
-- [2026-02-12.md](./2026-02-12.md)
-- [2026-02-11.md](./2026-02-11.md)
-- [2026-02-10.md](./2026-02-10.md)
-- [2026-02-09.md](./2026-02-09.md)
-- [2026-02-06.md](./2026-02-06.md)
-- [2026-02-05.md](./2026-02-05.md)
-- [2026-02-04.md](./2026-02-04.md)
-- [2026-02-03.md](./2026-02-03.md)
-- [2026-02-02.md](./2026-02-02.md)
+1. 구현 내용과 의사결정 근거를 날짜별로 남깁니다.
+2. 회귀 버그가 생겼을 때 변경 지점을 빠르게 추적합니다.
+3. `System_Blueprint` / `Technical_Glossary` 업데이트의 근거 소스로 사용합니다.
+4. 작업 완료 보고 시, 검증 결과(빌드/테스트/미실행 사유)를 명확히 남깁니다.
 
-## 🗂️ Milestone Backlog
-- [Milestone_Backlog.md](../roadmap/Milestone_Backlog.md)
+## 작성/운영 규칙
 
-## 📦 Legacy
-- [LEGACY_MONOLITH.md](./LEGACY_MONOLITH.md) (분할 전 단일 파일 원본 보관)
+1. 로그 파일은 `YYYY-MM-DD.md` 형식으로 생성합니다.
+2. 같은 날짜의 추가 작업은 새 파일을 만들지 않고 기존 날짜 파일에 병합합니다.
+3. 신규 로그는 [TEMPLATE.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/TEMPLATE.md)를 기준으로 작성합니다.
+4. `체크리스트 업데이트`와 `맥락노트`를 분리해 기록합니다.
+5. `기술적 고려`에는 아래 3항목을 고정 포함합니다.
+- 무엇을 발견했는가
+- 무엇을 수정했는가
+- 왜 그렇게 판단했는가
+
+## 문서 동기화 규칙
+
+1. 코드 변경 완료 후 문서 동기화 순서를 지킵니다.
+- `docs/Progress_Log/YYYY-MM-DD.md` + 이 인덱스 파일
+- `docs/technical/System_Blueprint.md`
+- `docs/technical/Technical_Glossary.md`
+2. 완료 보고에는 반드시 `참조 로그: docs/Progress_Log/YYYY-MM-DD.md`를 남깁니다.
+3. 여러 날짜를 근거로 썼다면 참조 로그를 여러 줄로 명시합니다.
+
+## 최근 작업 하이라이트
+
+1. 멀티플레이 플레이어/보스 authority 경계 정리 및 HUD 동기화 안정화
+2. 보스 공격 warning/telegraph 재생 타이밍 보정 및 replay 품질 개선
+3. visual binding self-heal, blink/material fallback 등 presentation 회귀 복구
+4. Title -> Loading -> Gameplay 흐름 및 scene/runtime root 계약 정리
+5. 빌드 검증/문서 동기화를 포함한 유지보수 워크플로 강화
+
+## 날짜별 로그
+
+- [2026-05-12.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-05-12.md) 
+- [2026-05-01.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-05-01.md)
+- [2026-04-30.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-30.md)
+- [2026-04-29.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-29.md)
+- [2026-04-28.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-28.md)
+- [2026-04-20.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-20.md)
+- [2026-04-17.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-17.md)
+- [2026-04-15.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-15.md)
+- [2026-04-14.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-14.md)
+- [2026-04-13.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-13.md)
+- [2026-04-10.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-10.md)
+- [2026-04-09.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-09.md)
+- [2026-04-08.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-08.md)
+- [2026-04-07.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-07.md)
+- [2026-04-06.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-06.md)
+- [2026-04-03.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-03.md)
+- [2026-04-02.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-02.md)
+- [2026-04-01.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-01.md)
+- [2026-03-31.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-31.md)
+- [2026-03-30.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-30.md)
+- [2026-03-27.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-27.md)
+- [2026-03-26.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-26.md)
+- [2026-03-25.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-25.md)
+- [2026-03-24.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-24.md)
+- [2026-03-19.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-19.md)
+- [2026-03-18.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-18.md)
+- [2026-03-17.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-17.md)
+- [2026-03-16.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-16.md)
+- [2026-03-13.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-13.md)
+- [2026-03-12.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-12.md)
+- [2026-03-11.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-11.md)
+- [2026-03-06.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-06.md)
+- [2026-03-05.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-05.md)
+- [2026-03-04.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-04.md)
+- [2026-03-03.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-03-03.md)
+- [2026-02-28.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-28.md)
+- [2026-02-27.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-27.md)
+- [2026-02-26.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-26.md)
+- [2026-02-24.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-24.md)
+- [2026-02-23.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-23.md)
+- [2026-02-21.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-21.md)
+- [2026-02-20.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-20.md)
+- [2026-02-12.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-12.md)
+- [2026-02-11.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-11.md)
+- [2026-02-10.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-10.md)
+- [2026-02-09.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-09.md)
+- [2026-02-06.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-06.md)
+- [2026-02-05.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-05.md)
+- [2026-02-04.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-04.md)
+- [2026-02-03.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-03.md)
+- [2026-02-02.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-02-02.md)
+
+## 관련 문서
+
+- 템플릿: [TEMPLATE.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/TEMPLATE.md)
+- 장기 백로그: [Milestone_Backlog.md](/d:/Unity-projects/BossRaidPortfolio/docs/roadmap/Milestone_Backlog.md)
+- 레거시 단일 로그: [LEGACY_MONOLITH.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/LEGACY_MONOLITH.md)
