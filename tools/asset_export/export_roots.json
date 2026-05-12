@@ -193,10 +193,10 @@
   ],
   "special_resources_roots": [
     {
-      "path": "Assets/Resources/Prefabs",
-      "category": "runtime-resources",
+      "path": "Assets/Resources/MultiplayerRuntimeConfig.asset",
+      "category": "runtime-config",
       "exportByDefault": true,
-      "notes": "Current runtime prefab resources root. Keep it as an audited Resources exception until the multiplayer prefab path is normalized."
+      "notes": "Runtime config asset loaded through Resources. It references canonical prefabs under Assets/Prefabs instead of duplicating prefab files inside Resources."
     },
     {
       "path": "Assets/Map/Beautify/URP/Runtime/Resources",

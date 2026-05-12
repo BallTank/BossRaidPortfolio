@@ -28,7 +28,7 @@ namespace Core.Editor
 
         private const int CurrentSchemaVersion = 2;
         private const string MenuItemPath = "Tools/Balance/Open Player Boss Balance Tool";
-        private const string DefaultPlayerPrefabPath = "Assets/Resources/Multiplayer/MultiplayerPlayerAvatar.prefab";
+        private const string DefaultPlayerPrefabPath = "Assets/Prefabs/Player/MultiplayerPlayerAvatar.prefab";
         private const string DefaultScenePath = "Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity";
         private const string DefaultJsonRelativePath = "Assets/Balance/player_boss_balance.json";
 
