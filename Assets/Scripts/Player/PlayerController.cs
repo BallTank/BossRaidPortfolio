@@ -30,6 +30,12 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         RemoteDisplayOnly
     }
 
+    public enum PlayerSoundProfile
+    {
+        Player1,
+        Player2
+    }
+
     public delegate void BossAttackResolvedHandler(in BossAttackHitData hitData, BossAttackHitResolution resolution);
 
     [Header("Movement Settings")]
@@ -77,6 +83,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     [Header("Runtime Multiplayer")]
     [SerializeField] private RuntimeSimulationMode _simulationMode = RuntimeSimulationMode.Full;
     [SerializeField, HideInInspector] private ActionAuthorityMode _actionAuthorityMode = ActionAuthorityMode.SoloLocal;
+    [SerializeField] private PlayerSoundProfile _playerSoundProfile = PlayerSoundProfile.Player1;
     [SerializeField] private bool _isLocalPresentationEnabled = true;
     [SerializeField] private bool _driveCameraRootFromLookInput;
 
@@ -93,6 +100,9 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     [Header("Movement Debug Trace")]
     [SerializeField] private bool enableMovementDebugLog = false;
     [SerializeField, Range(0.01f, 0.5f)] private float movementDebugLogInterval = 0.01f;
+
+    [Header("Audio Debug")]
+    [SerializeField] private bool _enableDashSoundDebugLog = true;
 
     [Header("Attack2 Debug")]
     [SerializeField] private bool enableAttack2DebugLog = true;
@@ -156,6 +166,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     private float _latestPredictedPlanarSpeedMagnitude;
     private bool _hasLatestPredictedPlanarSpeedMagnitude;
     private float _predictedLocomotionStopTimer;
+    private int _lastLocalPlayerHitSoundFrame = -1;
 
     public event Action<int, int> AttackDamageResolved;
     public event Action<int> AuthoritativeAttackStepStarted;
@@ -189,6 +200,16 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
     public bool CanCancelAttackIntoDashFromInput => _actionAuthorityMode == ActionAuthorityMode.SoloLocal;
     public bool CanEmitAttackHitbox => _actionAuthorityMode == ActionAuthorityMode.SoloLocal
                                        || _actionAuthorityMode == ActionAuthorityMode.HostAuthoritative;
+    public bool CanPlayLocalPlayerSound => _isLocalPresentationEnabled;
+    public SoundId PlayerVoiceAttackSoundId => ResolvePlayerVoiceSoundId(
+        SoundId.Player1VoiceAttack,
+        SoundId.Player2VoiceAttack);
+    public SoundId PlayerVoiceDashSoundId => ResolvePlayerVoiceSoundId(
+        SoundId.Player1VoiceDash,
+        SoundId.Player2VoiceDash);
+    public SoundId PlayerVoiceHitSoundId => ResolvePlayerVoiceSoundId(
+        SoundId.Player1VoiceHit,
+        SoundId.Player2VoiceHit);
     public bool CanApplyLocalDamageReaction => _actionAuthorityMode == ActionAuthorityMode.SoloLocal
                                                || _actionAuthorityMode == ActionAuthorityMode.HostAuthoritative;
     public bool CanResolveBossHitLocally => _actionAuthorityMode == ActionAuthorityMode.SoloLocal
@@ -448,6 +469,12 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
             return;
         }
 
+        if (input.moveDir.sqrMagnitude > 0.0001f)
+        {
+            SetLocomotionAnimatorSpeed(targetSpeed, true);
+            return;
+        }
+
         SetLocomotionAnimatorSpeed(targetSpeed);
     }
 
@@ -574,6 +601,11 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         }
     }
 
+    public void SetPlayerSoundProfile(PlayerSoundProfile playerSoundProfile)
+    {
+        _playerSoundProfile = playerSoundProfile;
+    }
+
     public void SetLocalPresentationEnabled(bool enabled)
     {
         _isLocalPresentationEnabled = enabled;
@@ -612,7 +644,15 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         PlayerLocomotionCore.ApplyState(this, state);
     }
 
-    public MultiplayerLocomotionState SimulateLocomotionTickFromCurrent(in MultiplayerLocomotionState currentState, in PlayerInputPacket input, float deltaTime, int inputSequence, int serverTick, bool allowsPrediction, bool updateAnimator)
+    public MultiplayerLocomotionState SimulateLocomotionTickFromCurrent(
+        in MultiplayerLocomotionState currentState,
+        in PlayerInputPacket input,
+        float deltaTime,
+        int inputSequence,
+        int serverTick,
+        bool allowsPrediction,
+        bool updateAnimator,
+        bool playPredictedDashSound = false)
     {
         return PlayerLocomotionCore.SimulateTick(
             this,
@@ -622,7 +662,8 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
             inputSequence,
             serverTick,
             allowsPrediction,
-            updateAnimator);
+            updateAnimator,
+            playPredictedDashSound);
     }
 
     public void SyncNetworkDashState(float dashTimerRemaining, float dashCooldownRemaining)
@@ -774,11 +815,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
         if (!_health.IsDead)
         {
-            if (_isLocalPresentationEnabled)
-            {
-                SoundController.Instance?.Play(SoundId.Player1VoiceHit);
-            }
-
+            PlayLocalPlayerHitSound();
             BeginStun(hitData.ForceDirection, BossAttackHitType.Attack2);
         }
 
@@ -837,11 +874,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         bool didDamage = TryApplyDamage(damage, hitType);
         if (didDamage && !_health.IsDead)
         {
-            if (_isLocalPresentationEnabled)
-            {
-                SoundController.Instance?.Play(SoundId.Player1VoiceHit);
-            }
-
+            PlayLocalPlayerHitSound();
             EnterHitReactionState();
         }
 
@@ -1045,13 +1078,7 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
             return false;
         }
 
-        if (_isLocalPresentationEnabled && _combatHUD != null && snapshot.MaxHealth > 0)
-        {
-            _combatHUD.SetPlayerHpNormalized(
-                (float)Mathf.Clamp(snapshot.ResultHealth, 0, snapshot.MaxHealth) / snapshot.MaxHealth,
-                Mathf.Clamp(snapshot.ResultHealth, 0, snapshot.MaxHealth),
-                snapshot.MaxHealth);
-        }
+        ApplyAuthoritativeReactionHud(snapshot);
 
         if (snapshot.HasFlag(HostPlayerReactionFlags.Death))
         {
@@ -1061,17 +1088,54 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
         if (snapshot.HasFlag(HostPlayerReactionFlags.Stun))
         {
+            PlayLocalPlayerHitSound();
             BeginStun(Vector3.zero, snapshot.SourceHitTypeValue);
             return true;
         }
 
         if (snapshot.HasFlag(HostPlayerReactionFlags.Hit))
         {
+            PlayLocalPlayerHitSound();
             EnterHitReactionState();
             return true;
         }
 
         return false;
+    }
+
+    public bool ApplyAuthoritativeReactionPresentation(in HostToClientPlayerReactionSnapshot snapshot)
+    {
+        if (!snapshot.IsValid)
+        {
+            return false;
+        }
+
+        ApplyAuthoritativeReactionHud(snapshot);
+
+        if (snapshot.HasFlag(HostPlayerReactionFlags.Death))
+        {
+            return true;
+        }
+
+        if (snapshot.HasFlag(HostPlayerReactionFlags.Stun)
+            || snapshot.HasFlag(HostPlayerReactionFlags.Hit))
+        {
+            PlayLocalPlayerHitSound();
+            return true;
+        }
+
+        return false;
+    }
+
+    private void ApplyAuthoritativeReactionHud(in HostToClientPlayerReactionSnapshot snapshot)
+    {
+        if (_isLocalPresentationEnabled && _combatHUD != null && snapshot.MaxHealth > 0)
+        {
+            _combatHUD.SetPlayerHpNormalized(
+                (float)Mathf.Clamp(snapshot.ResultHealth, 0, snapshot.MaxHealth) / snapshot.MaxHealth,
+                Mathf.Clamp(snapshot.ResultHealth, 0, snapshot.MaxHealth),
+                snapshot.MaxHealth);
+        }
     }
 
     private void BeginStun(Vector3 forceDirection, BossAttackHitType sourceHitType)
@@ -1620,6 +1684,11 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
     private void HandleAttackHitConfirmed()
     {
+        if (!CanPlayLocalPlayerSound)
+        {
+            return;
+        }
+
         SoundController.Instance?.Play(SoundId.PlayerKatanaHit);
 
         if (_pendingComboHudStep <= 0)
@@ -1654,6 +1723,11 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
 
         int resolvedComboStep = comboStep > 0 ? comboStep : _pendingComboHudStep;
 
+        if (CanPlayLocalPlayerSound)
+        {
+            SoundController.Instance?.Play(SoundId.PlayerKatanaHit);
+        }
+
         _combatHUD?.ShowDamageFeedback(true, totalDamage);
         if (resolvedComboStep > 0)
         {
@@ -1680,6 +1754,62 @@ public class PlayerController : MonoBehaviour, IDashContext, IAttackable, IBossA
         }
 
         _combatHUD.SetDashReadyNormalized(Mathf.Clamp01(dashFillAmount));
+    }
+
+    private SoundId ResolvePlayerVoiceSoundId(SoundId player1SoundId, SoundId player2SoundId)
+    {
+        return _playerSoundProfile == PlayerSoundProfile.Player2
+            ? player2SoundId
+            : player1SoundId;
+    }
+
+    private void PlayLocalPlayerHitSound()
+    {
+        if (!CanPlayLocalPlayerSound)
+        {
+            return;
+        }
+
+        if (_lastLocalPlayerHitSoundFrame == Time.frameCount)
+        {
+            return;
+        }
+
+        SoundController controller = SoundController.Instance;
+        if (controller != null && controller.Play(PlayerVoiceHitSoundId))
+        {
+            _lastLocalPlayerHitSoundFrame = Time.frameCount;
+        }
+    }
+
+    internal void PlayLocalPlayerDashSound()
+    {
+        SoundId soundId = PlayerVoiceDashSoundId;
+        SoundController controller = SoundController.Instance;
+
+        if (_enableDashSoundDebugLog)
+        {
+            Debug.Log(
+                $"[SoundDebug][Dash] request object={name} simulation={_simulationMode} authority={_actionAuthorityMode} " +
+                $"localPresentation={_isLocalPresentationEnabled} profile={_playerSoundProfile} soundId={soundId} " +
+                $"hasController={controller != null}");
+        }
+
+        if (!CanPlayLocalPlayerSound)
+        {
+            if (_enableDashSoundDebugLog)
+            {
+                Debug.Log($"[SoundDebug][Dash] skip object={name} reason=LocalPresentationDisabled");
+            }
+
+            return;
+        }
+
+        bool didPlay = controller != null && controller.Play(soundId);
+        if (_enableDashSoundDebugLog)
+        {
+            Debug.Log($"[SoundDebug][Dash] result object={name} soundId={soundId} didPlay={didPlay}");
+        }
     }
 
     private void InitializeCombatHUD()

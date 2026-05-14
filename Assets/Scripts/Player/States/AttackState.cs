@@ -79,10 +79,10 @@ namespace Core.Player.States
             _pendingAuthoritativeElapsedTime = 0f;
             _reserveNextCombo = false;
             _wasAttackPressed = true; // 진입 시점 버튼 눌림 가정 (Edge Trigger 준비)
-            if (Controller.CanEmitAttackHitbox)
+            if (Controller.CanPlayLocalPlayerSound)
             {
                 SoundController.Instance?.Play(SoundId.PlayerKatanaCombo);
-                SoundController.Instance?.Play(SoundId.Player1VoiceAttack);
+                SoundController.Instance?.Play(Controller.PlayerVoiceAttackSoundId);
             }
 
             // Animation: Play Attack Combo (Attack1, Attack2, Attack3)

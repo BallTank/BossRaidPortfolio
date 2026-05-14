@@ -106,6 +106,33 @@ MonoBehaviour:
     _pitchMin: 1
     _pitchMax: 1
     _loop: 0
+  - _id: player2_voice_attack
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: b77115b1bc660984086f2bad572c736f, type: 3}
+    - {fileID: 8300000, guid: 7b41e65d7d7175346a9f3faccb55db75, type: 3}
+    - {fileID: 8300000, guid: 8af45a656f4d79b44b1a51a7da5d27e4, type: 3}
+    _volume: 0.75
+    _pitchMin: 0.98
+    _pitchMax: 1.02
+    _loop: 0
+  - _id: player2_voice_dash
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: 61974892ab2f1454ea8a5fe776b2cf2d, type: 3}
+    _volume: 0.75
+    _pitchMin: 1
+    _pitchMax: 1
+    _loop: 0
+  - _id: player2_voice_hit
+    _category: 1
+    _clips:
+    - {fileID: 8300000, guid: 63a0b31e9ae24b94e9a12bffad7bd0c1, type: 3}
+    - {fileID: 8300000, guid: d59695e3d6e9d4647bf97a13f6adbccb, type: 3}
+    _volume: 0.72
+    _pitchMin: 1
+    _pitchMax: 1
+    _loop: 0
   - _id: dragon_attack1
     _category: 1
     _clips:

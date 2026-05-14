@@ -57,7 +57,8 @@ namespace Core.Player
             int inputSequence,
             int serverTick,
             bool allowsPrediction,
-            bool updateAnimator)
+            bool updateAnimator,
+            bool playPredictedDashSound = false)
         {
             CharacterController characterController = controller.CharController;
             float verticalVelocity = currentState.VerticalVelocity;
@@ -159,6 +160,10 @@ namespace Core.Player
                 if (dashStartedThisTick)
                 {
                     controller.Animator.CrossFade(PlayerController.ANIM_STATE_DASH, 0.05f);
+                    if (playPredictedDashSound)
+                    {
+                        controller.PlayLocalPlayerDashSound();
+                    }
                 }
                 else if (dashEndedThisTick)
                 {

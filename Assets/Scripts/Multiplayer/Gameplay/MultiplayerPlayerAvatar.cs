@@ -634,7 +634,20 @@ namespace Core.Multiplayer
 
         private void ApplyOwnershipVisualRole()
         {
+            ApplyOwnershipSoundProfile();
             ApplyVisualRole(IsHostOwnedAvatar());
+        }
+
+        private void ApplyOwnershipSoundProfile()
+        {
+            if (_playerController == null)
+            {
+                return;
+            }
+
+            _playerController.SetPlayerSoundProfile(IsHostOwnedAvatar()
+                ? PlayerController.PlayerSoundProfile.Player1
+                : PlayerController.PlayerSoundProfile.Player2);
         }
 
         private void RebindAnimatorDrivers()
@@ -1627,7 +1640,11 @@ namespace Core.Multiplayer
                     ClearPendingApprovedComboActionIntent();
                 }
 
-                if (!IsHostOwnedAvatar())
+                if (IsHostOwnedAvatar())
+                {
+                    _playerController.ApplyAuthoritativeReactionPresentation(snapshot);
+                }
+                else
                 {
                     PushReactionSnapshotClientRpc(snapshot, _authoritativeStateClientRpcParams);
                 }

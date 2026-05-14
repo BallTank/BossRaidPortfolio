@@ -64,10 +64,7 @@ namespace Core.Player.States
             if (Controller.Animator != null)
                 Controller.Animator.CrossFade(PlayerController.ANIM_STATE_DASH, 0.1f);
 
-            if (Controller.IsLocalPresentationEnabled)
-            {
-                SoundController.Instance?.Play(SoundId.Player1VoiceDash);
-            }
+            Controller.PlayLocalPlayerDashSound();
         }
 
         public override void Update(PlayerInputPacket input)
