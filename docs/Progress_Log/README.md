@@ -10,7 +10,7 @@ Boss Raid Portfolio의 일일 개발 기록을 모아두는 인덱스 문서입�
 - 엔진: `Unity 2022.3.62f3`
 - 언어: `C#`
 - 핵심 설계 키워드: `FSM`, `Zero-GC`, `Network-Ready Input`, `Authoritative Multiplayer`
-- 기록 범위: `2026-02-02` ~ `2026-05-01` (현재 저장소 기준)
+- 기록 범위: `2026-02-02` ~ `2026-05-14` (현재 저장소 기준)
 
 ## Progress Log를 쓰는 목적
 
@@ -42,14 +42,16 @@ Boss Raid Portfolio의 일일 개발 기록을 모아두는 인덱스 문서입�
 ## 최근 작업 하이라이트
 
 1. 멀티플레이 플레이어/보스 authority 경계 정리 및 HUD 동기화 안정화
-2. 보스 공격 warning/telegraph 재생 타이밍 보정 및 replay 품질 개선
-3. visual binding self-heal, blink/material fallback 등 presentation 회귀 복구
-4. Title -> Loading -> Gameplay 흐름 및 scene/runtime root 계약 정리
-5. 빌드 검증/문서 동기화를 포함한 유지보수 워크플로 강화
+2. Player1/Player2 voice profile, local presentation sound gate, dash dust replay 정리
+3. 보스 공격 warning/telegraph/sound 재생 타이밍 보정 및 replay 품질 개선
+4. visual binding self-heal, blink/material fallback 등 presentation 회귀 복구
+5. Title -> Loading -> Gameplay 흐름 및 scene/runtime root 계약 정리
+6. 빌드 검증/문서 동기화를 포함한 유지보수 워크플로 강화
 
 ## 날짜별 로그
 
-- [2026-05-12.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-05-12.md) 
+- [2026-05-14.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-05-14.md)
+- [2026-05-12.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-05-12.md)
 - [2026-05-01.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-05-01.md)
 - [2026-04-30.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-30.md)
 - [2026-04-29.md](/d:/Unity-projects/BossRaidPortfolio/docs/Progress_Log/2026-04-29.md)
