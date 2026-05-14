@@ -149,6 +149,7 @@ namespace Core.Boss
         private float _nextAttackTime;
         private BossAuthoritativeAttackId _currentAuthoritativeAttackId;
         private float _currentAttackStartTime = -1f;
+        private int _currentAttackStartServerTick;
         private readonly Queue<BossReplicatedEffectEvent> _pendingReplicatedEffectEvents = new Queue<BossReplicatedEffectEvent>(8);
         private int _nextReplicatedEffectSequenceId;
 
@@ -305,6 +306,7 @@ namespace Core.Boss
         {
             _currentAuthoritativeAttackId = ResolveAuthoritativeAttackId(pattern);
             _currentAttackStartTime = Time.time;
+            _currentAttackStartServerTick = 0;
         }
 
         /// <summary>
@@ -314,6 +316,7 @@ namespace Core.Boss
         {
             _currentAuthoritativeAttackId = BossAuthoritativeAttackId.None;
             _currentAttackStartTime = -1f;
+            _currentAttackStartServerTick = 0;
         }
 
         /// <summary>
@@ -373,6 +376,22 @@ namespace Core.Boss
             effect.Radius = Mathf.Max(0f, radius);
             effect.WarningDuration = Mathf.Max(0f, warningDuration);
             effect.ActiveDuration = Mathf.Max(0f, activeDuration);
+            _pendingReplicatedEffectEvents.Enqueue(effect);
+        }
+
+        /// <summary>
+        /// Host에서 Basic attack impact 사운드 이벤트를 remote client 전송 큐에 넣는다.
+        /// </summary>
+        public void EnqueueReplicatedBasicAttackSound()
+        {
+            if (!ShouldQueueReplicatedEffect())
+            {
+                return;
+            }
+
+            BossReplicatedEffectEvent effect = default;
+            effect.EffectKind = BossReplicatedEffectKind.BasicAttackSound;
+            effect.SequenceId = ++_nextReplicatedEffectSequenceId;
             _pendingReplicatedEffectEvents.Enqueue(effect);
         }
 
@@ -571,7 +590,6 @@ namespace Core.Boss
 
             // 피격 시각 효과는 상태와 무관하게 항상 재생한다.
             PlayDamageBlinkVisual();
-            SoundController.Instance?.Play(SoundId.PlayerKatanaHit);
 
             // 공격 준비/연출 중에는 피격 모션 전환을 생략한다.
             if (ShouldIgnoreHitMotion()) return;
@@ -868,10 +886,21 @@ namespace Core.Boss
                 return 0;
             }
 
-            // 공격 시작 프레임 캡처 오차를 줄이기 위해 elapsed tick을 올림 처리한다.
+            if (_currentAttackStartServerTick > 0)
+            {
+                return _currentAttackStartServerTick;
+            }
+
+            // 공격 시작 프레임 캡처 오차를 줄이기 위해 elapsed tick을 올림 처리하고, 이후 같은 공격 동안 고정한다.
             float elapsedSeconds = Mathf.Max(0f, Time.time - _currentAttackStartTime);
             int elapsedTicks = Mathf.CeilToInt(elapsedSeconds / networkFixedDeltaTime);
-            return Mathf.Max(0, currentServerTick - elapsedTicks);
+            int resolvedStartTick = Mathf.Max(0, currentServerTick - elapsedTicks);
+            if (resolvedStartTick > 0)
+            {
+                _currentAttackStartServerTick = resolvedStartTick;
+            }
+
+            return resolvedStartTick;
         }
 
         private float ResolveAuthoritativeAttackNormalizedTime(int currentServerTick, float networkFixedDeltaTime)

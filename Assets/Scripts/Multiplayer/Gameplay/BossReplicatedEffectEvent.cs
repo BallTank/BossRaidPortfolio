@@ -12,7 +12,8 @@ namespace Core.Multiplayer
         ProjectileShot = 1,
         AoESpawn = 2,
         AttackWarningShow = 3,
-        AttackWarningHide = 4
+        AttackWarningHide = 4,
+        BasicAttackSound = 5
     }
 
     public enum BossReplicatedWarningChannel : byte

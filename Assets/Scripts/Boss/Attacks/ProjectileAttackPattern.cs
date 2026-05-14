@@ -118,6 +118,8 @@ namespace Core.Boss.Attacks
             {
                 SoundController.Instance?.Play(SoundId.DragonBreath);
             }
+
+            SoundController.Instance?.Play(SoundId.DragonFireball);
             if (controller.ProjectilePool == null) return;
 
             BossProjectile projectile = controller.ProjectilePool.TryGetProjectile();

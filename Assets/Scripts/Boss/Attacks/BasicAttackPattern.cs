@@ -23,13 +23,13 @@ namespace Core.Boss.Attacks
         private float _fallbackExitTime;
         private float _telegraphElapsedTime;
         private bool _damageOpenRequested;
+        private bool _basicAttackSoundPlayed;
         private bool _hasPreviousProgressSample;
         private float _previousNormalizedProgress;
 
         public void Enter(BossController controller)
         {
             controller.StopMoving();
-            SoundController.Instance?.Play(SoundId.DragonAttack1);
 
             // 타겟 방향으로 회전
             if (controller.Target != null)
@@ -47,6 +47,7 @@ namespace Core.Boss.Attacks
             _fallbackElapsedTime = 0f;
             _telegraphElapsedTime = 0f;
             _damageOpenRequested = false;
+            _basicAttackSoundPlayed = false;
             _hasPreviousProgressSample = false;
             _previousNormalizedProgress = 0f;
 
@@ -109,6 +110,11 @@ namespace Core.Boss.Attacks
         private bool UpdateFallback(BossController controller)
         {
             _fallbackElapsedTime += Time.deltaTime;
+            if (_fallbackElapsedTime >= _fallbackDamageOpenTime)
+            {
+                PlayBasicAttackSoundAtReadyEnd(controller);
+            }
+
             float hideTime = _fallbackExitTime * ResolveTelegraphHideNormalizedTime(controller.BasicAttackConfig);
             float safeHideTime = Mathf.Max(_fallbackDamageOpenTime, hideTime);
             if (!_telegraphHidden && _fallbackElapsedTime >= safeHideTime)
@@ -213,12 +219,25 @@ namespace Core.Boss.Attacks
                 return;
             }
 
+            PlayBasicAttackSoundAtReadyEnd(controller);
             bool entered = controller.TryEnterBasicAttackTelegraphActiveNow(
                 $"Basic.ReadyWindowEnd progress={progress:F3} end={readyWindowEnd:F3}");
             HitTraceLogger.Log(
                 $"[HitTrace][BOOT][BasicAttackPattern][ReadyWindowEndOpen] progress={progress:F3} end={readyWindowEnd:F3} " +
                 $"result={(entered ? "PASS" : "SKIP")}");
             _damageOpenRequested = true;
+        }
+
+        private void PlayBasicAttackSoundAtReadyEnd(BossController controller)
+        {
+            if (_basicAttackSoundPlayed)
+            {
+                return;
+            }
+
+            SoundController.Instance?.Play(SoundId.DragonAttack1);
+            controller.EnqueueReplicatedBasicAttackSound();
+            _basicAttackSoundPlayed = true;
         }
 
         private static float ResolveTelegraphHideNormalizedTime(BossController.BasicAttackSettings settings)

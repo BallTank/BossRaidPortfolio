@@ -29,6 +29,10 @@ namespace Core.Multiplayer
         private const string FlyIdleAltStateName = "Fly Idle";
         private const string LandStateName = "Land";
         private const float BasicAttackClientWarningGraceSeconds = 0.08f;
+
+        [Header("Debug")]
+        [SerializeField] private bool enableBossAoEDebugLog = false;
+
         private readonly List<ulong> _remoteClientIds = new List<ulong>(2);
         private readonly List<BossReplicatedEffectEvent> _pendingOutgoingEffectBatch = new List<BossReplicatedEffectEvent>(8);
         private readonly Queue<BossReplicatedEffectEvent> _pendingReceivedEffectEvents = new Queue<BossReplicatedEffectEvent>(8);
@@ -70,6 +74,9 @@ namespace Core.Multiplayer
         private int _lastBossHudMaxHealth = int.MinValue;
         private bool _hasLatestBossState;
         private BossAuthoritativeState _latestBossState;
+        private bool _hasAppliedAoEAttackVisual;
+        private int _lastAppliedAoEAttackStartServerTick;
+        private BossAuthoritativeAttackVisualState _lastAppliedAoEVisualState;
 
         public bool HasLatestBossState => _hasLatestBossState;
         public bool IsBossDead => _hasLatestBossState && _latestBossState.IsDead;
@@ -434,6 +441,7 @@ namespace Core.Multiplayer
             switch (effect.EffectKind)
             {
                 case BossReplicatedEffectKind.ProjectileShot:
+                    SoundController.Instance?.Play(SoundId.DragonFireball);
                     _bossController.ProjectileAttackPattern?.PlayReplicatedDisplayShot(
                         _bossController,
                         effect.StartPosition,
@@ -447,6 +455,10 @@ namespace Core.Multiplayer
                     break;
 
                 case BossReplicatedEffectKind.AoESpawn:
+                    LogAoEDebug(
+                        $"effect=AoESpawn seq={effect.SequenceId} start={FormatVector3(effect.StartPosition)} " +
+                        $"impact={FormatVector3(effect.ImpactPosition)} latestAttack={_latestBossState.CurrentAttackId} " +
+                        $"latestVisual={_latestBossState.AttackVisualState} hasLatest={_hasLatestBossState}");
                     SoundController.Instance?.Play(SoundId.DragonFireball);
                     _bossController.AoEAttackPattern?.PlayReplicatedDisplayAoE(
                         _bossController,
@@ -473,6 +485,10 @@ namespace Core.Multiplayer
 
                 case BossReplicatedEffectKind.AttackWarningHide:
                     _bossController.HideReplicatedAttackWarning(effect.WarningChannel);
+                    break;
+
+                case BossReplicatedEffectKind.BasicAttackSound:
+                    SoundController.Instance?.Play(SoundId.DragonAttack1);
                     break;
             }
         }
@@ -607,6 +623,7 @@ namespace Core.Multiplayer
                 return;
             }
 
+            ResetAoEAttackVisualGate();
             ApplyLocomotionVisual(state, planarSpeed);
         }
 
@@ -623,6 +640,7 @@ namespace Core.Multiplayer
                 return;
             }
 
+            SoundController.Instance?.Play(SoundId.DragonDead);
             _bossVisual.TriggerDie();
         }
 
@@ -705,6 +723,7 @@ namespace Core.Multiplayer
                     }
 
                     _bossVisual.PlayProjectileAttack();
+                    SoundController.Instance?.Play(SoundId.DragonAttack3);
                     if (!TryPlayAnimatorState(FlameAttackStateName, normalizedTime))
                     {
                         TryPlayAnimatorState(FireballShootStateName, normalizedTime);
@@ -713,12 +732,22 @@ namespace Core.Multiplayer
 
                 case BossAuthoritativeAttackId.AoE:
                     _bossVisual.SetAnimatorPlaybackSpeed(1f);
-                    if (!isNewAttackVisual)
+                    bool shouldSkipAoEVisual = ShouldSkipAoEAttackVisual(state, isNewAttack, out string skipReason);
+                    if (isNewAttackVisual || shouldSkipAoEVisual)
+                    {
+                        LogAoEDebug(
+                            $"snapshot tick={serverTick} attackStart={state.AttackStartServerTick} visual={state.AttackVisualState} " +
+                            $"lastVisual={_lastAppliedAoEVisualState} isNewAttack={isNewAttack} isNewVisual={isNewAttackVisual} " +
+                            $"skip={(!isNewAttackVisual || shouldSkipAoEVisual)} reason={(isNewAttackVisual ? skipReason : "same-snapshot-visual")}");
+                    }
+
+                    if (!isNewAttackVisual || shouldSkipAoEVisual)
                     {
                         return;
                     }
 
                     ApplyAoEAttackVisual(state.AttackVisualState, normalizedTime);
+                    RememberAppliedAoEAttackVisual(state);
                     break;
             }
         }
@@ -752,7 +781,6 @@ namespace Core.Multiplayer
                     break;
 
                 case BossAuthoritativeAttackVisualState.AoETakeOff:
-                case BossAuthoritativeAttackVisualState.None:
                 default:
                     SoundController.Instance?.Play(SoundId.DragonFlyUp);
                     _bossVisual.PlayTakeOff();
@@ -762,6 +790,85 @@ namespace Core.Multiplayer
                     }
                     break;
             }
+        }
+
+        private bool ShouldSkipAoEAttackVisual(in BossAuthoritativeState state, bool isNewAttack, out string reason)
+        {
+            if (!IsAoEAttackVisualState(state.AttackVisualState))
+            {
+                reason = "invalid-or-none-visual";
+                return true;
+            }
+
+            if (isNewAttack
+                || !_hasAppliedAoEAttackVisual
+                || _lastAppliedAoEAttackStartServerTick != state.AttackStartServerTick)
+            {
+                reason = isNewAttack ? "new-aoe-attack" : "first-valid-aoe-visual";
+                return false;
+            }
+
+            if (_lastAppliedAoEVisualState == state.AttackVisualState)
+            {
+                reason = "duplicate-visual";
+                return true;
+            }
+
+            // 네트워크 보정 중 이전 단계가 다시 와도 클라이언트 연출을 되감지 않는다.
+            bool isBackwardVisual = ResolveAoEAttackVisualOrder(state.AttackVisualState)
+                                    < ResolveAoEAttackVisualOrder(_lastAppliedAoEVisualState);
+            reason = isBackwardVisual ? "backward-visual-blocked" : "forward-visual";
+            return isBackwardVisual;
+        }
+
+        private void RememberAppliedAoEAttackVisual(in BossAuthoritativeState state)
+        {
+            _hasAppliedAoEAttackVisual = true;
+            _lastAppliedAoEAttackStartServerTick = state.AttackStartServerTick;
+            _lastAppliedAoEVisualState = state.AttackVisualState;
+        }
+
+        private void ResetAoEAttackVisualGate()
+        {
+            _hasAppliedAoEAttackVisual = false;
+            _lastAppliedAoEAttackStartServerTick = 0;
+            _lastAppliedAoEVisualState = BossAuthoritativeAttackVisualState.None;
+        }
+
+        private static bool IsAoEAttackVisualState(BossAuthoritativeAttackVisualState visualState)
+        {
+            return visualState == BossAuthoritativeAttackVisualState.AoETakeOff
+                   || visualState == BossAuthoritativeAttackVisualState.AoEFlyForward
+                   || visualState == BossAuthoritativeAttackVisualState.AoEFlyIdle
+                   || visualState == BossAuthoritativeAttackVisualState.AoELand;
+        }
+
+        private static int ResolveAoEAttackVisualOrder(BossAuthoritativeAttackVisualState visualState)
+        {
+            return visualState switch
+            {
+                BossAuthoritativeAttackVisualState.AoETakeOff => 1,
+                BossAuthoritativeAttackVisualState.AoEFlyForward => 2,
+                BossAuthoritativeAttackVisualState.AoEFlyIdle => 3,
+                BossAuthoritativeAttackVisualState.AoELand => 4,
+                _ => 0
+            };
+        }
+
+        private void LogAoEDebug(string message)
+        {
+            if (!enableBossAoEDebugLog)
+            {
+                return;
+            }
+
+            string role = _networkManager != null && _networkManager.IsServer ? "Host" : "Client";
+            Debug.Log($"[BossAoEDebug][{role}] {message}");
+        }
+
+        private static string FormatVector3(Vector3 value)
+        {
+            return $"({value.x:F2},{value.y:F2},{value.z:F2})";
         }
 
         private void ApplyLocomotionVisual(in BossAuthoritativeState state, float planarSpeed)
