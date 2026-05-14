@@ -58,7 +58,7 @@ Unity 기반 3D 보스 레이드 액션 프로젝트입니다.
 대용량 아트 리소스는 Git/LFS 대신 외부 zip 번들로 관리합니다.
 
 1. Google Drive의 [Artifact Bundles 폴더](https://drive.google.com/drive/folders/1tUFzeVkNQiX1_ts8eaDFry1dULgp9XDp?usp=drive_link)에서 최신 `BossRaidPortfolio_RequiredArt-*.zip` 파일과 `.sha256` 파일을 내려받습니다.
-2. 내려받은 파일을 프로젝트 밖의 `D:\Unity-projects\BossRaidPortfolio_ArtifactBundles\` 폴더에 둡니다.
+2. 내려받은 파일을 프로젝트 밖의 `BossRaidPortfolio_ArtifactBundles\` 폴더에 둡니다.
 3. 프로젝트 루트에서 아래 명령을 실행합니다.
 
 ```powershell
