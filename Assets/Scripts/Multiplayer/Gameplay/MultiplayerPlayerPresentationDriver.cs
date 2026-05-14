@@ -300,6 +300,18 @@ namespace Core.Multiplayer
                 : 0f;
             float proxyRootDelta = (proxyPosition - rootPosition).magnitude;
             float proxyTargetDelta = (proxyPosition - targetPosition).magnitude;
+            float targetAge = Mathf.Max(0f, Time.time - _predictedPresentationTargetSetTime);
+            float tickInterval = ResolvePredictedPresentationTickInterval();
+            float interpolationWindow = tickInterval > 0f
+                ? Mathf.Min(_controller.MultiplayerPredictedRenderSmoothTime, tickInterval)
+                : _controller.MultiplayerPredictedRenderSmoothTime;
+            if (interpolationWindow <= 0f)
+            {
+                interpolationWindow = tickInterval > 0f ? tickInterval : 1f / 60f;
+            }
+
+            float linearInterpolationAlpha = EvaluatePredictedPresentationLinearAlpha(targetAge, interpolationWindow);
+            float interpolationAlpha = EvaluatePredictedPresentationInterpolationAlpha(linearInterpolationAlpha);
 
             Debug.Log(
                 $"[MoveDebug][Proxy] " +
@@ -311,8 +323,14 @@ namespace Core.Multiplayer
                 $"rootYaw={rootYaw:F3} " +
                 $"proxyPos=({proxyPosition.x:F3},{proxyPosition.y:F3},{proxyPosition.z:F3}) " +
                 $"targetPos=({targetPosition.x:F3},{targetPosition.y:F3},{targetPosition.z:F3}) " +
+                $"prevTarget=({_predictedPresentationPreviousTargetPosition.x:F3},{_predictedPresentationPreviousTargetPosition.y:F3},{_predictedPresentationPreviousTargetPosition.z:F3}) " +
+                $"currentTarget=({_predictedPresentationCurrentTargetPosition.x:F3},{_predictedPresentationCurrentTargetPosition.y:F3},{_predictedPresentationCurrentTargetPosition.z:F3}) " +
                 $"proxyRootDelta={proxyRootDelta:F3} " +
                 $"proxyTargetDelta={proxyTargetDelta:F3} " +
+                $"targetAge={targetAge:F3} " +
+                $"tickInterval={tickInterval:F3} " +
+                $"interpWindow={interpolationWindow:F3} " +
+                $"interpAlpha={interpolationAlpha:F3} " +
                 $"smoothTime={_controller.MultiplayerPredictedRenderSmoothTime:F3} " +
                 $"snapDistance={_controller.MultiplayerPredictedRenderSnapDistance:F3} " +
                 $"animSpeed={animSpeed:F3} " +
