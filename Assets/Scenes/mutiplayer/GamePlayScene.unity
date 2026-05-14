@@ -2582,6 +2582,7 @@ MonoBehaviour:
   _bossDisplayName: Dragon
   _simulationMode: 0
   _actionAuthorityMode: 0
+  _playerSoundProfile: 0
   _isLocalPresentationEnabled: 1
   _driveCameraRootFromLookInput: 0
   _multiplayerPredictedRenderSmoothTime: 0.0167
@@ -2594,6 +2595,7 @@ MonoBehaviour:
   _multiplayerLocomotionMaxSlideIterations: 1
   enableMovementDebugLog: 0
   movementDebugLogInterval: 0.01
+  _enableDashSoundDebugLog: 1
   enableAttack2DebugLog: 1
   attack2DebugTraceDuration: 0.8
   attack2DebugLogInterval: 0.05
@@ -8148,6 +8150,7 @@ MonoBehaviour:
   _bossDisplayName: Dragon
   _simulationMode: 0
   _actionAuthorityMode: 0
+  _playerSoundProfile: 0
   _isLocalPresentationEnabled: 1
   _driveCameraRootFromLookInput: 0
   _multiplayerPredictedRenderSmoothTime: 0.0167
@@ -8160,6 +8163,7 @@ MonoBehaviour:
   _multiplayerLocomotionMaxSlideIterations: 1
   enableMovementDebugLog: 0
   movementDebugLogInterval: 0.01
+  _enableDashSoundDebugLog: 1
   enableAttack2DebugLog: 1
   attack2DebugTraceDuration: 0.8
   attack2DebugLogInterval: 0.05
@@ -20780,11 +20784,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8899227824282482227, guid: 30255ac2b91787b46a3f854d6e6bf9c6, type: 3}
       propertyPath: _maxHealth
-      value: 150
+      value: 2000
       objectReference: {fileID: 0}
     - target: {fileID: 8899227824282482227, guid: 30255ac2b91787b46a3f854d6e6bf9c6, type: 3}
       propertyPath: _currentHealth
-      value: 150
+      value: 2000
       objectReference: {fileID: 0}
     - target: {fileID: 8954608437825878543, guid: 30255ac2b91787b46a3f854d6e6bf9c6, type: 3}
       propertyPath: m_LocalPosition.x
