@@ -113,6 +113,7 @@ namespace Core.Multiplayer
                 avatarInstance.name = clientId == NetworkManager.ServerClientId
                     ? "hostPlayer"
                     : "clientPlayer";
+                LogAvatarDustComponents("after_instantiate", avatarInstance, clientId, isHostPlayer);
 
                 if (hasTemplatePose)
                 {
@@ -134,6 +135,7 @@ namespace Core.Multiplayer
                 }
 
                 networkObject.SpawnAsPlayerObject(clientId, true);
+                LogAvatarDustComponents("after_spawn", avatarInstance, clientId, isHostPlayer);
             }
 
             RebindServerBossTarget(networkManager, connectedClientIds);
@@ -564,6 +566,65 @@ namespace Core.Multiplayer
             }
 
             return $"{networkObject.name}(clientId={networkObject.OwnerClientId}, spawned={networkObject.IsSpawned})";
+        }
+
+        private static void LogAvatarDustComponents(string phase, GameObject avatarInstance, ulong clientId, bool isHostPlayer)
+        {
+            if (avatarInstance == null)
+            {
+                Debug.LogWarning($"[DustDebug][SpawnAvatar] phase={phase} clientId={clientId} isHostPlayer={isHostPlayer} avatar=null");
+                return;
+            }
+
+            DashVelocityVFX[] dustComponents = avatarInstance.GetComponentsInChildren<DashVelocityVFX>(true);
+            if (dustComponents.Length == 0)
+            {
+                Debug.LogWarning(
+                    $"[DustDebug][SpawnAvatar] phase={phase} clientId={clientId} isHostPlayer={isHostPlayer} " +
+                    $"avatar={avatarInstance.name} dustComponentCount=0");
+                return;
+            }
+
+            for (int i = 0; i < dustComponents.Length; i++)
+            {
+                DashVelocityVFX dustComponent = dustComponents[i];
+                if (dustComponent == null)
+                {
+                    continue;
+                }
+
+                Debug.Log(
+                    $"[DustDebug][SpawnAvatar] phase={phase} clientId={clientId} isHostPlayer={isHostPlayer} " +
+                    $"avatar={avatarInstance.name} dustIndex={i} dustPath={BuildHierarchyPath(dustComponent.transform)} " +
+                    $"dustEnabled={dustComponent.enabled} playerController={DescribeUnityObject(dustComponent.playerController)} " +
+                    $"parentController={DescribeUnityObject(dustComponent.GetComponentInParent<CharacterController>())} " +
+                    $"dashDustPrefab={DescribeUnityObject(dustComponent.dashDustPrefab)} " +
+                    $"footTransform={DescribeUnityObject(dustComponent.footTransform)} " +
+                    $"threshold={dustComponent.dashVelocityThreshold:F3} lifetime={dustComponent.dustLifetime:F3}");
+            }
+        }
+
+        private static string DescribeUnityObject(UnityEngine.Object unityObject)
+        {
+            return unityObject == null ? "null" : $"{unityObject.name}<{unityObject.GetType().Name}>";
+        }
+
+        private static string BuildHierarchyPath(Transform target)
+        {
+            if (target == null)
+            {
+                return "null";
+            }
+
+            string path = target.name;
+            Transform current = target.parent;
+            while (current != null)
+            {
+                path = $"{current.name}/{path}";
+                current = current.parent;
+            }
+
+            return path;
         }
     }
 }

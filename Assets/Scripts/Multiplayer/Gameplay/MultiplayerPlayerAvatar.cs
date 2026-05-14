@@ -102,8 +102,11 @@ namespace Core.Multiplayer
         private ClientToHostPlayerActionIntent _pendingApprovedComboActionIntent;
         private bool _hasPendingApprovedComboActionIntent;
         private bool _hasReceivedInitialAuthoritativeBaseline;
+        private bool _wasLocalDashDustActive;
+        private bool _wasServerDashDustActive;
         private float _nextMovementPredictionDebugLogTime;
         private float _nextMovementCorrectionDebugLogTime;
+        private float _nextMovementServerDebugLogTime;
         private byte _lastObservedActionButtons;
         private byte _lastBufferedActionButtons;
         private MultiplayerPlayerAvatar _hudPartnerAvatar;
@@ -293,9 +296,22 @@ namespace Core.Multiplayer
 
             if (state.ServerTick < _lastReceivedAuthoritativeServerTick)
             {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                if (TryBeginMovementCorrectionDebugLog())
+                {
+                    string localClientId = NetworkManager != null ? NetworkManager.LocalClientId.ToString() : "n/a";
+                    Debug.Log(
+                        $"[MoveDebug][AuthDrop] " +
+                        $"object={name} owner={OwnerClientId} local={localClientId} isServer={IsServer} " +
+                        $"seq={state.InputSequence} tick={state.ServerTick} " +
+                        $"lastTick={_lastReceivedAuthoritativeServerTick} reason=stale_server_tick");
+                }
+#endif
                 return;
             }
 
+            Vector3 rootPositionBeforeApply = _playerController.transform.position;
+            float rootYawBeforeApply = _playerController.transform.eulerAngles.y;
             _lastReceivedAuthoritativeServerTick = state.ServerTick;
             if (!_hasReceivedInitialAuthoritativeBaseline)
             {
@@ -307,7 +323,17 @@ namespace Core.Multiplayer
                 _clientAllowsPrediction = state.AllowsPrediction;
                 _lastAppliedAuthoritativeInputSequence = Mathf.Max(_lastAppliedAuthoritativeInputSequence, state.InputSequence);
                 StoreClientPredictedState(state.InputSequence, state);
-                LogAuthoritativeMovementDebug("AuthBaseline", state, false, default, 0, ResolveLocomotionAnimatorMagnitude(state), "first authoritative snapshot");
+                LogAuthoritativeMovementDebug(
+                    "AuthBaseline",
+                    state,
+                    false,
+                    default,
+                    state,
+                    0,
+                    ResolveLocomotionAnimatorMagnitude(state),
+                    rootPositionBeforeApply,
+                    rootYawBeforeApply,
+                    "first authoritative snapshot");
                 return;
             }
 
@@ -325,7 +351,17 @@ namespace Core.Multiplayer
                 ApplyLocomotionAnimator(ResolveLocomotionAnimatorMagnitude(state));
                 SetClientPredictedState(state);
                 _lastAppliedAuthoritativeInputSequence = Mathf.Max(_lastAppliedAuthoritativeInputSequence, state.InputSequence);
-                LogAuthoritativeMovementDebug("AuthDirect", state, false, default, 0, ResolveLocomotionAnimatorMagnitude(state), "prediction disabled");
+                LogAuthoritativeMovementDebug(
+                    "AuthDirect",
+                    state,
+                    false,
+                    default,
+                    state,
+                    0,
+                    ResolveLocomotionAnimatorMagnitude(state),
+                    rootPositionBeforeApply,
+                    rootYawBeforeApply,
+                    "prediction disabled");
                 return;
             }
 
@@ -334,7 +370,17 @@ namespace Core.Multiplayer
                 && IsWithinOwnerCorrectionDeadzone(predictedState, state))
             {
                 _lastAppliedAuthoritativeInputSequence = Mathf.Max(_lastAppliedAuthoritativeInputSequence, state.InputSequence);
-                LogAuthoritativeMovementDebug("AuthSkip", state, true, predictedState, 0, ResolveLocomotionAnimatorMagnitude(predictedState), "within correction deadzone");
+                LogAuthoritativeMovementDebug(
+                    "AuthSkip",
+                    state,
+                    true,
+                    predictedState,
+                    predictedState,
+                    0,
+                    ResolveLocomotionAnimatorMagnitude(predictedState),
+                    rootPositionBeforeApply,
+                    rootYawBeforeApply,
+                    "within correction deadzone");
                 return;
             }
 
@@ -373,9 +419,23 @@ namespace Core.Multiplayer
                 state,
                 hasPredictedState,
                 predictedState,
+                replayState,
                 replayCount,
                 replayInputMagnitude,
+                rootPositionBeforeApply,
+                rootYawBeforeApply,
                 hasPredictedState ? "correction + replay" : "prediction history miss");
+        }
+
+        [ClientRpc(Delivery = RpcDelivery.Unreliable)]
+        private void PlayDashDustClientRpc(Vector3 dashDirection, ClientRpcParams clientRpcParams = default)
+        {
+            if (!IsSpawned || _playerController == null || IsLocallyOwnedAvatar())
+            {
+                return;
+            }
+
+            PlayDashDustLocally(dashDirection, "replicated_dash_rpc");
         }
 
         [ClientRpc(Delivery = RpcDelivery.Reliable)]
@@ -1097,6 +1157,11 @@ namespace Core.Multiplayer
                 _hasClientPredictedState = true;
             }
 
+            Vector3 rootPositionBeforePrediction = _playerController.transform.position;
+            float rootYawBeforePrediction = _playerController.transform.eulerAngles.y;
+            int previousPredictedSequence = _clientPredictedState.InputSequence;
+            bool previousPredictedAllowsPrediction = _clientPredictedState.AllowsPrediction;
+            float fixedDeltaTime = ResolveFixedDeltaTime();
             PlayerInputPacket input = _localInputProvider.GetInput();
             MultiplayerLocomotionInput locomotionInput = MultiplayerLocomotionInput.FromPlayerInputPacket(input, ++_nextLocalInputSequence);
             ObserveActionIntentEdges(input, submitToServer: true, sourceLabel: "client-owner");
@@ -1117,11 +1182,12 @@ namespace Core.Multiplayer
                 SetClientPredictedState(SimulateNetworkLocomotionTick(
                     _clientPredictedState,
                     input,
-                    ResolveFixedDeltaTime(),
+                    fixedDeltaTime,
                     locomotionInput.InputSequence,
                     _lastReceivedAuthoritativeServerTick,
                     true,
-                    true));
+                    true,
+                    playPredictedDashSound: true));
             }
             else
             {
@@ -1132,7 +1198,16 @@ namespace Core.Multiplayer
             }
 
             StoreClientPredictedState(locomotionInput.InputSequence, _clientPredictedState);
-            LogClientPredictionDebug(input, locomotionInput.InputSequence, canPredictThisTick);
+            HandleLocalDashDustEdge(_clientPredictedState, "client_prediction");
+            LogClientPredictionDebug(
+                input,
+                locomotionInput.InputSequence,
+                canPredictThisTick,
+                rootPositionBeforePrediction,
+                rootYawBeforePrediction,
+                previousPredictedSequence,
+                previousPredictedAllowsPrediction,
+                fixedDeltaTime);
 
             SubmitOwnerInputServerRpc(locomotionInput);
         }
@@ -1146,6 +1221,7 @@ namespace Core.Multiplayer
 
             PlayerInputPacket input = _localInputProvider.GetInput();
             ObserveActionIntentEdges(input, submitToServer: false, sourceLabel: "host-owner");
+            HandleLocalDashDustEdge(_playerController.IsDashStateActive, ResolveRuntimeDashDustDirection(), "host_owner_runtime", replicateToRemoteClients: true);
         }
 
         private void HandleServerAuthorityTick()
@@ -1158,9 +1234,9 @@ namespace Core.Multiplayer
             UpdateServerAuthorityMode(forceApply: false);
 
             int currentServerTick = ResolveCurrentServerTick();
+            int processedInputCount = 0;
             if (_serverUsingLocomotionAuthority)
             {
-                int processedInputCount = 0;
                 while (processedInputCount < MaxServerInputsPerTick
                        && TryConsumeServerInput(_serverNextInputSequenceToProcess, out MultiplayerLocomotionInput locomotionInput))
                 {
@@ -1225,6 +1301,8 @@ namespace Core.Multiplayer
                 _hasServerAuthoritativeState = true;
             }
 
+            HandleServerDashDustEdge(_serverAuthoritativeState);
+            LogServerAuthorityMovementDebug(processedInputCount);
             PushAuthoritativeStateToOwner(_serverAuthoritativeState);
         }
 
@@ -1880,6 +1958,126 @@ namespace Core.Multiplayer
             return isLocalPlayer ? $"{baseLabel}(me)" : baseLabel;
         }
 
+        private void HandleLocalDashDustEdge(in MultiplayerLocomotionState state, string sourceLabel)
+        {
+            HandleLocalDashDustEdge(state.IsDashActive, ResolveDashDustDirection(state), sourceLabel, replicateToRemoteClients: false);
+        }
+
+        private void HandleLocalDashDustEdge(bool isDashActive, Vector3 dashDirection, string sourceLabel, bool replicateToRemoteClients)
+        {
+            if (isDashActive && !_wasLocalDashDustActive)
+            {
+                PlayDashDustLocally(dashDirection, sourceLabel);
+
+                if (replicateToRemoteClients)
+                {
+                    ReplicateDashDustToRemoteClients(dashDirection);
+                }
+            }
+
+            _wasLocalDashDustActive = isDashActive;
+        }
+
+        private void HandleServerDashDustEdge(in MultiplayerLocomotionState state)
+        {
+            if (!IsServer)
+            {
+                return;
+            }
+
+            if (state.IsDashActive && !_wasServerDashDustActive)
+            {
+                Vector3 dashDirection = ResolveDashDustDirection(state);
+                PlayDashDustLocally(dashDirection, "server_authority");
+                ReplicateDashDustToRemoteClients(dashDirection);
+            }
+
+            _wasServerDashDustActive = state.IsDashActive;
+        }
+
+        private void PlayDashDustLocally(Vector3 dashDirection, string sourceLabel)
+        {
+            DashVelocityVFX[] dustEffects = GetComponentsInChildren<DashVelocityVFX>(true);
+            int playedCount = 0;
+            for (int i = 0; i < dustEffects.Length; i++)
+            {
+                DashVelocityVFX dustEffect = dustEffects[i];
+                if (dustEffect == null || !dustEffect.isActiveAndEnabled)
+                {
+                    continue;
+                }
+
+                dustEffect.PlayDashDust(dashDirection, sourceLabel);
+                playedCount++;
+            }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            Debug.Log(
+                $"[DustDebug][AvatarDashDust] object={name} owner={OwnerClientId} " +
+                $"isServer={IsServer} isOwner={IsOwner} source={sourceLabel} " +
+                $"direction=({dashDirection.x:F3},{dashDirection.y:F3},{dashDirection.z:F3}) played={playedCount}");
+#endif
+        }
+
+        private void ReplicateDashDustToRemoteClients(Vector3 dashDirection)
+        {
+            if (!IsServer || NetworkManager == null)
+            {
+                return;
+            }
+
+            List<ulong> targetClientIds = new List<ulong>(NetworkManager.ConnectedClientsIds.Count);
+            for (int i = 0; i < NetworkManager.ConnectedClientsIds.Count; i++)
+            {
+                ulong clientId = NetworkManager.ConnectedClientsIds[i];
+                if (clientId == OwnerClientId || clientId == NetworkManager.ServerClientId)
+                {
+                    continue;
+                }
+
+                targetClientIds.Add(clientId);
+            }
+
+            if (targetClientIds.Count == 0)
+            {
+                return;
+            }
+
+            PlayDashDustClientRpc(
+                dashDirection,
+                new ClientRpcParams
+                {
+                    Send = new ClientRpcSendParams
+                    {
+                        TargetClientIds = targetClientIds
+                    }
+                });
+        }
+
+        private Vector3 ResolveRuntimeDashDustDirection()
+        {
+            Vector3 direction = transform.forward;
+            direction.y = 0f;
+            if (direction.sqrMagnitude <= 0.0001f)
+            {
+                return Vector3.forward;
+            }
+
+            return direction.normalized;
+        }
+
+        private static Vector3 ResolveDashDustDirection(in MultiplayerLocomotionState state)
+        {
+            Vector3 direction = Quaternion.Euler(0f, state.Yaw, 0f) * Vector3.forward;
+            direction.y = 0f;
+            if (direction.sqrMagnitude <= 0.0001f)
+            {
+                return Vector3.forward;
+            }
+
+            return direction.normalized;
+        }
+
         private void ApplyLocomotionAnimator(float inputMagnitude, bool forceLocomotionState = false)
         {
             if (_playerController == null || _playerController.Animator == null)
@@ -1921,7 +2119,8 @@ namespace Core.Multiplayer
             int inputSequence,
             int serverTick,
             bool allowsPrediction,
-            bool updateAnimator)
+            bool updateAnimator,
+            bool playPredictedDashSound = false)
         {
             return _playerController.SimulateLocomotionTickFromCurrent(
                 currentState,
@@ -1930,7 +2129,8 @@ namespace Core.Multiplayer
                 inputSequence,
                 serverTick,
                 allowsPrediction,
-                updateAnimator);
+                updateAnimator,
+                playPredictedDashSound);
         }
 
         private void SetClientPredictedState(in MultiplayerLocomotionState state)
@@ -1963,6 +2163,8 @@ namespace Core.Multiplayer
             _serverLastProcessedInputSequence = 0;
             _serverNextInputSequenceToProcess = 1;
             _hasReceivedInitialAuthoritativeBaseline = false;
+            _wasLocalDashDustActive = false;
+            _wasServerDashDustActive = false;
             _hostPlayerState = default;
             _latestHostReactionSnapshot = default;
             _hasLatestHostReactionSnapshot = false;
@@ -2180,7 +2382,35 @@ namespace Core.Multiplayer
 #endif
         }
 
-        private void LogClientPredictionDebug(in PlayerInputPacket input, int inputSequence, bool canPredictThisTick)
+        private bool TryBeginMovementServerDebugLog()
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (_playerController == null || !_playerController.EnableMovementDebugLog)
+            {
+                return false;
+            }
+
+            if (Time.time < _nextMovementServerDebugLogTime)
+            {
+                return false;
+            }
+
+            _nextMovementServerDebugLogTime = Time.time + _playerController.MovementDebugLogInterval;
+            return true;
+#else
+            return false;
+#endif
+        }
+
+        private void LogClientPredictionDebug(
+            in PlayerInputPacket input,
+            int inputSequence,
+            bool canPredictThisTick,
+            Vector3 rootPositionBeforePrediction,
+            float rootYawBeforePrediction,
+            int previousPredictedSequence,
+            bool previousPredictedAllowsPrediction,
+            float fixedDeltaTime)
         {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (!TryBeginMovementPredictionDebugLog())
@@ -2193,20 +2423,41 @@ namespace Core.Multiplayer
             float animSpeed = _playerController.Animator != null
                 ? _playerController.Animator.GetFloat(PlayerController.ANIM_PARAM_SPEED)
                 : 0f;
+            float rootFrameDelta = (rootPosition - rootPositionBeforePrediction).magnitude;
+            float rootToPredictedDelta = (_clientPredictedState.Position - rootPosition).magnitude;
+            float normalizedPlanarSpeed = _playerController.MoveSpeed > 0.0001f
+                ? _clientPredictedState.PlanarVelocity.magnitude / _playerController.MoveSpeed
+                : 0f;
+            float frameDrivenAnimTarget = Mathf.Clamp01(Mathf.Max(input.moveDir.magnitude, normalizedPlanarSpeed));
+            string localClientId = NetworkManager != null ? NetworkManager.LocalClientId.ToString() : "n/a";
 
             Debug.Log(
                 $"[MoveDebug][ClientPredict] " +
+                $"object={name} owner={OwnerClientId} local={localClientId} isServer={IsServer} " +
                 $"seq={inputSequence} " +
+                $"prevPredSeq={previousPredictedSequence} " +
+                $"lastAuthSeq={_lastAppliedAuthoritativeInputSequence} " +
+                $"lastAuthTick={_lastReceivedAuthoritativeServerTick} " +
+                $"seqLead={inputSequence - _lastAppliedAuthoritativeInputSequence} " +
                 $"predict={canPredictThisTick} " +
+                $"prevAllowPred={previousPredictedAllowsPrediction} " +
+                $"clientAllowPred={_clientAllowsPrediction} " +
+                $"fixedDt={fixedDeltaTime:F4} " +
                 $"input=({input.moveDir.x:F3},{input.moveDir.y:F3}) " +
+                $"preRoot=({rootPositionBeforePrediction.x:F3},{rootPositionBeforePrediction.y:F3},{rootPositionBeforePrediction.z:F3}) " +
+                $"preYaw={rootYawBeforePrediction:F3} " +
                 $"rootPos=({rootPosition.x:F3},{rootPosition.y:F3},{rootPosition.z:F3}) " +
                 $"rootYaw={rootYaw:F3} " +
+                $"rootFrameDelta={rootFrameDelta:F3} " +
                 $"predPos=({_clientPredictedState.Position.x:F3},{_clientPredictedState.Position.y:F3},{_clientPredictedState.Position.z:F3}) " +
                 $"predYaw={_clientPredictedState.Yaw:F3} " +
+                $"rootPredDelta={rootToPredictedDelta:F3} " +
                 $"planarVel={_clientPredictedState.PlanarVelocity.magnitude:F3} " +
+                $"animTarget={frameDrivenAnimTarget:F3} " +
                 $"animSpeed={animSpeed:F3} " +
                 $"grounded={_clientPredictedState.IsGrounded} " +
                 $"dash={_clientPredictedState.IsDashActive} " +
+                $"mode={_playerController.SimulationMode}/{_playerController.CurrentActionAuthorityMode} " +
                 $"state={_playerController.StateMachine?.CurrentState?.GetType().Name ?? "None"}");
 #endif
         }
@@ -2216,8 +2467,11 @@ namespace Core.Multiplayer
             in MultiplayerLocomotionState authoritativeState,
             bool hasPredictedState,
             in MultiplayerLocomotionState predictedState,
+            in MultiplayerLocomotionState finalState,
             int replayCount,
             float replayInputMagnitude,
+            Vector3 rootPositionBeforeApply,
+            float rootYawBeforeApply,
             string reason)
         {
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -2231,6 +2485,10 @@ namespace Core.Multiplayer
             float animSpeed = _playerController.Animator != null
                 ? _playerController.Animator.GetFloat(PlayerController.ANIM_PARAM_SPEED)
                 : 0f;
+            float preApplyMoveDelta = (rootPosition - rootPositionBeforeApply).magnitude;
+            float finalRootDelta = (finalState.Position - rootPosition).magnitude;
+            float finalAuthDelta = (finalState.Position - authoritativeState.Position).magnitude;
+            string localClientId = NetworkManager != null ? NetworkManager.LocalClientId.ToString() : "n/a";
 
             string predictedText = hasPredictedState
                 ? $"predPos=({predictedState.Position.x:F3},{predictedState.Position.y:F3},{predictedState.Position.z:F3}) " +
@@ -2241,18 +2499,67 @@ namespace Core.Multiplayer
 
             Debug.Log(
                 $"[MoveDebug][{phase}] " +
+                $"object={name} owner={OwnerClientId} local={localClientId} isServer={IsServer} " +
                 $"seq={authoritativeState.InputSequence} " +
                 $"tick={authoritativeState.ServerTick} " +
+                $"lastAuthSeq={_lastAppliedAuthoritativeInputSequence} " +
+                $"nextLocalSeq={_nextLocalInputSequence} " +
+                $"seqLead={_nextLocalInputSequence - authoritativeState.InputSequence} " +
                 $"allowPred={authoritativeState.AllowsPrediction} " +
                 $"reason={reason} " +
                 $"authPos=({authoritativeState.Position.x:F3},{authoritativeState.Position.y:F3},{authoritativeState.Position.z:F3}) " +
                 $"authYaw={authoritativeState.Yaw:F3} " +
                 $"{predictedText} " +
+                $"finalPos=({finalState.Position.x:F3},{finalState.Position.y:F3},{finalState.Position.z:F3}) " +
+                $"finalYaw={finalState.Yaw:F3} " +
+                $"finalAuthDelta={finalAuthDelta:F3} " +
+                $"finalRootDelta={finalRootDelta:F3} " +
                 $"replay={replayCount} " +
                 $"replayMag={replayInputMagnitude:F3} " +
+                $"preRoot=({rootPositionBeforeApply.x:F3},{rootPositionBeforeApply.y:F3},{rootPositionBeforeApply.z:F3}) " +
+                $"preYaw={rootYawBeforeApply:F3} " +
                 $"rootPos=({rootPosition.x:F3},{rootPosition.y:F3},{rootPosition.z:F3}) " +
                 $"rootYaw={rootYaw:F3} " +
+                $"rootApplyDelta={preApplyMoveDelta:F3} " +
                 $"animSpeed={animSpeed:F3} " +
+                $"mode={_playerController.SimulationMode}/{_playerController.CurrentActionAuthorityMode} " +
+                $"state={_playerController.StateMachine?.CurrentState?.GetType().Name ?? "None"}");
+#endif
+        }
+
+        private void LogServerAuthorityMovementDebug(int processedInputCount)
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (!TryBeginMovementServerDebugLog())
+            {
+                return;
+            }
+
+            Vector3 rootPosition = _playerController.transform.position;
+            float rootYaw = _playerController.transform.eulerAngles.y;
+            Vector3 controllerVelocity = _characterController != null ? _characterController.velocity : Vector3.zero;
+            string localClientId = NetworkManager != null ? NetworkManager.LocalClientId.ToString() : "n/a";
+
+            Debug.Log(
+                $"[MoveDebug][ServerAuthority] " +
+                $"object={name} owner={OwnerClientId} local={localClientId} isServer={IsServer} " +
+                $"usingLocomotion={_serverUsingLocomotionAuthority} " +
+                $"processed={processedInputCount} " +
+                $"latestReceivedSeq={_serverLatestReceivedInputSequence} " +
+                $"lastProcessedSeq={_serverLastProcessedInputSequence} " +
+                $"nextProcessSeq={_serverNextInputSequenceToProcess} " +
+                $"stateSeq={_serverAuthoritativeState.InputSequence} " +
+                $"tick={_serverAuthoritativeState.ServerTick} " +
+                $"allowPred={_serverAuthoritativeState.AllowsPrediction} " +
+                $"authPos=({_serverAuthoritativeState.Position.x:F3},{_serverAuthoritativeState.Position.y:F3},{_serverAuthoritativeState.Position.z:F3}) " +
+                $"authYaw={_serverAuthoritativeState.Yaw:F3} " +
+                $"rootPos=({rootPosition.x:F3},{rootPosition.y:F3},{rootPosition.z:F3}) " +
+                $"rootYaw={rootYaw:F3} " +
+                $"planarVel={_serverAuthoritativeState.PlanarVelocity.magnitude:F3} " +
+                $"charVel=({controllerVelocity.x:F3},{controllerVelocity.y:F3},{controllerVelocity.z:F3}) " +
+                $"grounded={_serverAuthoritativeState.IsGrounded} " +
+                $"dash={_serverAuthoritativeState.IsDashActive} " +
+                $"mode={_playerController.SimulationMode}/{_playerController.CurrentActionAuthorityMode} " +
                 $"state={_playerController.StateMachine?.CurrentState?.GetType().Name ?? "None"}");
 #endif
         }
