@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "name": "BossRaidPortfolio required art bundle",
+  "archivePrefix": "BossRaidPortfolio_RequiredArt",
+  "paths": [
+    "Assets/Animations/CombatGirlsCharacterPack",
+    "Assets/ApocalypticEnvironment",
+    "Assets/CombatGirlsCharacterPack",
+    "Assets/Fantasy Skybox FREE",
+    "Assets/FourEvilDragonsPBR",
+    "Assets/GabrielAguiarProductions",
+    "Assets/Hits Effects FREE",
+    "Assets/InfographicElements_UI",
+    "Assets/Lunar Landscape 3D",
+    "Assets/Map",
+    "Assets/Material",
+    "Assets/Modelings",
+    "Assets/New Terrain.asset",
+    "Assets/PixPlays",
+    "Assets/RecoveredArt",
+    "Assets/RecoveredSceneReferences",
+    "Assets/Sprites",
+    "Assets/UNI VFX"
+  ],
+  "gitTrackedMustExist": [
+    "Assets/Project/AnimationControllers/SoloPlayerAnimator.controller",
+    "Assets/Project/AnimationControllers/SoloPlayerAnimator.controller.meta",
+    "Assets/Prefabs/Player/SoloPlayerAvatar.prefab",
+    "Assets/Prefabs/Player/SoloPlayerAvatar.prefab.meta",
+    "Assets/Scenes/mutiplayer/GamePlayScene.unity"
+  ]
+}

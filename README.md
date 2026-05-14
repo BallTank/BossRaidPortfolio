@@ -53,6 +53,20 @@ Unity 기반 3D 보스 레이드 액션 프로젝트입니다.
 3. 기본 시작 씬으로 `Assets/Scenes/mutiplayer/TitleScene.unity`를 실행합니다.
 4. 단일 전투 검증이 필요하면 `Assets/Scenes/mutiplayer/GamePlayScene_Verify.unity`를 사용합니다.
 
+## 외부 아트 번들 복원
+
+대용량 아트 리소스는 Git/LFS 대신 외부 zip 번들로 관리합니다.
+
+1. Google Drive의 [Artifact Bundles 폴더](https://drive.google.com/drive/folders/1tUFzeVkNQiX1_ts8eaDFry1dULgp9XDp?usp=drive_link)에서 최신 `BossRaidPortfolio_RequiredArt-*.zip` 파일과 `.sha256` 파일을 내려받습니다.
+2. 내려받은 파일을 프로젝트 밖의 `D:\Unity-projects\BossRaidPortfolio_ArtifactBundles\` 폴더에 둡니다.
+3. 프로젝트 루트에서 아래 명령을 실행합니다.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\artifacts\restore-assets.ps1
+```
+
+자세한 패키징/복원 방법은 [tools/artifacts/README.md](/d:/Unity-projects/BossRaidPortfolio/tools/artifacts/README.md)를 확인합니다.
+
 ## 조작키
 - 키보드 이동, 마우스 좌클릭 공격, 스페이스바 대쉬
 

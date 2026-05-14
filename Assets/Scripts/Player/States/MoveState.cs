@@ -9,7 +9,6 @@ namespace Core.Player.States
     {
         private float _verticalVelocity;
         private bool _wasDashPressed;
-        private bool _wasJumpPressed;
         private bool _wasAttackPressed;
         private float _footstepTimer;
 
@@ -29,7 +28,6 @@ namespace Core.Player.States
                 _verticalVelocity = Controller.CharController.velocity.y;
             }
             _wasDashPressed = false;
-            _wasJumpPressed = false;
             _wasAttackPressed = false;
             _footstepTimer = 0f;
 

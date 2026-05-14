@@ -15511,7 +15511,7 @@ Rigidbody:
   m_ImplicitCom: 1
   m_ImplicitTensor: 1
   m_UseGravity: 0
-  m_IsKinematic: 0
+  m_IsKinematic: 1
   m_Interpolate: 0
   m_Constraints: 0
   m_CollisionDetection: 2
@@ -15525,7 +15525,7 @@ Animator:
   m_GameObject: {fileID: 1757241474}
   m_Enabled: 1
   m_Avatar: {fileID: 9000000, guid: 9ae9e17b7e47dbf40b23c32fe0328e10, type: 3}
-  m_Controller: {fileID: 9100000, guid: 9d78c37cd478f4f42957e761f67b0ccd, type: 2}
+  m_Controller: {fileID: 9100000, guid: 00493bce8234a4346924347c25480c49, type: 2}
   m_CullingMode: 0
   m_UpdateMode: 0
   m_ApplyRootMotion: 0
@@ -23626,7 +23626,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 4879549131218704662}
   serializedVersion: 2
-  m_LocalRotation: {x: 0.57722634, y: -0.3985579, z: 0.60103506, w: 0.38303804}
+  m_LocalRotation: {x: 0.5772264, y: -0.39855793, z: 0.6010351, w: 0.38303807}
   m_LocalPosition: {x: -0.08927308, y: 0.15765363, z: -0.0036410298}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
